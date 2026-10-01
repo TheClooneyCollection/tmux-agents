@@ -1,20 +1,40 @@
-# tmux agents
+# tmux-agents
 
-**Your sub agents shouldn't disappear when the task ends.**
+**Your sub agents shouldn't disappear when the task ends.** Built-in sub agents run out of sight. You get a summary at the end, and the work behind it is gone.
 
-Built-in sub agents run out of sight. You get a summary at the end, and the work behind it is gone. tmux agents runs each Claude or Codex sub agent in its own tmux window instead. Watch its work in a live preview, or switch in to give direction.
+tmux-agents runs each Claude or Codex sub agent in its own tmux window instead. Watch its work in a live preview, or switch in to give direction.
 
 Agents send tasks and updates to each other. Their panes stay until you close them, and their conversations remain afterward: in Codex you can find them in `codex resume`, in Claude in `claude --resume`.
 
 See the work. Keep the history. Pick it up again.
-
-![The agent list: sub agents with their status and parent, and a live preview of the selected one](docs/agent-list.png)
 
 - **Real sessions, not black boxes.** Every sub agent is a full Claude or Codex session with its whole history on screen. Approve a prompt, ask a follow-up, or correct it mid-task.
 - **One glance to know who needs you.** A line above your status bar shows each sub agent working, done, waiting for permission or waiting for you.
 - **Agents that talk to each other.** Tell Claude "connect codex and have it review this diff", and the reply comes back to Claude as a new message.
 - **Stays out of your way.** Sub agents live in a hidden session per project. Nothing is added to your layout, and a message never lands while you're typing in that pane.
 - **Just tmux and bash.** No server to run: the state lives on the tmux panes.
+
+## Screenshots
+
+<p>
+  <img src="docs/message-request.png" width="49%" alt="A request from Claude arriving in Codex's pane">
+  <img src="docs/message-reply.png" width="49%" alt="Codex's reply arriving back in Claude's pane">
+</p>
+
+Claude asks Codex for a review, and the reply comes back as a new message.
+
+<p>
+  <img src="docs/agent-list.png" width="49%" alt="The agent list: sub agents with their status and parent, and a live preview of the selected one">
+  <img src="docs/popup.png" width="49%" alt="A hidden Codex sub agent opened in a popup from the list">
+</p>
+
+`prefix + a` lists your sub agents with a live preview. Open one in a popup to answer it or give direction.
+
+A line above your status bar keeps count, and turns red or amber when an agent needs you:
+
+```
+      ⠹ auth-review: reading src/auth.ts  │  api ⠹ 2 ✓ 1 · blog ⠹ 1
+```
 
 Design notes, protocol details and known pitfalls: [DESIGN.md](DESIGN.md).
 
@@ -90,11 +110,7 @@ auth-review:  ...works, then tmux-ask --reply back to the caller
   - `enter`: open a hidden agent in a popup, where you can approve prompts. `prefix + d` takes you back to the list, on the same agent. Visible panes are jumped to instead.
   - `ctrl-o`: jump there full screen; `prefix + L` jumps back. `ctrl-x`: dismiss. `ctrl-d`: close every `done`/`exited` sub agent after a y/N confirmation. `ctrl-a`: toggle between sub agents and every named pane (remembered for next time). `ctrl-r`: refresh. `prefix + d`: close the list (it also leaves an agent's popup, so pressing it twice gets you all the way out).
 
-  ![A hidden Codex sub agent opened in a popup from the list](docs/popup.png)
-
 - **Status chip.** While sub agents exist, a line above the status bar shows them:
-
-  ![Claude spawning sub agents, Codex starting one of its own, and the chip at the bottom](docs/chip.png)
 
   ```
         ⠹ auth-review: reading src/auth.ts  │  api ⠹ 2 ✓ 1 · blog ⠹ 1
@@ -124,10 +140,6 @@ auth-review:  ...works, then tmux-ask --reply back to the caller
 | `tmux-dismiss [--from ME] <name>` | Close an agent's pane and its transcript. With `--from`, only your own sub agents. `--done` closes every done/exited one after a y/N. |
 
 ## How messages flow
-
-![A request from Claude arriving in Codex's pane](docs/message-request.png)
-
-![Codex's reply arriving back in Claude's pane](docs/message-reply.png)
 
 ```
 claude:  tmux-ask codex "review src/auth"      → pasted into codex's pane
