@@ -55,20 +55,24 @@ cd tmux-agents
 - copies the Codex rules (Codex skips symlinked `.rules` files)
 - never overwrites a real file without `--force`
 
-Then it prints the rest, which is yours to add:
+Then add these to your own config (`install.sh` prints them with your paths):
 
-1. **tmux.** In `~/.tmux.conf`, then reload:
-   ```tmux
-   %hidden TMUX_AGENTS_BIN="$HOME/.local/bin"
-   source-file ~/path/to/tmux-agents/tmux/tmux-agents.conf
-   ```
-   This adds `prefix + a` (agents), `prefix + A` (connect), hooks for border refresh, bell alerts and queued messages, and the sub agent chip.
-2. **PATH.** Make sure `~/.local/bin` is on it.
-3. **Claude.** Merge the `allow` rules from [`integrations/claude/settings.json`](integrations/claude/settings.json) into `~/.claude/settings.json`. Agents can then message, peek, spawn, report and close their own sub agents without prompting. `tmux-connect` (without `--from`), `tmux-disconnect` and plain `tmux-dismiss` stay yours and still prompt.
-4. **Codex.** Start it through a wrapper that pins its tmux identity (Codex runs commands in a shared daemon whose `$TMUX_PANE` may be another pane, see DESIGN.md):
-   - fish: copy [`integrations/fish/functions/`](integrations/fish/functions) into `~/.config/fish/functions/`
-   - bash/zsh: `source` [`integrations/sh/codex.sh`](integrations/sh/codex.sh) from `~/.bashrc` or `~/.zshrc`
-5. **Optional.** Tell your agents to use `tmux-spawn` for every sub agent (in `CLAUDE.md` / `AGENTS.md`). The skill explains how.
+| | |
+| --- | --- |
+| **tmux** | `source-file ~/path/to/tmux-agents/tmux/tmux-agents.conf` in `~/.tmux.conf`, then reload |
+| **PATH** | `~/.local/bin` |
+| **Claude** | the `allow` rules from [`integrations/claude/settings.json`](integrations/claude/settings.json), into `~/.claude/settings.json` |
+| **Codex** | the wrapper: [`integrations/fish/functions/`](integrations/fish/functions) or [`integrations/sh/codex.sh`](integrations/sh/codex.sh) |
+
+<details>
+<summary>What each one is for</summary>
+
+- **tmux:** `prefix + a` (agents), `prefix + A` (connect), the sub agent chip, and hooks for border refresh, bell alerts and queued messages. If you linked the commands somewhere other than `~/.local/bin`, put `%hidden TMUX_AGENTS_BIN="/that/dir"` before the `source-file` line.
+- **Claude:** agents can message, peek, spawn, report and close their own sub agents without prompting. `tmux-connect` (without `--from`), `tmux-disconnect` and plain `tmux-dismiss` stay yours and still prompt.
+- **Codex:** Codex runs commands in a shared daemon whose `$TMUX_PANE` may be another pane, so the wrapper pins each Codex to its own pane (see DESIGN.md). Copy the fish functions into `~/.config/fish/functions/`, or `source` the sh file from `~/.bashrc` / `~/.zshrc`.
+- **Optional:** tell your agents to use `tmux-spawn` for every sub agent, in `CLAUDE.md` / `AGENTS.md`. The skill explains how.
+
+</details>
 
 Update with `git pull`: the links pick up the new scripts. Re-run `./install.sh` if the rules changed.
 
