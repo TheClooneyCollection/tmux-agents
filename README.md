@@ -48,7 +48,14 @@ cd tmux-agents
 ./install.sh            # --dry-run to see what it does first
 ```
 
-`install.sh` links the `tmux-*` commands into `~/.local/bin` (`BIN_DIR` to change), links the `tmux-agents` skill into `~/.claude/skills/` and your Codex home, and copies the Codex rules (Codex skips symlinked `.rules` files). It never overwrites a real file without `--force`. Then it prints the rest, which is yours to add:
+`install.sh`:
+
+- links the `tmux-*` commands into `~/.local/bin` (`BIN_DIR` to change)
+- links the `tmux-agents` skill into `~/.claude/skills/` and your Codex home
+- copies the Codex rules (Codex skips symlinked `.rules` files)
+- never overwrites a real file without `--force`
+
+Then it prints the rest, which is yours to add:
 
 1. **tmux.** In `~/.tmux.conf`, then reload:
    ```tmux
