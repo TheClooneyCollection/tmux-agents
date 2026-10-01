@@ -16,21 +16,21 @@ See the work. Keep the history. Pick it up again.
 
 ## Screenshots
 
-<p>
+<p align="center">
   <img src="docs/message-request.png" width="49%" alt="A request from Claude arriving in Codex's pane">
   <img src="docs/message-reply.png" width="49%" alt="Codex's reply arriving back in Claude's pane">
 </p>
 
-Claude asks Codex for a review, and the reply comes back as a new message.
+<p align="center">Claude asks Codex for a review, and the reply comes back as a new message.</p>
 
-<p>
+<p align="center">
   <img src="docs/agent-list.png" width="49%" alt="The agent list: sub agents with their status and parent, and a live preview of the selected one">
   <img src="docs/popup.png" width="49%" alt="A hidden Codex sub agent opened in a popup from the list">
 </p>
 
-`prefix + a` lists your sub agents with a live preview. Open one in a popup to answer it or give direction.
+<p align="center"><code>prefix + a</code> lists your sub agents with a live preview. Open one in a popup to answer it or give direction.</p>
 
-A line above your status bar keeps count, and turns red or amber when an agent needs you:
+Status bar: a line above your status bar keeps count, and turns red or amber when an agent needs you:
 
 ```
       ⠹ auth-review: reading src/auth.ts  │  api ⠹ 2 ✓ 1 · blog ⠹ 1
