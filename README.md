@@ -1,5 +1,7 @@
 # tmux-agents
 
+English | [简体中文](README.zh-CN.md)
+
 **Your sub agents shouldn't disappear when the task ends.** Built-in sub agents run out of sight. You get a summary at the end, and the work behind it is gone.
 
 tmux-agents runs each Claude or Codex sub agent in its own tmux window instead. Watch its work in a live preview, or switch in to give direction.
