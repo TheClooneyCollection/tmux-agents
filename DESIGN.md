@@ -206,7 +206,7 @@ In practice the allowed commands run without a prompt. The skill keeps a fallbac
 | --- | --- | --- |
 | Commands | `bin/` | `~/.local/bin` (`BIN_DIR`), linked by `install.sh` |
 | Key bindings, hooks, chip settings | `tmux/tmux-agents.conf` | `source-file` it from `~/.tmux.conf` after setting `%hidden TMUX_AGENTS_BIN` |
-| Skills | `skills/claude/`, `skills/codex/` | linked into `~/.claude/skills/` and each Codex home's `skills/` |
+| Skills | `skills/claude/`, `skills/codex/`, `skills/tmux-agents-setup/` | linked into `~/.claude/skills/` and each Codex home's `skills/` |
 | Codex rules | `integrations/codex/tmux-agents.rules` | copied into each Codex home's `rules/` (Codex skips symlinked rules) |
 | Codex wrappers | `integrations/fish/`, `integrations/sh/` | your shell config |
 | Claude permissions | `integrations/claude/settings.json` | merged into `~/.claude/settings.json` by hand |

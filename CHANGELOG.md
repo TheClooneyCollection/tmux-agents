@@ -11,4 +11,4 @@ First release, extracted from a dotfiles repo with its full history.
 - **Status chip.** An animated line above the status bar shows sub agents, with permission waits (red) and "needs you" (amber) taking focus.
 - **Needs you detection** that knows when an agent is waiting on sub agents, sent requests, reported background work, or Claude background Bash commands.
 - **Codex support.** Identity pinning wrappers for fish, bash and zsh, sandbox rules, and extra Codex accounts with `TMUX_AGENTS_CODEX_HOMES`.
-- **Skills** for Claude and Codex, and `install.sh`.
+- **Skills** for Claude and Codex, `install.sh`, and a setup skill so an agent can install tmux-agents and give you a quick start.

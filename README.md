@@ -40,6 +40,14 @@ Design notes, protocol details and known pitfalls: [DESIGN.md](DESIGN.md).
 
 ## Install
 
+The easy way: ask Claude Code or Codex to do it.
+
+> Install tmux-agents for me by following https://github.com/TheClooneyCollection/tmux-agents/blob/main/skills/tmux-agents-setup/SKILL.md
+
+It checks what you have, runs the installer, shows you each config change before making it, and then walks you through a quick start. Later, say "tmux-agents quick start" to any agent to take the tour again.
+
+### By hand
+
 Needs tmux 3.2+ and bash. `fzf` is optional (nicer pickers and the live agent list).
 
 ```sh
@@ -51,7 +59,7 @@ cd tmux-agents
 `install.sh`:
 
 - links the `tmux-*` commands into `~/.local/bin` (`BIN_DIR` to change)
-- links the `tmux-agents` skill into `~/.claude/skills/` and your Codex home
+- links the `tmux-agents` and `tmux-agents-setup` skills into `~/.claude/skills/` and your Codex home
 - copies the Codex rules (Codex skips symlinked `.rules` files)
 - never overwrites a real file without `--force`
 
