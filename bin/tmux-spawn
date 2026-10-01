@@ -8,7 +8,7 @@ MAX_DEPTH="${TMUX_AGENTS_MAX_DEPTH:-2}"
 
 usage() {
   cat <<'EOF'
-usage: tmux-spawn [claude|codex|codex-2nd] [--from ME] [--name NAME] [task...]
+usage: tmux-spawn [claude|codex|PROFILE] [--from ME] [--name NAME] [task...]
 
 Starts a sub agent in its own window of the project's hidden session
 (agents-<project>), names it, connects it to this pane, and hands it
@@ -23,9 +23,28 @@ Codex approvals_reviewer=auto_review).
 
 Browse agents with tmux-agents (prefix + a).
 
-env: TMUX_AGENTS_MAX_DEPTH  spawn levels allowed (default 2)
+env: TMUX_AGENTS_CODEX_HOMES  more Codex accounts as PROFILE=CODEX_HOME pairs,
+                              e.g. "codex-2nd=$HOME/.codex-2nd" (no spaces in paths)
+     TMUX_AGENTS_MAX_DEPTH  spawn levels allowed (default 2)
      TMUX_SPAWN_BIN         dir put first on the agent's PATH (for tests)
 EOF
+}
+
+# Extra Codex accounts: TMUX_AGENTS_CODEX_HOMES="name=CODEX_HOME ...".
+codex_home_for() {
+  local e
+  for e in ${TMUX_AGENTS_CODEX_HOMES:-}; do
+    [ "${e%%=*}" != "$1" ] || { printf '%s\n' "${e#*=}"; return 0; }
+  done
+  return 1
+}
+
+codex_profile_for_home() {
+  local e
+  for e in ${TMUX_AGENTS_CODEX_HOMES:-}; do
+    [ "${e#*=}" != "$1" ] || { printf '%s\n' "${e%%=*}"; return 0; }
+  done
+  return 1
 }
 
 # Inside the new window: start the agent with the task as its first prompt.
@@ -59,15 +78,19 @@ if [ "${1:-}" = "--run" ]; then
     # No hooks for Codex: with auto_review its escalations go to a review
     # model, never to the user, so PermissionRequest only ever misfired.
     codex) cmd=(codex -c 'approvals_reviewer="auto_review"' "${codex_env[@]}" "${codex_notify[@]}") ;;
-    codex-2nd) export CODEX_HOME="$HOME/.codex-2nd"; cmd=(codex -c 'approvals_reviewer="auto_review"' "${codex_env[@]}" "${codex_notify[@]}") ;;
-    *) die "unknown agent '$agent'" ;;
+    *)
+      home="$(codex_home_for "$agent")" || die "unknown agent '$agent' (claude, codex, or a TMUX_AGENTS_CODEX_HOMES profile)"
+      export CODEX_HOME="$home"
+      cmd=(codex -c 'approvals_reviewer="auto_review"' "${codex_env[@]}" "${codex_notify[@]}") ;;
   esac
   if [ -n "$prompt" ]; then exec "${cmd[@]}" "$prompt"; else exec "${cmd[@]}"; fi
 fi
 
 agent="" name="" task="" FROM_PANE=""
 case "${1:-}" in
-  claude|codex|codex-2nd) agent="$1"; shift ;;
+  claude|codex) agent="$1"; shift ;;
+  -*|'') ;;
+  *) if codex_home_for "$1" >/dev/null; then agent="$1"; shift; fi ;;
 esac
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -95,13 +118,13 @@ if [ -z "$agent" ]; then
     agent="$TMUX_AGENTS_KIND"
   elif [ -n "${CLAUDECODE:-}" ]; then
     agent=claude
-  elif [ "${CODEX_HOME:-}" = "$HOME/.codex-2nd" ]; then
-    agent=codex-2nd
+  elif [ -n "${CODEX_HOME:-}" ] && codex_profile_for_home "$CODEX_HOME" >/dev/null; then
+    agent="$(codex_profile_for_home "$CODEX_HOME")"
   else
     case "$(pane_command "$self")" in
       *claude*) agent=claude ;;
       *codex*) agent=codex ;;
-      *) die "can't tell which agent you are; pass claude, codex or codex-2nd" ;;
+      *) die "can't tell which agent you are; pass claude, codex or a TMUX_AGENTS_CODEX_HOMES profile" ;;
     esac
   fi
 fi
@@ -133,6 +156,7 @@ fi
 run="'$here/tmux-spawn' --run '$agent' '$file'"
 env_args=(-e "TMUX_AGENTS_DEPTH=$((depth + 1))")
 [ -z "${TMUX_SPAWN_BIN:-}" ] || env_args+=(-e "TMUX_SPAWN_BIN=$TMUX_SPAWN_BIN")
+[ -z "${TMUX_AGENTS_CODEX_HOMES:-}" ] || env_args+=(-e "TMUX_AGENTS_CODEX_HOMES=$TMUX_AGENTS_CODEX_HOMES")
 
 if tmux has-session -t "=$session" 2>/dev/null; then
   pane="$(tmux new-window -d -t "=$session:" -n "$name" -c "$cwd" \
