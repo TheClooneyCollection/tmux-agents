@@ -2,8 +2,12 @@
 # ~/.zshrc. Inside tmux it pins this pane's identity, because Codex runs
 # shell commands in a shared daemon that keeps the environment of
 # whichever pane started it. For an extra account (a TMUX_AGENTS_CODEX_HOMES
-# profile), define one like:
-#   codex-2nd() { CODEX_HOME="$HOME/.codex-2nd" command codex $(__codex_tmux_pins codex-2nd) "$@"; }
+# profile such as work=$HOME/.codex-work), define one like:
+#   codex-work() {
+#     local IFS='
+# '
+#     CODEX_HOME="$HOME/.codex-work" command codex $(__codex_tmux_pins work) "$@"
+#   }
 
 __codex_tmux_pins() {
   [ -n "${TMUX_PANE:-}" ] || return 0

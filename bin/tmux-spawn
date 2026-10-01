@@ -24,7 +24,7 @@ Codex approvals_reviewer=auto_review).
 Browse agents with tmux-agents (prefix + a).
 
 env: TMUX_AGENTS_CODEX_HOMES  more Codex accounts as PROFILE=CODEX_HOME pairs,
-                              e.g. "codex-2nd=$HOME/.codex-2nd" (no spaces in paths)
+                              e.g. "work=$HOME/.codex-work" (no spaces in paths)
      TMUX_AGENTS_MAX_DEPTH  spawn levels allowed (default 2)
      TMUX_SPAWN_BIN         dir put first on the agent's PATH (for tests)
 EOF

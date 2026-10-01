@@ -99,18 +99,18 @@ Agents are told (skill, Claude memory, `~/.codex/AGENTS.md`) to use `tmux-spawn`
 ### Spawning
 
 1. **Refuse if too deep.** `TMUX_AGENTS_DEPTH` (unset means 0) must be below `TMUX_AGENTS_MAX_DEPTH` (default 2). The child gets depth + 1 through `new-window -e`, so a top-level agent can spawn children, and they can spawn grandchildren, which can't spawn further.
-2. **Pick the agent kind.** An explicit `claude|codex|codex-2nd` wins. Otherwise: `CLAUDECODE` set means claude; `CODEX_HOME=~/.codex-2nd` means codex-2nd; then the caller pane's `pane_current_command`.
+2. **Pick the agent kind.** An explicit `claude`, `codex` or Codex profile wins. Profiles are extra Codex accounts in `TMUX_AGENTS_CODEX_HOMES` (`name=CODEX_HOME ...`). Otherwise: `TMUX_AGENTS_KIND` (pinned by tmux-spawn and the codex wrappers, since Codex runs commands without its own `CODEX_HOME`); `CLAUDECODE` means claude; a `CODEX_HOME` listed as a profile means that profile; then the caller pane's `pane_current_command`.
 3. **Name the caller** with `suggest_name` if it has no name, so the child can reply.
 4. **Name the child.** `--name` is sanitized and made unique with `unique_name` (`-2`, `-3`...). Without it, `name_for <agent> <cwd>` gives `claude-<dir>-<N>`.
 5. **Pick the session.** It is `agents-<project>`, from `agents_session_for`: the git root's basename, `home` for `$HOME`, else the directory's basename. It is created with `new-session -d` on first use. One window per sub agent.
 6. **Hand over the task through a file.** The request body goes to a `mktemp` file. The window runs `tmux-spawn --run <agent> <file>`, which reads and deletes it and `exec`s the agent with the text as its first prompt (`claude "<prompt>"` and `codex "<prompt>"` both start interactive with an initial prompt). No shell ever quotes the task, and nothing has to wait for the TUI to be ready before pasting.
 7. **Wire it up.** `remain-on-exit on` keeps the transcript after the agent exits. The script sets `@agent` and `@parent`, links both ways, and refreshes labels.
 
-Sub agents always start in auto mode: `--permission-mode auto` for Claude and `-c approvals_reviewer="auto_review"` for Codex. Before this, a spawned codex-2nd fell back to its config default (`user`) and asked about every command, while its parent had been switched to auto review by hand.
+Sub agents always start in auto mode: `--permission-mode auto` for Claude and `-c approvals_reviewer="auto_review"` for Codex. Before this, a spawned Codex on a second account fell back to its config default (`user`) and asked about every command, while its parent had been switched to auto review by hand.
 
-For `codex` and `codex-2nd`, `--run` also passes `-c shell_environment_policy.set.{TMUX_PANE,TMUX,TMUX_AGENTS_DEPTH}` with the new pane's values, so commands the sub agent runs through Codex's shared daemon see its own identity and depth. `codex sandbox` confirmed the override is applied.
+For Codex (any profile), `--run` also passes `-c shell_environment_policy.set.{TMUX_PANE,TMUX,TMUX_AGENTS_DEPTH}` with the new pane's values, so commands the sub agent runs through Codex's shared daemon see its own identity and depth. `codex sandbox` confirmed the override is applied.
 
-`--run` puts `~/.bin/tmux` first on `PATH`, because the tmux server's environment may predate the fish PATH change. For `codex-2nd` it sets `CODEX_HOME=~/.codex-2nd` rather than calling the fish function, which isn't available to bash.
+`--run` puts the scripts' own directory first on `PATH`, because the tmux server's environment may predate the user's PATH setup. For a profile it exports that profile's `CODEX_HOME`, and `TMUX_AGENTS_CODEX_HOMES` is passed to the new window with `-e`.
 
 ### Browsing: `tmux-agents`
 
@@ -191,27 +191,25 @@ The `alert-bell[42]` hook runs `tmux-agents --alert #{session_name} #{window_nam
 
 Codex's seatbelt sandbox denies the tmux socket (`error connecting to /private/tmp/tmux-501/... (Operation not permitted)`). This was confirmed with `codex sandbox`; `--allow-unix-socket` fixes it.
 
-The shipped fix is `~/.codex/rules/tmux-agents.rules`, which allows `tmux-ask`, `tmux-peers`, `tmux-peek` and `tmux-spawn` with `prefix_rule(..., decision="allow")`. `codex execpolicy check` confirms the decision, including absolute paths via `--resolve-host-executables`.
+The shipped fix is `integrations/codex/tmux-agents.rules`, which `install.sh` copies into each Codex home's `rules/`. It allows the commands agents use with `prefix_rule(..., decision="allow")`. `codex execpolicy check` confirms the decision, including absolute paths via `--resolve-host-executables`.
 
-**Unverified:** whether an allow rule alone also runs the command outside the sandbox in a live session. The Codex skill keeps a fallback: request escalated permissions.
+In practice the allowed commands run without a prompt. The skill keeps a fallback (ask for escalated permissions) and asks agents to run `tmux-*` commands on their own, since a chained command doesn't match the prefix rule.
 
 ### Permissions
 
-- Claude: `tmux-ask`, `tmux-peers`, `tmux-peek` and `tmux-spawn` (bare and `~/.bin/tmux/` forms) are allowlisted in `~/.claude/settings.json`. The Codex rules file allows the same four.
-- `tmux-connect`, `tmux-disconnect`, plain `tmux-dismiss` and `--done` are deliberately not allowlisted. Connecting panes and closing other agents' transcripts are the user's call. Only `tmux-dismiss --from` is allowed, and it checks ownership.
+- **Allowed for agents** (`integrations/claude/settings.json`, `integrations/codex/tmux-agents.rules`): `tmux-ask`, `tmux-peers`, `tmux-peek`, `tmux-spawn`, `tmux-agent-report`, and the `--from` forms of `tmux-connect` and `tmux-dismiss`. `tmux-connect --from` is the agent mode used when the user asks an agent to connect; `tmux-dismiss --from` checks the agent spawned what it closes.
+- **Left to the user:** interactive `tmux-connect`, `tmux-disconnect`, plain `tmux-dismiss` and `--done`.
 
-### Where things are installed
+### Layout
 
-| Piece | Location |
-| --- | --- |
-| Scripts | `~/.bin/tmux/`, on `PATH` via `.config/fish/config.fish` |
-| Bindings and hooks | `~/.tmux.conf`: `prefix + A` connect, `prefix + a` agents; `pane-exited[42]` and `after-kill-pane[42]` run `tmux-peers --refresh`; `alert-bell[42]` runs `tmux-agents --alert`; `pane-mode-changed[42]` runs `tmux-ask --kick` |
-| Agent instructions | Claude memory `prefer-tmux-agents`, `~/.codex/AGENTS.md` |
-| Codex launch wrappers | `.config/fish/functions/{codex,codex-2nd,__codex_tmux_pins}.fish` |
-| Skills | `~/.claude/skills/tmux-agents/`, `~/.codex/skills/tmux-agents/` |
-| Codex rules | `~/.codex/rules/tmux-agents.rules` |
-
-`~/.codex-2nd/` symlinks the Codex skill and `AGENTS.md` with relative links. The rules file is a **hard link** instead (see pitfalls).
+| Piece | In this repo | Installed to |
+| --- | --- | --- |
+| Commands | `bin/` | `~/.local/bin` (`BIN_DIR`), linked by `install.sh` |
+| Key bindings, hooks, chip settings | `tmux/tmux-agents.conf` | `source-file` it from `~/.tmux.conf` after setting `%hidden TMUX_AGENTS_BIN` |
+| Skills | `skills/claude/`, `skills/codex/` | linked into `~/.claude/skills/` and each Codex home's `skills/` |
+| Codex rules | `integrations/codex/tmux-agents.rules` | copied into each Codex home's `rules/` (Codex skips symlinked rules) |
+| Codex wrappers | `integrations/fish/`, `integrations/sh/` | your shell config |
+| Claude permissions | `integrations/claude/settings.json` | merged into `~/.claude/settings.json` by hand |
 
 ## Pitfalls found while building
 
@@ -219,15 +217,15 @@ The shipped fix is `~/.codex/rules/tmux-agents.rules`, which allows `tmux-ask`, 
 - **`display-message -t %99 '#{pane_id}'` exits 0 with empty output for a closed pane.** `pane_alive` checks `list-panes -a` instead.
 - **`set -o pipefail` plus `grep -q`.** `grep` exits early, the writer gets SIGPIPE, and the pipeline "fails". Capture output into a variable before grepping (`is_peer`, `pane_alive`).
 - **Grouped sessions** duplicate panes in `list-panes -a`. Dedupe by id.
-- **New windows run through fish, and `config.fish` reorders `PATH`.** A test put fake agents first on the server's `PATH`, but fish moved `~/.local/bin` ahead of them, so the real `claude` started with the test task. It was killed within about a second. `TMUX_SPAWN_BIN` is now the test hook: `--run` prepends it after fish has run.
+- **New windows run through the user's shell, whose startup file can reorder `PATH`.** A test put fake agents first on the server's `PATH`, but fish moved `~/.local/bin` ahead of them, so the real `claude` started with the test task. It was killed within about a second. `TMUX_SPAWN_BIN` is now the test hook: `--run` prepends it after fish has run.
 - **Nested `tmux attach` after `unset TMUX` goes to the default socket.** On a `-L` test server it attached to the user's real server. `--view` passes `-S` with the socket taken from `$TMUX`.
 - **`read` with `IFS=<tab>` collapses empty fields**, because tab is IFS whitespace. An empty `@parent` shifted every later column. Formats emit `-` for empty values.
 - **`basename ... | tr -c` also translates the trailing newline** into the replacement character. Sanitize `"$(basename ...)"` through `printf '%s'` instead.
 - **`send-keys` goes to copy mode.** If the user is scrolling the receiver's pane, `paste-buffer` still reaches the program (it bypasses modes) but `send-keys Enter` is handled by copy mode, so the message sat in the input box unsent. Pasting a raw `\r` instead worked for `cat` but not for Claude Code, whose input didn't submit on it. So `user_busy` counts `#{pane_in_mode}` as busy: someone scrolling a pane is reading it, and the message is queued until they leave copy mode.
 - **Chained commands run in Codex's sandbox.** Prefix allow rules only match a command's start, so `echo ...; tmux-peers` ran sandboxed, and tmux reported the blocked socket as "no tmux server running". `require_tmux` now says what happened when `$TMUX` is set, and the skill says to run `tmux-*` commands on their own.
 - **`grep -v` that filters out every line exits 1.** Under `pipefail` and `set -e`, removing the only name from `@closed` silently killed `tmux-spawn` halfway through linking. Use `awk` for filters that can come out empty.
-- **Codex runs shell commands in a shared app-server daemon**, one per `CODEX_HOME`, which keeps the environment of the pane it was started from. A codex-2nd sub agent in `%40` ran `tmux-ask` with `TMUX_PANE=%36` (its parent's pane), so it acted as its parent and got "not connected". `ps eww` showed the TUI with `%40` and the daemon with `%36`. The main Codex daemon has no `TMUX_PANE` at all. The fixes are `--from` identity in every message, plus `shell_environment_policy.set` pins (`TMUX_PANE`, `TMUX`, `TMUX_AGENTS_PINNED=1`) for every Codex started in tmux: `tmux-spawn --run` adds them for sub agents, and the fish functions `codex` and `codex-2nd` add them (via `__codex_tmux_pins`) for Codex the user starts. A top-level codex-2nd started without them ran `tmux-peers`, saw its parent's identity, asked the user to confirm that name, got a "yes", and messaged another project's agent as someone else. So the skill no longer lets an unpinned Codex pick a name from `tmux-peers` or have the user confirm one, and `tmux-peers` prints a warning when neither `--from`, `TMUX_AGENTS_PINNED` nor `CLAUDECODE` is set. Verified live: a codex-2nd restarted through the wrapper saw `TMUX_AGENTS_PINNED=1` and `you: codex-~-1 (%48)` while sharing the daemon started from `%36`. `TMUX_AGENTS_DEPTH` had the same problem, which silently broke the depth limit for Codex.
-- **Codex silently ignores symlinked `.rules` files** ([openai/codex#32658](https://github.com/openai/codex/issues/32658), open): `collect_policy_files()` keeps only `is_file()` entries. The codex-2nd symlink was skipped, so codex-2nd prompted for `tmux-peers`; its log shows the `CommandExecutionRequestApproval`. `~/.codex-2nd/rules/tmux-agents.rules` is now a hard link. An editor that saves by writing a new file and renaming it (including `sed -i`) breaks the link; recreate it with `ln -f ~/.codex/rules/tmux-agents.rules ~/.codex-2nd/rules/`.
+- **Codex runs shell commands in a shared app-server daemon**, one per `CODEX_HOME`, which keeps the environment of the pane it was started from. A Codex sub agent ran `tmux-ask` with its parent's `TMUX_PANE`, so it acted as its parent and got "not connected". `ps eww` showed the TUI with `%40` and the daemon with `%36`. The main Codex daemon has no `TMUX_PANE` at all. The fixes are `--from` identity in every message, plus `shell_environment_policy.set` pins (`TMUX_PANE`, `TMUX`, `TMUX_AGENTS_PINNED=1`) for every Codex started in tmux: `tmux-spawn --run` adds them for sub agents, and the `codex` wrappers in `integrations/` add them (via `__codex_tmux_pins`) for Codex the user starts. A top-level Codex started without them ran `tmux-peers`, saw its parent's identity, asked the user to confirm that name, got a "yes", and messaged another project's agent as someone else. So the skill no longer lets an unpinned Codex pick a name from `tmux-peers` or have the user confirm one, and `tmux-peers` prints a warning when neither `--from`, `TMUX_AGENTS_PINNED` nor `CLAUDECODE` is set. Verified live: a Codex on a second account, restarted through the wrapper, saw `TMUX_AGENTS_PINNED=1` and `you: codex-~-1 (%48)` while sharing the daemon started from `%36`. `TMUX_AGENTS_DEPTH` had the same problem, which silently broke the depth limit for Codex.
+- **Codex silently ignores symlinked `.rules` files** ([openai/codex#32658](https://github.com/openai/codex/issues/32658), open): `collect_policy_files()` keeps only `is_file()` entries. A symlinked rules file in a second Codex account was skipped, so that account prompted for `tmux-peers`; its log showed the `CommandExecutionRequestApproval`. `install.sh` copies the rules file instead.
 - **Prefix allow rules may still prompt for sandbox escapes** ([openai/codex#15298](https://github.com/openai/codex/issues/15298), reported on Windows). If Codex still asks, approving with "don't ask again" writes a rule to that account's `default.rules`, which works.
 - **Font ligatures** can render `-~-` as an arrow (`claude-~-1` shows as `claude⤳1`). This is cosmetic only.
 

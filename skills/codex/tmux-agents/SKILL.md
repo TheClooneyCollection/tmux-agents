@@ -91,7 +91,7 @@ Replies use `[reply from X to Y ...]` and `[end of reply from X to Y]` the same 
 - **Long answers go in a file.** If the answer is more than about 20 lines, write the full report to a file and reply with a 3 to 5 line high-level summary plus the path. The receiver reads the file itself.
   - Claude: your session scratchpad directory (it looks like `/private/tmp/claude-501/<project>/<session>/scratchpad/`).
   - Others: `${TMPDIR:-/tmp}/tmux-agents/<your name>/` (`mkdir -p` it).
-  - Name the file after the task, e.g. `giiru-map-audit-report.md`. `tmux-ask` saves anything over 60 lines to a file on its own, but only keeps the first lines inline, so write the summary yourself.
+  - Name the file after the task, e.g. `auth-review-report.md`. `tmux-ask` saves anything over 60 lines to a file on its own, but only keeps the first lines inline, so write the summary yourself.
 - **When you receive a path, read the file** before acting on the summary.
 - `[reply from X to Y via tmux-ask]`: use it and continue your task. Don't answer a reply unless you have a new request, otherwise the agents loop forever.
 
