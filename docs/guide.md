@@ -42,7 +42,7 @@ auth-review:  ...works, then tmux-ask --reply back to the caller
   ```
         ⠹ auth-review: reading src/auth.ts  │  api ⠹ 2 ✓ 1 · blog ⠹ 1
   ```
-  Centred: one agent in focus, rotating every 4s, then per-project counts (`⠹` working, `✓` done, `⚠` needs permission, `◆` needs you, `✗` exited). An agent waiting for permission (red) or for you (amber) takes over the focus, and blinks after 60s unanswered. **Needs you** means a sub agent ended its turn without replying to its parent and without waiting on anyone or anything (its own sub agents, requests it sent, background work it reported with `tmux-agent-report --waiting`, or, for Claude, Bash commands still running in the background), which is how a Codex sub agent asks you for something (it never gets approval prompts, see [DESIGN.md](../DESIGN.md)). The line disappears when the last sub agent is closed. It animates at `@tmux_agents_chip_fps` frames a second (default 10, set after the `source-file` line to change it); `1` falls back to tmux's once-a-second refresh.
+  Centred: one agent in focus, rotating every 4s, then per-project counts (`⠹` working, `✓` done, `⚠` needs permission, `◆` needs you, `✗` exited). An agent waiting for permission (red) or for you (amber) takes over the focus, and blinks after 60s unanswered. **Needs you** means a sub agent ended its turn without replying to its parent and without waiting on anyone or anything (its own sub agents, requests it sent, background work it reported with `tmux-agent-report --waiting`, or, for Claude, Bash commands still running in the background), which is how a Codex sub agent asks you for something (it never gets approval prompts, see [sub agents](design/sub-agents.md#data-not-screen-scraping)). The line disappears when the last sub agent is closed. It animates at `@tmux_agents_chip_fps` frames a second (default 10, set after the `source-file` line to change it); `1` falls back to tmux's once-a-second refresh.
 - **Progress reports.** Sub agents report what they're doing with `tmux-agent-report "<a few words>"`; permission waits are reported by hooks. Nothing is read off the screen.
 - **Done.** A sub agent is `done` once it replies to its parent, and `running` again when it gets a new request.
 - **Long answers.** Agents reply with a short summary and a path to the full report in a temp dir. `tmux-ask` also saves any message over 60 lines to `$TMPDIR/tmux-agents/<sender>/` and sends the first 15 lines plus the path.
@@ -91,7 +91,7 @@ State lives on the panes as tmux user options, with no files:
 Pane ids survive moving panes between windows. Closing a pane drops its links.
 Inspect with `tmux show -p @agent` / `tmux show -p @peers`.
 
-Agent-facing commands take `--from <name>` to say who is acting. Codex runs commands in a shared daemon whose `$TMUX_PANE` may be another pane, so agents always pass it; see [DESIGN.md](../DESIGN.md).
+Agent-facing commands take `--from <name>` to say who is acting. Codex runs commands in a shared daemon whose `$TMUX_PANE` may be another pane, so agents always pass it; see [the shared daemon](design/environment.md#codex-runs-commands-in-a-shared-daemon).
 
 `TMUX_ASK_ENTER_DELAY` (default `0.5`) sets the pause between pasting and pressing Enter. Raise it if a TUI drops the Enter.
 `TMUX_CONNECT_HIGHLIGHT` (default `bg=colour24`) sets the picker tint.
