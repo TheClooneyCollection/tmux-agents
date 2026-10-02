@@ -30,13 +30,21 @@ closed one can be reopened. Codex records it when its first turn ends.
 Browse agents with tmux-agents (prefix + a).
 
 env: TMUX_AGENTS_CODEX_HOMES  more Codex accounts as PROFILE=CODEX_HOME pairs,
-                              e.g. "work=$HOME/.codex-work" (no spaces in paths)
+                              e.g. "work=$HOME/.codex-work" (no spaces in paths);
+                              read from tmux's global environment if unset
      TMUX_AGENTS_MAX_DEPTH  spawn levels allowed (default 2)
      TMUX_SPAWN_BIN         dir put first on the agent's PATH (for tests)
 EOF
 }
 
 # Extra Codex accounts: TMUX_AGENTS_CODEX_HOMES="name=CODEX_HOME ...".
+# Agents started before it was set don't have it in their environment, so
+# fall back to tmux's global one (set-environment -g in tmux.conf).
+if [ -z "${TMUX_AGENTS_CODEX_HOMES:-}" ] && [ -n "${TMUX:-}" ]; then
+  v="$(tmux show-environment -g TMUX_AGENTS_CODEX_HOMES 2>/dev/null || true)"
+  case "$v" in TMUX_AGENTS_CODEX_HOMES=?*) export TMUX_AGENTS_CODEX_HOMES="${v#*=}" ;; esac
+fi
+
 codex_home_for() {
   local e
   for e in ${TMUX_AGENTS_CODEX_HOMES:-}; do

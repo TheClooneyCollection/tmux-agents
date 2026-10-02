@@ -106,4 +106,10 @@ List extra Codex homes as `name=path` pairs, then run `install.sh` again so they
 export TMUX_AGENTS_CODEX_HOMES="work=$HOME/.codex-work"
 ```
 
+Putting the same line in `~/.tmux.conf` also works, and reaches agents that were already running when you set it:
+
+```tmux
+set-environment -g TMUX_AGENTS_CODEX_HOMES "work=$HOME/.codex-work"
+```
+
 `tmux-spawn work "task"` starts a sub agent on that account, and a Codex started with `CODEX_HOME=$HOME/.codex-work` spawns `work` sub agents by default. Give it its own wrapper; `integrations/sh/codex.sh` shows one.
