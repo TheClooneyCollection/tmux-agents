@@ -109,9 +109,9 @@ MSG)
 
 `user_busy` is true when the receiver's pane is in copy mode (where `send-keys Enter` would go to copy mode instead of the program), or a client is showing it and had a keypress in the last `TMUX_ASK_IDLE_SECS` (8s). Then:
 
-1. `tmux-ask` writes the body to `/tmp/tmux-agents-<uid>/queue/<epoch>-<pid>-<pane>.msg`. It is one fixed place so hooks running in the tmux server's environment find it.
+1. `tmux-ask` writes the body to `/tmp/tmux-agents-<uid>/queue/<socket>/<epoch>-<pid>-<pane>.msg`. It is one fixed place per tmux server, so hooks running in the server's environment find it, and per server because pane ids repeat across servers (a test server's `%1` is not the user's `%1`).
 2. It starts `tmux-ask --deliver` with `run-shell -b`, so the deliverer lives in the tmux server rather than the sender, and prints `queued`. The skill tells agents that `queued` means sent, so they don't resend.
-3. The deliverer polls every 2s, waits for older queued files for the same pane (names sort by time), and delivers once the user is idle.
+3. The deliverer polls every 2s, waits for older queued files for the same pane (names sort by time), and delivers once the user is idle. A pane in copy mode with no keypress from a client showing it for `TMUX_ASK_COPY_IDLE_SECS` (default 300, 0 = never) was probably left there by accident: the deliverer cancels copy mode (`send-keys -X cancel`), tells the clients, and delivers. Settings reach the deliverer explicitly on its command line, because `run-shell` runs with the server's environment, not the sender's.
 4. It gives up after `TMUX_ASK_QUEUE_SECS` (30 min) or when the pane is gone. Giving up renames the file to `.undelivered`, so it no longer holds up later messages, and shows every client where it is for 10s.
 
 Leaving copy mode doesn't wait for the poll: a `pane-mode-changed[42]` hook runs `tmux-ask --kick <pane>`, which sends that pane's queued messages at once, in order, skipping the typing window. tmux counts mouse scrolling as client activity, so waiting it out cost 8 to 10s after every scroll. The hook and the deliverer can race for the same file, so each claims it by renaming it to `.sending` first; the loser finds it gone and exits.

@@ -76,7 +76,7 @@ codex:   tmux-ask --reply claude <<'MSG' ...   → pasted into claude's pane
 
 - Requests say who sent them, who they're for, and the exact reply command (with `--from <receiver>`). Replies say not to answer back, which stops loops.
 - Nobody waits. The sender ends its turn, and the reply arrives later as a new prompt.
-- **You typing wins.** If you pressed a key in the receiver's pane within the last 8 seconds, or are scrolling it (copy mode), the message is queued. It goes out as soon as you leave copy mode (mouse or keys), or after 8 quiet seconds if you were typing. Queued messages keep their order. If the receiver's pane is gone, or you kept typing there for 30 minutes, the message is kept as a `.undelivered` file and your status line says where.
+- **You typing wins.** If you pressed a key in the receiver's pane within the last 8 seconds, or are scrolling it (copy mode), the message is queued. It goes out as soon as you leave copy mode (mouse or keys), or after 8 quiet seconds if you were typing. A pane left in copy mode for 5 minutes without a key is taken out of it so the message goes through (`TMUX_ASK_COPY_IDLE_SECS`, `0` to turn it off). Queued messages keep their order. If the receiver's pane is gone, or you kept typing there for 30 minutes, the message is kept as a `.undelivered` file and your status line says where.
 - **Messages are fenced.** Every message ends with `[end of request/reply from X to Y]`. If a draft of yours gets submitted along with one, the agent treats the text outside the markers as yours.
 - If an agent is busy, Claude and Codex queue the pasted message themselves.
 
