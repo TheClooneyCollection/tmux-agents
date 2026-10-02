@@ -107,6 +107,8 @@ Or let your agent show you: say "tmux-agents quick start".
 
 In the list: `enter` open · `ctrl-o` jump there · `ctrl-x` dismiss · `ctrl-d` close all finished · `ctrl-a` all panes / sub agents
 
+Closed sub agents stay in a `closed` section at the bottom for 7 days: `enter` reopens one with its whole conversation. Or ask its parent to reopen it.
+
 Status: `⠹` working · `✓` done · `⚠` waiting for permission (red) · `◆` needs you (amber) · `✗` exited
 
 ## Commands

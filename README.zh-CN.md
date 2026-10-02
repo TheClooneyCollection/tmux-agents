@@ -107,6 +107,8 @@ cd tmux-agents
 
 列表里：`enter` 打开 · `ctrl-o` 跳过去 · `ctrl-x` 关闭 agent · `ctrl-d` 关闭所有已完成的 · `ctrl-a` 切换所有 pane / 子 agent
 
+关掉的子 agent 会在列表底部的 `closed` 区保留 7 天：按 `enter` 就能带着完整对话重新打开。也可以让它的父 agent 帮你重开。
+
 状态：`⠹` 工作中 · `✓` 已完成 · `⚠` 等待权限（红）· `◆` 需要你（黄）· `✗` 已退出
 
 ## 命令
