@@ -103,9 +103,9 @@ cd tmux-agents
 | --- | --- |
 | `prefix + a` | agent 列表，带实时预览 |
 | `prefix + A` | 把当前 pane 连接到另一个 pane（`ctrl-a`：任意窗口） |
-| `prefix + d` | 在 popup 里：返回列表。在列表默认显示当前窗口及其下属 agent，所有窗口中需要你处理的子 agent 都置顶。
+| `prefix + d` | 在 popup 里：返回列表。在列表里：关闭列表 |
 
-列表里：关闭列表 |
+列表默认显示当前窗口及其下属 agent，所有窗口中需要你处理的子 agent 都置顶。
 
 列表里：`enter` 打开 · `ctrl-o` 跳过去 · `ctrl-x` 关闭 agent · `ctrl-d` 关闭所有已完成的 · `ctrl-a` 切换所有 pane / 子 agent · `ctrl-t` 当前窗口 / 所有窗口
 
