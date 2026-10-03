@@ -54,6 +54,18 @@ expect() {  # name, wanted kid state
 echo "Normal workflows: never needs you"
 
 reset
+tmux set -p -t %1 @state idle
+turn_end
+expect "idle without a task stays idle at turn end" idle
+"$B/tmux-agent-report" --pane %1 "starting work" >/dev/null
+expect "progress report starts idle agent working" working
+
+reset
+tmux set -p -t %1 @state idle
+ask %0 kid "first task"
+expect "first request starts idle agent working" working
+
+reset
 ask %0 kid "do x"; turn_start "[request from boss to kid via tmux-ask] do x"
 ask %1 --reply boss "done"; turn_end
 expect "replies to its parent, then ends its turn" done

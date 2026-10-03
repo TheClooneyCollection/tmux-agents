@@ -13,8 +13,8 @@ Bound to prefix + a.
 
   enter   open it: hidden agents in a popup (prefix + d closes), others jump
   ctrl-o  jump to it full screen (prefix + L jumps back)
-  ctrl-x  dismiss (close the pane)
-  ctrl-d  clean up every done or exited sub agent (asks first)
+  ctrl-x  dismiss (close its subtree)
+  ctrl-d  clean up wholly done or exited subtrees (asks first)
   ctrl-a  toggle between sub agents and every named pane
   ctrl-t  toggle between this window and all windows
   ctrl-r  refresh
@@ -154,10 +154,11 @@ list_agents() {
   # other project sections sort by their most urgent scoped agent.
   sorted="$(printf '%s\n' "$rows" | while IFS="$tab" read -r id name dead perm st parent session activity path location attention; do
       [ -n "$id" ] || continue
-      if [ "$dead" = 1 ]; then rank=4 status="✗ exited"
+      if [ "$dead" = 1 ]; then rank=5 status="✗ exited"
       elif [ "$perm" != - ]; then rank=0 status="⚠ permission"
       elif [ "$st" = needs_you ]; then rank=1 status="◆ needs you"
-      elif [ "$st" = done ]; then rank=3 status="✓ done"
+      elif [ "$st" = idle ]; then rank=3 status="○ idle"
+      elif [ "$st" = done ]; then rank=4 status="✓ done"
       else rank=2 status="⠿ working"
       fi
       pname="-"
@@ -192,7 +193,7 @@ list_agents() {
       NR == 1 { printf "ID %s%c", $0, 30; next }
       { i = NR - 1
         sub(/⚠ permission/, "\033[1;97;41m&\033[0m"); sub(/◆ needs you/, "\033[1;30;48;5;214m&\033[0m");
-        sub(/⠿ working/, "\033[38;5;117m&\033[0m"); sub(/✓ done/, "\033[38;5;114m&\033[0m");
+        sub(/⠿ working/, "\033[38;5;117m&\033[0m"); sub(/○ idle/, "\033[38;5;244m&\033[0m"); sub(/✓ done/, "\033[38;5;114m&\033[0m");
         sub(/✗ exited/, "\033[38;5;240m&\033[0m"); sub(/↺ closed/, "\033[38;5;244m&\033[0m")
         a = A[i]; if (a == "" || a == "-") a = "no report yet"
         sect = ""
@@ -308,6 +309,8 @@ chip() {
       state=exited act="exited"
     elif [ "$since" != - ]; then
       state=perm act="NEEDS PERMISSION"
+    elif [ "$st" = idle ]; then
+      state=idle act="idle"
     elif [ "$st" = done ]; then
       state=done act="done"
     elif [ "$st" = needs_you ]; then
@@ -323,19 +326,20 @@ $rows
 EOF
 
   # Per-project counts, in first-seen order.
-  local out="" seen_projs=" " pj i n w d pm nd ex seg
+  local out="" seen_projs=" " pj i n w d idle pm nd ex seg
   for pj in "${projs[@]}"; do
     case "$seen_projs" in *" $pj "*) continue ;; esac
     seen_projs="$seen_projs$pj "
-    w=0 d=0 pm=0 nd=0 ex=0
+    w=0 d=0 idle=0 pm=0 nd=0 ex=0
     for ((i = 0; i < ${#ids[@]}; i++)); do
       [ "${projs[i]}" = "$pj" ] || continue
-      case "${states[i]}" in work) w=$((w+1)) ;; done) d=$((d+1)) ;; perm) pm=$((pm+1)) ;; needs) nd=$((nd+1)) ;; exited) ex=$((ex+1)) ;; esac
+      case "${states[i]}" in work) w=$((w+1)) ;; idle) idle=$((idle+1)) ;; done) d=$((d+1)) ;; perm) pm=$((pm+1)) ;; needs) nd=$((nd+1)) ;; exited) ex=$((ex+1)) ;; esac
     done
     seg="#[fg=colour250]$pj#[default]"
     [ "$pm" -eq 0 ] || seg="$seg #[fg=white,bg=red,bold] ⚠ $pm #[default]"
     [ "$nd" -eq 0 ] || seg="$seg #[fg=black,bg=colour214,bold] ◆ $nd #[default]"
     [ "$w" -eq 0 ] || seg="$seg #[fg=colour117]$spin $w#[default]"
+    [ "$idle" -eq 0 ] || seg="$seg #[fg=colour244]○ $idle#[default]"
     [ "$d" -eq 0 ] || seg="$seg #[fg=colour114]✓ $d#[default]"
     [ "$ex" -eq 0 ] || seg="$seg #[fg=colour240]✗ $ex#[default]"
     out="${out:+$out #[fg=colour240]·#[default] }$seg"
@@ -352,6 +356,7 @@ EOF
     perm) icon="⚠" ;;
     needs) icon="◆" ;;
     work) icon="$spin" ;;
+    idle) icon="○" ;;
     done) icon="✓" ;;
     exited) icon="✗" ;;
     *) icon="◦" ;;
@@ -361,6 +366,8 @@ EOF
     if [ "${states[i]}" = perm ]; then style="fg=white,bg=red,bold"; else style="fg=black,bg=colour214,bold"; fi
     [ $((now - ${sinces[i]})) -lt "${TMUX_AGENTS_BLINK_SECS:-60}" ] || style="$style,blink"
     focus="#[$style] $focus #[default]"
+  elif [ "${states[i]}" = idle ]; then
+    focus="#[fg=colour244]$focus#[default]"
   else
     focus="#[fg=colour252]$focus#[default]"
   fi
