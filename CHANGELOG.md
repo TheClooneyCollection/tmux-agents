@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.6.1 (2026-10-03)
 
 - The skills tell agents to reply as soon as a request's main work is done and send follow-ups (a deploy, a page going live) as notices.
 
