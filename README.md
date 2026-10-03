@@ -103,9 +103,11 @@ Or let your agent show you: say "tmux-agents quick start".
 | --- | --- |
 | `prefix + a` | The agent list, with a live preview |
 | `prefix + A` | Connect this pane to another one (`ctrl-a`: any window) |
-| `prefix + d` | In a popup: back to the list. In the list: close it |
+| `prefix + d` | In a popup: back to the list. The list opens on this window and its descendants, with sub agents needing you pinned from every window.
 
-In the list: `enter` open · `ctrl-o` jump there · `ctrl-x` dismiss · `ctrl-d` close all finished · `ctrl-a` all panes / sub agents
+In the list: close it |
+
+In the list: `enter` open · `ctrl-o` jump there · `ctrl-x` dismiss · `ctrl-d` close all finished · `ctrl-a` all panes / sub agents · `ctrl-t` this window / all windows
 
 Closed sub agents stay in a `closed` section at the bottom for 7 days: `enter` reopens one with its whole conversation. Or ask its parent to reopen it.
 
