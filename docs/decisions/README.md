@@ -6,6 +6,7 @@ Each file: the context, the decision, why, and what was rejected. Name new ones 
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-03 | [A sub agent with no task yet shows as idle](2026-10-03-idle-state.md) |
 | 2026-10-03 | [An agent can close any of its descendants](2026-10-03-dismiss-descendants.md) |
 | 2026-10-03 | [Closing an agent closes its sub agents too](2026-10-03-dismiss-closes-subtree.md) |
 | 2026-10-03 | [--keep-children leaves the children unowned](2026-10-03-keep-children-unowned.md) |
