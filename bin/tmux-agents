@@ -55,6 +55,22 @@ window_members() {
 }
 in_list_window() { case " $list_members " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
+# A hidden pane's useful location is its first visible ancestor's window.
+# Splits already have that location. Keep the original if the chain is broken
+# or entirely hidden; guard cycles in stale parent links too.
+attention_window() {
+  tmux list-panes -a -F '#{pane_id}	#{?@parent,#{@parent},-}	#{session_name}	#{session_name}:#{window_index}' | awk -F '\t' \
+    -v pane="$1" -v fallback="$2" -v prefix="$AGENTS_PREFIX-" '
+    { parent[$1]=$2; session[$1]=$3; location[$1]=$4 }
+    END {
+      while ((pane in parent) && !seen[pane]++) {
+        if (index(session[pane], prefix) != 1) { print location[pane]; exit }
+        pane=parent[pane]
+      }
+      print fallback
+    }'
+}
+
 # Sub agents that were closed in the last TMUX_AGENTS_RESUME_DAYS (default
 # 7) and can be reopened, as list_agents rows: rank, section, "closed:NAME",
 # name, status, parent, "project · closed 5m ago". Newest first; older
@@ -130,6 +146,7 @@ list_agents() {
         [[ $since =~ ^[0-9]+$ ]] || since="$(date +%s)"
         rank=$((since - 20000000000))
         [ "$activity" != - ] || activity='no report yet'
+        location="$(attention_window "$id" "$location")"
         activity="$location · $project · $activity"
         project='needs you'
       elif [ "$list_scope" != all ] && ! in_list_window "$id"; then

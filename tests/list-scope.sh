@@ -27,7 +27,7 @@ empty="$(tmux new-window -d -t work:2 -c "$tmp" -P -F '#{pane_id}' cat)"
 hidden="$(tmux new-session -d -s agents-project-a -c "$tmp" -P -F '#{pane_id}' cat)"; agent "$hidden" hidden-a %0
 grand="$(tmux new-window -d -t agents-project-a -c "$tmp" -P -F '#{pane_id}' cat)"; agent "$grand" grand-a "$hidden"
 other="$(tmux new-session -d -s agents-project-b -c "$tmp" -P -F '#{pane_id}' cat)"; agent "$other" hidden-b "$main_b"
-need="$(tmux new-window -d -t agents-project-b -c "$tmp" -P -F '#{pane_id}' cat)"; agent "$need" needs-b "$main_b"
+need="$(tmux new-window -d -t agents-project-b -c "$tmp" -P -F '#{pane_id}' cat)"; agent "$need" needs-b "$other"
 perm="$(tmux new-window -d -t agents-project-b -c "$tmp" -P -F '#{pane_id}' cat)"; agent "$perm" permission-b "$main_b"
 now="$(date +%s)"
 tmux set -p -t "$need" @state needs_you; tmux set -p -t "$need" @attention_since "$((now-300))"
@@ -53,9 +53,27 @@ check 'other-window permission is pinned' has "$tmp/local" "$perm"
 check 'pinned section appears first' test "$(awk '/^%/ {print $1; exit}' "$tmp/local")" = "$need"
 check 'waiting time wins over permission severity' test "$(awk '/^%/ {n++; if(n==2) {print $1; exit}}' "$tmp/local")" = "$perm"
 check 'pinned heading present' grep -q '▸ needs you' "$tmp/local"
-location="$(tmux display-message -p -t "$need" '#{session_name}:#{window_index}')"
-check 'pinned detail includes window, project and activity' grep -q "$location · project-b · waiting for a decision" "$tmp/local"
+location="$(tmux display-message -p -t "$main_b" '#{session_name}:#{window_index}')"
+check 'hidden grandchild shows visible ancestor window, project and activity' grep -q "$location · project-b · waiting for a decision" "$tmp/local"
 check 'pinned agent appears only once' test "$(grep -c "^$need " "$tmp/local")" = 1
+# Visible splits use their own window, even with a parent elsewhere.
+tmux set -p -t "$split" @state needs_you; tmux set -p -t "$split" @activity split-wait
+tmux set -p -t "$split" @parent "$main_b"
+list 'agents · this window> ' "$tmp/split-pin"
+split_location="$(tmux display-message -p -t "$split" '#{session_name}:#{window_index}')"
+check 'pinned split uses its own visible window' grep -q "$split_location · .* · split-wait" "$tmp/split-pin"
+tmux set -pu -t "$split" @state; tmux set -p -t "$split" @parent %0
+own_location="$(tmux display-message -p -t "$need" '#{session_name}:#{window_index}')"
+tmux set -p -t "$other" @parent %999999
+list 'agents · this window> ' "$tmp/broken-pin"
+check 'missing visible ancestor falls back to own window' grep -q "$own_location · project-b · waiting for a decision" "$tmp/broken-pin"
+tmux set -pu -t "$other" @parent
+list 'agents · this window> ' "$tmp/hidden-pin"
+check 'entirely hidden ancestry falls back to own window' grep -q "$own_location · project-b · waiting for a decision" "$tmp/hidden-pin"
+tmux set -p -t "$other" @parent "$need"
+list 'agents · this window> ' "$tmp/cycle-pin"
+check 'hidden parent cycle falls back to own window' grep -q "$own_location · project-b · waiting for a decision" "$tmp/cycle-pin"
+tmux set -p -t "$other" @parent "$main_b"
 list 'agents · all windows> ' "$tmp/all"
 check 'all windows includes other sub agent' has "$tmp/all" "$other"
 check 'all windows still pins first' test "$(awk '/^%/ {print $1; exit}' "$tmp/all")" = "$need"
