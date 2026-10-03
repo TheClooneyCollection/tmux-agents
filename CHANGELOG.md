@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.6.0 (2026-10-03)
 
 - **Idle agents.** Agents spawned without a task show grey `○ idle` in the list and chip until a request or progress report starts work.
 - **Closed descendants in this window.** Closed agents follow their recorded ancestry through closed parents to a live ancestor, keeping the whole closed chain discoverable in its window.
