@@ -22,8 +22,9 @@ Codex sub agents get no hooks: they run with auto_review, so their
 permission requests go to a review model, never to the user. When one
 does need the user, it ends its turn without replying. --turn-end
 catches that: a sub agent that ends a turn neither done nor waiting on
-its own sub agents or requests is marked needs_you. Codex reports turn
-ends through notify, whose JSON names the agent in its first message
+its own sub agents, requests, or its parent after a notice is marked
+needs_you. Codex reports turn ends through notify, whose JSON names the
+agent in its first message
 ("[request from X to NAME via tmux-ask]"); the thread id is stored on
 NAME's pane (@codex_thread) for later turns.
 USAGE
@@ -84,13 +85,14 @@ turn_end() {
     if [ -n "$(find_pane "$n")" ]; then live="$live $n"; else remove_word "$p" @awaiting "$n"; fi
   done
   who="$(printf '%s %s\n' "$kids" "$live" | tr ' ' '\n' | awk 'NF && !seen[$0]++' | tr '\n' ' ' | sed 's/ $//')"
-  # Waiting on its own background work: reported with --waiting, or (for
-  # Claude) Bash commands still running when the turn ended.
+  # Waiting after a notice to its parent, or on its own background work:
+  # reported with --waiting, or (for Claude) Bash commands still running
+  # when the turn ended.
   waiting_on="$(tmux show-options -pqv -t "$p" @waiting_on)"
   if [ -z "$waiting_on" ] && [ "$(claude_background "$p")" -gt 0 ]; then
     waiting_on="background command"
   fi
-  # Names are single words; the background work is a phrase, added last.
+  # Names are single words; the waiting reason is a phrase, added last.
   who="$(printf '%s' "$who" | sed 's/ /, /g')"
   [ -z "$waiting_on" ] || who="${who:+$who, }$waiting_on"
   if [ -n "$who" ]; then
