@@ -71,14 +71,40 @@ attention_window() {
     }'
 }
 
+# Closed ancestors have names in session records rather than live pane ids.
+# Stop at the first live ancestor, then use the same visible owner as pins.
+closed_record_window() {
+  local name="$1" pane location seen=$'\n'
+  while [ -n "$name" ]; do
+    case "$seen" in *$'\n'"$name"$'\n'*) return 0 ;; esac
+    seen="$seen$name"$'\n'
+    pane="$(find_pane "$name")"
+    if [ -n "$pane" ]; then
+      location="$(tmux display-message -p -t "$pane" '#{session_name}:#{window_index}')"
+      location="$(attention_window "$pane" "$location")"
+      tmux display-message -p -t "$location" '#{window_id}'
+      return 0
+    fi
+    name="$(record_get "$name" parent)"
+  done
+}
+
 # Sub agents that were closed in the last TMUX_AGENTS_RESUME_DAYS (default
 # 7) and can be reopened, as list_agents rows: rank, section, "closed:NAME",
 # name, status, parent, "project · closed 5m ago". Newest first; older
 # records are deleted. A record whose name has a live pane isn't closed.
 closed_agents() {
-  local dir now keep f name id at age section parent_pane n=0 rows="" tab nl=$'\n'
+  local dir now keep f name id at age section owner_window window n=0 rows="" tab nl=$'\n'
   dir="$(sessions_dir)"
   [ -d "$dir" ] || return 0
+  if [ "${list_scope:-all}" != all ]; then
+    if [ -n "${1:-}" ]; then
+      window="$(tmux list-clients -F '#{client_name} #{window_id}' | awk -v c="$1" '$1 == c {print $2; exit}')"
+    else
+      window="$(tmux display-message -p ${TMUX_PANE:+-t "$TMUX_PANE"} '#{window_id}')"
+    fi
+    [ -n "$window" ] || return 0
+  fi
   tab="$(printf '\t')"
   now="$(date +%s)" keep=$(( ${TMUX_AGENTS_RESUME_DAYS:-7} * 86400 ))
   for f in "$dir"/*; do
@@ -89,8 +115,8 @@ closed_agents() {
     if [ $((now - at)) -gt "$keep" ]; then rm -f "$f"; continue; fi
     [ -z "$(find_pane "$name")" ] || continue
     if [ "${list_scope:-all}" != all ]; then
-      parent_pane="$(find_pane "$(record_get "$name" parent)")"
-      [ -n "$parent_pane" ] && in_list_window "$parent_pane" || continue
+      owner_window="$(closed_record_window "$(record_get "$name" parent)")"
+      [ -n "$owner_window" ] && [ "$owner_window" = "$window" ] || continue
     fi
     id="$(record_get "$name" id)"
     [ -n "$id" ] || continue
@@ -153,7 +179,7 @@ list_agents() {
         continue
       fi
       printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$rank" "$project" "$id" "$name" "$status" "${pname:--}" "$activity"
-    done | { cat; closed_agents; } | awk -F '\t' '{ r[NR] = $0; if (!($2 in best) || $1 < best[$2]) best[$2] = $1; p[NR] = $2 }
+    done | { cat; closed_agents "${3:-}"; } | awk -F '\t' '{ r[NR] = $0; if (!($2 in best) || $1 < best[$2]) best[$2] = $1; p[NR] = $2 }
       END { for (i = 1; i <= NR; i++) print best[p[i]] "\t" r[i] }' \
     | sort -t "$tab" -k1,1n -k3,3 -k2,2n -s | cut -f3-)"
   # Align NAME STATUS PARENT, then add each entry's id, section and activity.
