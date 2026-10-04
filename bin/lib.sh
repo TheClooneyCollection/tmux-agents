@@ -492,7 +492,7 @@ _migrate_agent_ids_locked() {
   root="${1:-/tmp/tmux-agents-$(id -u)/queue}"
   sock="${TMUX:-default}"; sock="${sock%%,*}"; sock="${sock##*/}"
   mkdir -p "$dir" || return 1
-  perl -MFile::Temp=tempfile -MJSON::PP -e '
+  perl -MFile::Temp=tempfile,tempdir -MFile::Copy=copy -MJSON::PP -e '
     use strict; use warnings;
     my ($dir, $root, $sock) = @ARGV;
     sub read_file {
@@ -531,6 +531,18 @@ _migrate_agent_ids_locked() {
     close($ph) or die "tmux snapshot failed";
     opendir(my $dh, $dir) or die "$dir: $!";
     my @files = sort grep { !/^\./ && -f "$dir/$_" } readdir($dh); closedir($dh);
+    # Publish a complete, permanent snapshot before any migration writes.
+    # A killed copy leaves only a staging directory; retry copies the still
+    # untouched records afresh. Never replace an already published backup.
+    my $backup = "$dir/.pre-ids-v1";
+    if (!-d $backup) {
+      die "migration journal exists without original backup: $dir" if -e "$dir/.ids-journal";
+      my $stage = tempdir(".pre-ids-v1.XXXXXX", DIR => $dir, CLEANUP => 0);
+      for my $file (@files) {
+        copy("$dir/$file", "$stage/$file") or die "backup $file: $!";
+      }
+      rename($stage, $backup) or die "publish backup $backup: $!";
+    }
     $used{$_} = 1 for @files;
     sub fresh_id {
       while (1) {
@@ -595,22 +607,17 @@ _migrate_agent_ids_locked() {
         tmux_set($p, "\@$opt", join(" ", @ids));
       }
     }
-    # Per-server queued AND undelivered metadata, plus legacy flat files.
-    # Legacy files with explicit foreign server attribution are untouched.
+    # Flat legacy metadata has no reliable server owner. Never inspect it.
+    # Only metadata queued or undelivered on this server may be migrated.
     my @meta;
-    for my $q ("$root/$sock", $root) {
-      next unless -d $q; opendir(my $qh, $q) or die "$q: $!";
-      push @meta, map { "$q/$_" } grep { /\.meta$/ && -f "$q/$_" } readdir($qh);
+    my $q = "$root/$sock";
+    if (-d $q) {
+      opendir(my $qh, $q) or die "$q: $!";
+      @meta = map { "$q/$_" } grep { /\.meta$/ && -f "$q/$_" } readdir($qh);
       closedir($qh);
     }
     for my $f (@meta) {
       my $text = read_file($f); my $v = fields($text); my %updates;
-      if ($f !~ m{^\Q$root/$sock/\E}) {
-        my $server = $v->{socket} // $v->{server} // "";
-        $server =~ s{.*/}{}; next if length($server) && $server ne $sock;
-        # At least one endpoint must belong to this server.
-        next unless exists $names->{$v->{from_name}//""} || exists $names->{$v->{to_name}//""};
-      }
       for my $side (qw(from to)) {
         next if length($v->{"${side}_id"}//"");
         my $id = $names->{$v->{"${side}_name"}//""};

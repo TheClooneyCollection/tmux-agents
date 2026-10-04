@@ -5,8 +5,14 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 state="$(mktemp -d "${TMPDIR:-/tmp}/agent-ids.XXXXXX")"
 sock="agent-ids-test-$$"
+other_sock="agent-ids-other-test-$$"
 unset TMUX TMUX_PANE CLAUDECODE TMUX_AGENTS_PINNED
-cleanup() { tmux -L "$sock" kill-server 2>/dev/null || true; rm -rf "$state"; }
+. "$here/tests/helpers/cleanup.sh"
+cleanup() {
+  cleanup_test_server || return
+  cleanup_test_server "$other_sock" || return
+  rm -rf "$state"
+}
 trap cleanup EXIT
 tmux -L "$sock" -f /dev/null new-session -d -s test 'exec /bin/sh'
 tmux -L "$sock" has-session || exit 1
@@ -42,6 +48,44 @@ printf 'undelivered body\n' > "$q/$sock/2.undelivered"
 printf 'from_name=live\nto_name=parent\n' > "$q/3.meta"
 printf 'from_name=live\nto_name=parent\nserver=foreign\n' > "$q/4.meta"
 printf 'from_name=live\nto_name=parent\n' > "$q/foreign/5.meta"
+printf 'from_name=live\nto_name=parent\nsocket=%s\n' "$socket" > "$q/6.meta"
+printf 'from_name=live\nto_name=parent\nsocket=%s\n' "$other_sock" > "$q/7.meta"
+mkdir "$state/flat-originals" "$state/original-records"
+cp "$q"/*.meta "$state/flat-originals/"
+cp "$d"/* "$state/original-records/"
+# Directories are never copied recursively, including leftover partial stages.
+mkdir -p "$d/nested" "$d/.pre-ids-v1.interrupted"
+printf 'not a record\n' > "$d/nested/child"
+printf 'partial copy\n' > "$d/.pre-ids-v1.interrupted/live"
+# Interrupt backup publication after copying. No journal, records, pane
+# options or queue metadata may have changed when the backup is incomplete.
+mkdir -p "$state/perl"
+cat > "$state/perl/InterruptBackup.pm" <<'PERL'
+package InterruptBackup;
+BEGIN {
+  *CORE::GLOBAL::rename = sub {
+    die "injected backup interruption\n" if $_[1] =~ m{/\.pre-ids-v1$};
+    CORE::rename($_[0], $_[1]);
+  };
+}
+1;
+PERL
+if PERL5LIB="$state/perl" PERL5OPT=-MInterruptBackup ensure_agent_ids "$q"; then
+  echo 'expected backup interruption' >&2; exit 1
+fi
+check test ! -e "$d/.pre-ids-v1"
+check test ! -e "$d/.ids-journal"
+for f in "$state/original-records"/*; do check cmp "$f" "$d/${f##*/}"; done
+check test -z "$(pane_agent_id %0)"
+check test "$(tmux show-options -pqv -t %0 @awaiting)" = 'child parent'
+for f in "$state/flat-originals"/*; do check cmp "$f" "$q/${f##*/}"; done
+check test "$(wc -l < "$q/$sock/1.meta" | tr -d ' ')" = 3
+# Never label a possibly partial old migration as an original backup.
+printf '{}\n' > "$d/.ids-journal"
+if ensure_agent_ids "$q"; then echo 'accepted journal without backup' >&2; exit 1; fi
+check test ! -e "$d/.pre-ids-v1"
+for f in "$state/original-records"/*; do check cmp "$f" "$d/${f##*/}"; done
+rm "$d/.ids-journal"
 # Simulate death after replacements and before final marker. A tmux shim
 # fails on the first option write; subsequent replay must reuse the journal.
 real_tmux="$(command -v tmux)"
@@ -61,6 +105,7 @@ printf '0\n' > "$FAIL_ID_MIGRATION"
 if PATH="$state/bin:$PATH" ensure_agent_ids "$q"; then echo 'expected injected failure' >&2; exit 1; fi
 check test ! -f "$d/.ids-v1"
 check test -f "$d/.ids-journal"
+check diff -r "$state/original-records" "$d/.pre-ids-v1"
 parent_id="$(record_ids_by_name parent)"
 child_id="$(record_ids_by_name child)"
 shape_id="$(record_ids_by_name a111111111111)"
@@ -97,7 +142,8 @@ check test "$(closed_names %0)" = "$parent_id $child_id $shape_id"
 check grep -qx "from_id=$live_id" "$q/$sock/1.meta"
 check grep -qx "to_id=$child_id" "$q/$sock/1.meta"
 check grep -qx "from_id=$parent_id" "$q/$sock/2.meta"
-check grep -qx "to_id=$parent_id" "$q/3.meta"
+for f in "$state/flat-originals"/*; do check cmp "$f" "$q/${f##*/}"; done
+check diff -r "$state/original-records" "$d/.pre-ids-v1"
 check test "$(wc -l < "$q/4.meta" | tr -d ' ')" = 3
 check test "$(wc -l < "$q/foreign/5.meta" | tr -d ' ')" = 2
 check grep -qx 'body stays untouched' "$q/$sock/1.msg"
@@ -108,6 +154,25 @@ cp -R "$q" "$state/before-queue"
 ( tmux() { return 99; }; agent_identity_lock() { return 98; }; ensure_agent_ids "$q" )
 check diff -r "$state/before-records" "$d"
 check diff -r "$state/before-queue" "$q"
+# A second server with matching names must also leave every flat file intact,
+# even files explicitly attributed to either server.
+tmux -L "$other_sock" -f /dev/null new-session -d -s test 'exec /bin/sh'
+tmux -L "$other_sock" has-session || exit 1
+other_socket="$(tmux -L "$other_sock" display-message -p '#{socket_path}')"
+case "$other_socket" in ''|*/default) echo 'unsafe second socket' >&2; exit 1 ;; esac
+(
+  export TMUX="$other_socket,1,0"
+  tmux set-option -g default-shell /bin/sh
+  tmux set-option -p -t %0 @agent live
+  other_dir="$(sessions_dir)"
+  mkdir -p "$other_dir" "$q/$other_sock"
+  printf 'id=other-parent-conversation\n' > "$other_dir/parent"
+  printf 'from_name=live\nto_name=parent\n' > "$q/$other_sock/1.meta"
+  ensure_agent_ids "$q"
+  check grep -q '^to_id=a' "$q/$other_sock/1.meta"
+)
+for f in "$state/flat-originals"/*; do check cmp "$f" "$q/${f##*/}"; done
+check diff -r "$state/original-records" "$d/.pre-ids-v1"
 # Renames change only the live label and own record, preserving all refs.
 _rename_agent_locked %0 renamed >/dev/null
 check test "$(pane_agent_id %0)" = "$live_id"
