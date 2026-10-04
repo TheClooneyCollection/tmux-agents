@@ -2,6 +2,33 @@
 
 The details behind the [README](../README.md). Design notes and pitfalls are in [DESIGN.md](../DESIGN.md).
 
+## Configuration
+
+Set user preferences in `tmux.conf`, or change them live with `tmux set -g`. Environment overrides win over options, then the defaults below apply. For given names, `--exact` takes priority over both. Use the full name printed by `tmux-spawn` or `tmux-rename`.
+
+```tmux
+set -g @tmux_agents_name_format exact
+```
+
+| Option | Environment override | Default | What it does |
+| --- | --- | --- | --- |
+| `@tmux_agents_name_format` | `TMUX_AGENTS_NAME_FORMAT` | `prefixed` | Given-name format: `exact` or `prefixed` |
+| `@tmux_agents_max_depth` | `TMUX_AGENTS_MAX_DEPTH` | `2` | Maximum sub agent depth |
+| `@tmux_agents_codex_homes` | `TMUX_AGENTS_CODEX_HOMES` | `none` | Extra accounts as `PROFILE=CODEX_HOME` pairs |
+| `@tmux_agents_session_prefix` | `TMUX_AGENTS_PREFIX` | `agents` | Hidden session name prefix |
+| `@tmux_agents_resume_days` | `TMUX_AGENTS_RESUME_DAYS` | `7` | Days to retain closed agents in the list |
+| `@tmux_agents_preview_secs` | `TMUX_AGENTS_PREVIEW_SECS` | `0.5` | Seconds between preview refreshes |
+| `@tmux_agents_blink_secs` | `TMUX_AGENTS_BLINK_SECS` | `60` | Seconds before attention starts blinking |
+| `@tmux_agents_chip_fps` | none | `10` | Chip animation frames per second |
+| `@tmux_agents_ask_idle_secs` | `TMUX_ASK_IDLE_SECS` | `8` | Seconds without keys before delivery |
+| `@tmux_agents_ask_copy_idle_secs` | `TMUX_ASK_COPY_IDLE_SECS` | `300` | Exit idle copy mode after this many seconds; `0` disables |
+| `@tmux_agents_ask_queue_secs` | `TMUX_ASK_QUEUE_SECS` | `1800` | Seconds before showing message waiting; messages stay queued |
+| `@tmux_agents_ask_max_lines` | `TMUX_ASK_MAX_LINES` | `60` | Save longer messages to a file |
+| `@tmux_agents_ask_enter_delay` | `TMUX_ASK_ENTER_DELAY` | `0.5` | Seconds between paste and Enter |
+| `@tmux_agents_connect_highlight` | `TMUX_CONNECT_HIGHLIGHT` | `bg=colour24` | Style of the highlighted connection target |
+
+`TMUX_AGENTS_CODEX_HOMES` also keeps its tmux global-environment fallback when neither a local override nor the option is set. Settings are read once per command; restart an existing picker or chip daemon to apply changes to its cached settings. Set overrides after sourcing `tmux-agents.conf`, which installs the chip FPS default. Internal pane state and test hooks are not user settings.
+
 ## Connecting agents
 
 1. Open a pane and start `claude`.
@@ -23,17 +50,24 @@ Connected panes show `name ⇄ peers` on their top border, e.g. `claude ⇄ code
 
 Suggested names are `<command>-<dir>-<N>`: `claude-project-xyz-1`, `claude-~-1` in home, then `-2`, `-3`... Both panes are named in one form: ↑/↓ to switch, type to edit, Enter to accept.
 
+## Renaming agents
+
+Use `tmux-rename <agent> <new>` to rename a live agent. For example, `tmux-rename codex-~-1 main` produces `codex-~-main`; a matching prefix is kept, and `--exact` keeps the supplied name verbatim. Agents pass `--from ME` and may rename themselves or descendants, never peers or ancestors. The user may rename any agent without `--from`.
+
+Renaming updates saved session records, recorded parents, waiting/closed lists, queued message identities and border labels. Live parent and peer links use pane ids and stay intact. The renamed agent and its peers receive notices, queued when busy. Use the new name in later commands, including `--from`; the old name has no alias. Names already in use or reserved by a saved session record are refused. `tmux-connect --as NEW` on a named pane performs the same migration but keeps its existing verbatim-name behaviour.
+
 ## Sub agents
 
 Agents start sub agents with `tmux-spawn` instead of their built-in ones, so every sub agent has a real pane with its full history.
 
 ```
 claude:  tmux-spawn --name auth-review "review src/auth.ts"
-         → new hidden window "auth-review" in session agents-<project>
+         → new hidden window "claude-<dir>-auth-review" in session agents-<project>
          → starts claude with the task, connected to the caller
-auth-review:  ...works, then tmux-ask --reply back to the caller
+claude-<dir>-auth-review:  ...works, then tmux-ask --reply back to the caller
 ```
 
+- **Names.** `--name auth-review` becomes `<kind>-<dir>-auth-review`, using the new agent's kind (`claude` or `codex`, including Codex profiles) and directory (`~` for home). An existing matching prefix is kept; clashes get `-2`, `-3`... Use the name the command prints, including any suffix. Given names use letters, digits, `.`, `_`, `~` and `-`; invalid names are refused. `--exact` keeps a given name verbatim; see [Configuration](#configuration) for a standing preference.
 - **Hidden by default.** Each project gets its own session (`agents-api`, `agents-blog`), one window per sub agent. Nothing is added to your layout.
 - **Easy to check.** `prefix + a` opens `tmux-agents`: your sub agents with status, parent, project, what they're doing now, and a preview that refreshes twice a second. Statuses use the chip's colours (red `⚠ permission`, amber `◆ needs you`, `⠿ working`, green `✓ done`, grey `✗ exited`), and the ones that need you sort to the top. The keys are shown in a footer.
   - `enter`: open a hidden agent in a popup, where you can approve prompts. `prefix + d` takes you back to the list, on the same agent. Visible panes are jumped to instead.
@@ -55,15 +89,16 @@ auth-review:  ...works, then tmux-ask --reply back to the caller
 - **Alerts.** When a hidden agent rings the bell (e.g. waiting for approval), your status line says `agent <name> needs you`.
 - **History is kept** until someone closes it. Panes stay after the agent exits. The parent closes its sub agents once it has what it needs (`tmux-dismiss --from`, any descendant); you can close any of them. Closing removes the whole subtree deepest first and lists every closed agent, retaining each session record. `--keep-children` closes only the target and leaves its direct children unowned. `--done` skips a subtree if any member is still working or waiting.
 - **Parents learn about your closes.** When you close a sub agent, its parent isn't interrupted. Its `tmux-peers` lists it under `closed by user`, and a later `tmux-ask` says it was closed instead of failing with "no pane".
-- **Reopening.** A closed sub agent can come back with its whole conversation for 7 days (`TMUX_AGENTS_RESUME_DAYS`). In the list they sit in a `closed` section at the bottom, newest first: `enter` reopens one connected to its old parent and opens it, `ctrl-o` reopens and jumps there, `ctrl-x` forgets it. Or ask the parent ("reopen auth-review"), which runs `tmux-spawn --resume auth-review`. A Codex sub agent can be reopened once it has finished a turn; that's when Codex reports its session id.
+- **Reopening.** A closed sub agent can come back with its whole conversation for 7 days (`TMUX_AGENTS_RESUME_DAYS`). In the list they sit in a `closed` section at the bottom, newest first: `enter` reopens one connected to its old parent and opens it, `ctrl-o` reopens and jumps there, `ctrl-x` forgets it. Or ask the parent ("reopen auth-review"), which runs `tmux-spawn --resume <full-name>` using the name from the list. A Codex sub agent can be reopened once it has finished a turn; that's when Codex reports its session id.
 - **Same kind by default, in auto mode.** Claude spawns Claude, Codex spawns Codex, and a Codex on another account spawns on that account. Sub agents start with Claude's `--permission-mode auto` or Codex's `approvals_reviewer="auto_review"`.
 - **Depth limit.** At most two levels of sub agents (`TMUX_AGENTS_MAX_DEPTH`).
 - **Visible layout.** When you want sub agents in the same window, use `--split <name-or-pane-id>`: `--right` (default) places the new pane to the right, `--below` beneath it, and `--size N%` sets its share (default 50%). Splits stay detached, use the caller's directory, and keep the same ownership, depth, records and status chip. Enter in the agent list jumps to a visible split; `tmux-dismiss` closes its pane and descendant panes, leaving unrelated panes intact. Without `--split`, sub agents open hidden as before.
 
-  For a chain with main left, secondary top right and worker bottom right (use the actual assigned names):
+  For a chain with main left, secondary top right and worker bottom right (set `main` to the existing main agent's full name):
   ```sh
-  tmux-spawn claude --from main --split main --right --name secondary "coordinate the work"
-  tmux-spawn codex-2nd --from main --for secondary --split secondary --below --name worker "implement the task"
+  tmux-spawn claude --from "$main" --split "$main" --right --name secondary "coordinate the work"
+  # Set secondary to the full name printed above before running this:
+  tmux-spawn codex-2nd --from "$main" --for "$secondary" --split "$secondary" --below --name worker "implement the task"
   ```
 
   `--right`, `--below` and `--size` require `--split`. A closed split always reopens in a hidden window with `--resume`; move that pane into your layout if wanted.
@@ -74,11 +109,12 @@ auth-review:  ...works, then tmux-ask --reply back to the caller
 | Command | What it does |
 | --- | --- |
 | `tmux-connect [target] [--as NAME] [--all]`, `tmux-connect --from ME codex\|claude\|NAME` | Name this pane and link it to `target` (name, `%id`, or `1.0`). No target opens a picker of panes in this window (`--all`: every window); the pane under the cursor is tinted. Unnamed panes get asked for a name. With `--from` (agents) it never prompts: `codex`/`claude` picks that agent's pane in this window, and names are generated. |
+| `tmux-rename [--from ME] <agent> <new> [--exact]` | Rename an agent and its references. With `--from`, yourself or descendants only. |
 | `tmux-disconnect [name]` | Unlink from `name`, or from everyone. |
 | `tmux-peers` | Show this pane's name and its connections. |
 | `tmux-ask [--from ME] [--any] <name> [--reply] [msg]` | Paste a message into a connected pane and submit it. Reads stdin if no `msg`. `--any` sends to any named pane, connected or not. |
 | `tmux-peek <name> [lines]` | Print the last lines (default 40) of a connected pane. |
-| `tmux-spawn [claude\|codex\|PROFILE] [--name NAME] [task]` | Start a connected sub agent hidden, or visibly with `--split NAME`, and send it the task (or stdin). Taken names get `-2`, `-3`... |
+| `tmux-spawn [claude\|codex\|PROFILE] [--name NAME] [--exact] [task]` | Start a connected sub agent hidden, or visibly with `--split NAME`, and send it the task (or stdin). Given names get the kind-directory prefix unless `--exact`; taken names get `-2`, `-3`... |
 | `tmux-agent-report [--from ME] "text"` | Report what a sub agent is doing, for the chip. |
 | `tmux-agents` | Browse this window's sub agents; `ctrl-a` selects every named pane, `ctrl-t` selects all windows (`prefix + a`). |
 | `tmux-dismiss [--from ME] <name>` | Close an agent and its subtree. With `--from`, descendants only. `--keep-children` retains direct children as unowned. `--done` closes only wholly done/exited subtrees after a y/N. |

@@ -78,7 +78,7 @@ cd tmux-agents
 <summary>每一项是做什么的</summary>
 
 - **tmux：** `prefix + a`（agent 列表）、`prefix + A`（连接）、子 agent 状态行，以及刷新边框、响铃提醒和发送排队消息的 hooks。如果命令没有链接到 `~/.local/bin`，在 `source-file` 那行之前加上 `%hidden TMUX_AGENTS_BIN="/那个/目录"`。
-- **Claude：** agent 发消息、查看、spawn、报告进度、关闭自己的子 agent 时都不用再弹确认。`tmux-connect`（不带 `--from`）、`tmux-disconnect` 和不带参数的 `tmux-dismiss` 仍然由你来操作，照样会询问。
+- **Claude：** agent 发消息、查看、spawn、报告进度、给自己或后代改名、关闭自己的子 agent 时都不用再弹确认。`tmux-connect`（不带 `--from`）、`tmux-disconnect`、不带参数的 `tmux-dismiss` 和不带 `--from` 的 `tmux-rename` 仍然由你来操作，照样会询问。
 - **Codex：** Codex 在一个共享的后台进程里执行命令，里面的 `$TMUX_PANE` 可能属于别的 pane，所以要靠 wrapper 把每个 Codex 固定到它自己的 pane（见 DESIGN.md）。fish 用户把函数复制到 `~/.config/fish/functions/`；bash/zsh 用户在 `~/.bashrc` 或 `~/.zshrc` 里 `source` 那个 sh 文件。
 - **可选：** 在 `CLAUDE.md` / `AGENTS.md` 里告诉 agent 所有子 agent 都用 `tmux-spawn` 开。skill 里有具体说明。
 
@@ -98,6 +98,33 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 ```
 
 如果这里要几百毫秒，每次按 `prefix + a` 都要多等这么久（列表本身会先画出提示符，紧接着加载条目）。解决方法见 [docs/performance.md](docs/performance.md)，或者让你的 agent "查一下 tmux-agents 为什么慢"（`tmux-agents-perf` skill）。
+
+## 配置
+
+在 `tmux.conf` 中设置偏好，也可以用 `tmux set -g` 实时修改。环境变量优先于 option，再使用下表的默认值。给定名字的 `--exact` 优先级最高。后续使用 `tmux-spawn` 或 `tmux-rename` 输出的完整名字。
+
+```tmux
+set -g @tmux_agents_name_format exact
+```
+
+| Option | 环境变量覆盖 | 默认值 | 用途 |
+| --- | --- | --- | --- |
+| `@tmux_agents_name_format` | `TMUX_AGENTS_NAME_FORMAT` | `prefixed` | 给定名字格式：`exact` 或 `prefixed` |
+| `@tmux_agents_max_depth` | `TMUX_AGENTS_MAX_DEPTH` | `2` | 子 agent 最大层数 |
+| `@tmux_agents_codex_homes` | `TMUX_AGENTS_CODEX_HOMES` | `none` | 额外账户，格式为 `PROFILE=CODEX_HOME` |
+| `@tmux_agents_session_prefix` | `TMUX_AGENTS_PREFIX` | `agents` | 隐藏 session 名称前缀 |
+| `@tmux_agents_resume_days` | `TMUX_AGENTS_RESUME_DAYS` | `7` | 列表保留已关闭 agent 的天数 |
+| `@tmux_agents_preview_secs` | `TMUX_AGENTS_PREVIEW_SECS` | `0.5` | 预览刷新间隔，单位秒 |
+| `@tmux_agents_blink_secs` | `TMUX_AGENTS_BLINK_SECS` | `60` | 需要关注多久后开始闪烁，单位秒 |
+| `@tmux_agents_chip_fps` | 无 | `10` | chip 动画帧率 |
+| `@tmux_agents_ask_idle_secs` | `TMUX_ASK_IDLE_SECS` | `8` | 无按键多久后可投递，单位秒 |
+| `@tmux_agents_ask_copy_idle_secs` | `TMUX_ASK_COPY_IDLE_SECS` | `300` | 复制模式空闲多久后自动退出，单位秒；`0` 禁用 |
+| `@tmux_agents_ask_queue_secs` | `TMUX_ASK_QUEUE_SECS` | `1800` | 排队多久后显示消息等待，单位秒；消息继续保留 |
+| `@tmux_agents_ask_max_lines` | `TMUX_ASK_MAX_LINES` | `60` | 超过此行数的长消息保存为文件 |
+| `@tmux_agents_ask_enter_delay` | `TMUX_ASK_ENTER_DELAY` | `0.5` | 粘贴到按 Enter 的间隔，单位秒 |
+| `@tmux_agents_connect_highlight` | `TMUX_CONNECT_HIGHLIGHT` | `bg=colour24` | 连接选择器中目标 pane 的高亮样式 |
+
+`TMUX_AGENTS_CODEX_HOMES` 仍在本地覆盖和 option 均未设置时回退到 tmux 全局环境。每次命令调用读取一次设置；已有选择器或 chip daemon 的缓存设置需重启相应进程后更新。将覆盖值放在 `source-file tmux-agents.conf` 之后，因为该文件会设置默认 chip 帧率。内部 pane 状态和测试 hook 不是用户设置。
 
 ## 快速上手
 
@@ -131,6 +158,7 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 | 命令 | |
 | --- | --- |
 | `tmux-connect` | 给当前 pane 命名并连接到另一个 pane |
+| `tmux-rename` | 给 agent 改名，同时更新记录、排队消息的身份和 peer 标签 |
 | `tmux-ask` | 给已连接的 agent 发消息 |
 | `tmux-spawn` | 在隐藏窗口或 `--split` 指定的可见分屏中启动子 agent |
 | `tmux-agents` | agent 列表（`prefix + a`） |

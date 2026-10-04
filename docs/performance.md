@@ -8,7 +8,7 @@ tmux-agents does little work per action, but two things made it feel slow in rea
 
 **Cause.** Each list build looked things up one agent at a time: a tmux call per name, a tmux call per step when walking up an agent's parents, a `git` call per directory, plus `awk`, `basename` and `date` per row. One build launched about 850 processes on that data, and about 2,650 on a 50-pane, 100-record test fixture.
 
-**Fix.** One `tmux list-panes -a` snapshot and one read of the session records per build; every lookup and parent walk runs in memory (awk), and each directory's project is computed once. A build now takes about 0.1s and launches 12 to 15 processes. `tests/list-budget.sh` fails any build over 20 external processes (counted through a PATH shim) or over a loose time cap, so per-agent lookups can't creep back in. Since v1.7.1 the picker also draws its frame before the rows are ready (`start:reload`), so the popup appears in about 50ms.
+**Fix.** One `tmux list-panes -a` snapshot and one read of the session records per build; every lookup and parent walk runs in memory (awk), and each directory's project is computed once. That reduced a build to about 0.1s and 12 to 15 processes. With cached tmux-option configuration, the 50-pane/100-record fixture uses 14 processes for a list rebuild and up to 18 for opening with a selected row, including the configuration parser. `tests/list-budget.sh` fails any build over 20 external processes (counted through a PATH shim) or over a loose time cap, so per-agent lookups can't creep back in. Since v1.7.1 the picker also draws its frame before the rows are ready (`start:reload`), so the popup appears in about 50ms.
 
 ## Your shell's startup is paid on every popup and spawn
 

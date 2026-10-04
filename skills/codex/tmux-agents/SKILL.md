@@ -37,6 +37,7 @@ Pass `--from <your name>` to every `tmux-ask`, `tmux-peers`, `tmux-peek` and `tm
 - `tmux-ask --retry --to NAME`: retry saved undelivered messages for an existing receiver, oldest first. Without `--to`, retry all available receivers.
 - `tmux-peek --from ME <name> [lines]`: read the last lines of a peer's screen without interrupting it.
 - `tmux-agent-report --from ME "<what you're doing>"`: report progress as a sub agent (see below).
+- `tmux-rename --from ME <agent> <new> [--exact]`: rename yourself or a descendant when asked; peers and unrelated agents are refused. Short names get the agent's command and directory prefix (e.g. `main` becomes `codex-~-main` at home); an existing matching prefix is kept. `--exact` uses the name verbatim. Use the resulting full name in every later `--from`; the old name stops resolving. The renamed agent and its peers receive notices. Plain `tmux-rename` is for the user.
 - `tmux-spawn [claude|codex|PROFILE] --from ME --name <task-name> <<'MSG' ... MSG`: start a sub agent (see below).
 
 The commands must be on PATH (tmux-agents' `install.sh` links them into `~/.local/bin`). Run each `tmux-*` command on its own, not chained with `&&`, `;` or pipes into it from other commands: permission rules match the start of the command, so a chained call may run sandboxed and fail with "can't reach the tmux server".
@@ -58,7 +59,7 @@ MSG
 ```
 
 - It opens a hidden window in the project's session (`agents-<project>`), starts the same kind of agent as you, connects it to your pane, and sends the task as a request. Pass `claude`, `codex` or a Codex profile from `TMUX_AGENTS_CODEX_HOMES` first only when the user asks for a different agent. Sub agents start in auto mode (Claude `--permission-mode auto`, Codex auto review), so they rarely need the user's approval.
-- `--name`: a short, descriptive task name in kebab-case (`auth-review`, `fix-login-test`, `research-tmux-hooks`). It shows up in the user's agent list, so make it say what the agent is doing. `-2`, `-3`... is added if the name is taken.
+- `--name`: a short, descriptive task name in kebab-case (`auth-review`, `fix-login-test`, `research-tmux-hooks`). It gets the new agent's kind and directory prefix, e.g. `codex-project-auth-review` (Codex profiles also use `codex`; home is `~`). An already matching prefix is kept; clashes get `-2`, `-3`... **Use the full name `tmux-spawn` prints**, never assume the short input is its name. `--exact` keeps a given name verbatim for one call. For spawn and rename, `TMUX_AGENTS_NAME_FORMAT=exact|prefixed` overrides the tmux option `@tmux_agents_name_format`; the default is `prefixed`.
 - The task must be self-contained: the sub agent starts with no context. Include the goal, relevant paths, constraints, and exactly what to reply with.
 - After spawning, tell the user the name and **end your turn**. The answer arrives as `[reply from <name> via tmux-ask]`. Spawn several at once for parallel work, then end your turn.
 - Follow-ups go to the same agent with `tmux-ask <name>`. Don't spawn a new one for the same thread of work.

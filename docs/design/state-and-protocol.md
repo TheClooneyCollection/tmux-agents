@@ -41,9 +41,17 @@ Why pane options:
   - `N` is one past the highest number in use with that prefix. Gaps are not reused.
   - Extra arguments count as taken, so two suggestions made in the same run don't collide.
 - `sanitize_name` maps anything outside `A-Za-z0-9._~-` to `-`.
-- `set_name` refuses names held by another pane.
+- `set_name` names an unnamed pane and refuses names held by another pane. Existing identities change through `rename_agent`, including `tmux-connect --as`.
+- `format_given_name` is shared by spawn and rename. It adds the command/directory prefix unless the name already has it; `--exact` wins over `TMUX_AGENTS_NAME_FORMAT`, then `@tmux_agents_name_format`, then the `prefixed` default. Spawn uses the new agent's kind (`codex` for a Codex profile), then adds a unique suffix if necessary. Rename refuses collisions, including saved session records.
+- `tmux-rename --from ME` authorizes self or descendants through pane-id ancestry; without `--from`, the user may rename any agent. It moves the session record, rewrites recorded `parent=` names and whole words in every pane's `@awaiting`/`@closed`, and updates `from_name`/`to_name` metadata in this server's queue and the legacy flat queue. Parent and peer pane ids remain unchanged. It refreshes labels and sends durable notices from `tmux-rename` to the agent and its peers. Old names stop resolving immediately; there are no aliases.
 - **Checked step by step.** `auto_name` runs inside `$(...)`, where `set -e` doesn't apply, so it returns failure explicitly when `set_name` fails, and every caller dies on it. Checking a name and writing it isn't atomic, so after writing it confirms no other pane holds the same name; otherwise it clears its own and retries with the next number after a short random pause.
 - **Unnamed panes name themselves.** A freshly opened agent has no `@agent`. When its `$TMUX_PANE` can be trusted (Claude, or Codex with `TMUX_AGENTS_PINNED`), `tmux-ask`, `tmux-peers`, `tmux-spawn`, and any command given an unknown `--from` give that pane a generated name (`auto_name`) and print it, so the agent can carry on with it. This came up when an unnamed Claude copied `--from claude` from the skill's example and `tmux-spawn` failed on `no agent named 'claude'`; the examples now use a placeholder. Unpinned Codex still gets an error, since its `$TMUX_PANE` may be another agent's pane (see [environment](environment.md#codex-runs-commands-in-a-shared-daemon)).
+
+## Configuration lookup
+
+`settings_load` lazily reads the global `@tmux_agents_*` options in one `tmux show-options -g` snapshot per shell, decoding quoted values as data rather than evaluating them. `settings_get OUTPUT ENV OPTION DEFAULT` assigns in the caller's shell, preserving the cache and choosing a non-empty environment override before the option and default. Derived values remain shell variables, not exported overrides. Spawn retains the extra Codex homes global-environment fallback and passes its resolved account map across the startup boundary in a temporary internal variable.
+
+The initial picker does not load settings before fzf draws. List, chip and preview paths load what they need when they run; `list-budget.sh` counts the parser as well as tmux calls. See [Configuration](../guide.md#configuration) for the complete table.
 
 ## Connecting
 
