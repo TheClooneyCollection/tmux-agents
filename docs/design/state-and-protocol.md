@@ -13,7 +13,8 @@ Everything is stored as tmux user options on the panes themselves (`set-option -
 | `@peer_names` | Cached `name, name` string for the border label. |
 | `@parent` | On spawned sub agents: the pane id that spawned them. |
 | `@closed` | Names of peers the user closed (set by `note_closed` before `kill-pane`). |
-| `@state` | On sub agents: `done`, `working` or `needs_you`. See [done state](sub-agents.md#done-state-and-cleanup) and [chip data](sub-agents.md#data-not-screen-scraping). |
+| `@state` | On sub agents: `idle`, `done`, `working` or `needs_you`. See [done state](sub-agents.md#done-state-and-cleanup) and [chip data](sub-agents.md#data-not-screen-scraping). |
+| `@msg_waiting_since` | Epoch when a queued message began waiting; set after the escalation threshold and cleared on delivery. Pins the receiver in the list and highlights it in the chip. |
 | `@awaiting` | Names this pane sent requests to and hasn't had a reply from yet. |
 | `@activity`, `@waiting_on`, `@perm_since` | Sub agent reports for the [status chip](sub-agents.md#status-chip). |
 | `@attention_since`, `@codex_thread` | When a sub agent started needing the user; the Codex thread id of a sub agent, for `notify`. |
@@ -24,7 +25,7 @@ Why pane options:
 
 - **Stable ids.** Pane ids survive moving panes between windows and sessions.
 - **Automatic cleanup.** Closing a pane deletes its options. Other panes' `@peers` still list the dead id until `get_peers` prunes it on the next read.
-- **Nothing to sync.** There are no files to go stale, and `tmux show -p @peers` is the whole debugging story.
+- **Live links are local.** `tmux show -p @peers` shows current connections. Durable queue files and session records separately retain messages and closed conversations.
 
 ## Links
 
@@ -113,12 +114,15 @@ MSG)
 
 `user_busy` is true when the receiver's pane is in copy mode (where `send-keys Enter` would go to copy mode instead of the program), or a client is showing it and had a keypress in the last `TMUX_ASK_IDLE_SECS` (8s). Then:
 
-1. `tmux-ask` writes the body to `/tmp/tmux-agents-<uid>/queue/<socket>/<epoch>-<pid>-<pane>.msg`. It is one fixed place per tmux server, so hooks running in the server's environment find it, and per server because pane ids repeat across servers (a test server's `%1` is not the user's `%1`).
+1. `tmux-ask` writes the body to `/tmp/tmux-agents-<uid>/queue/<socket>/<epoch>-<pid>-<pane>.msg`. A same-stem `.meta` file records `from_pane`, `from_name`, `to_pane`, `to_name`, `kind` and `queued_at` as `key=value` lines. It is one fixed place per tmux server, so hooks running in the server's environment find it, and per server because pane ids repeat across servers (a test server's `%1` is not the user's `%1`).
 2. It starts `tmux-ask --deliver` with `run-shell -b`, so the deliverer lives in the tmux server rather than the sender, and prints `queued`. The skill tells agents that `queued` means sent, so they don't resend.
 3. The deliverer polls every 2s, waits for older queued files for the same pane (names sort by time), and delivers once the user is idle. A pane in copy mode with no keypress from a client showing it for `TMUX_ASK_COPY_IDLE_SECS` (default 300, 0 = never) was probably left there by accident: the deliverer cancels copy mode (`send-keys -X cancel`), tells the clients, and delivers. Settings reach the deliverer explicitly on its command line, because `run-shell` runs with the server's environment, not the sender's.
-4. It gives up after `TMUX_ASK_QUEUE_SECS` (30 min) or when the pane is gone. Giving up renames the file to `.undelivered`, so it no longer holds up later messages, and shows every client where it is for 10s.
+4. While the receiver lives, polling never expires. After `TMUX_ASK_QUEUE_SECS` (30 min), it sets `@msg_waiting_since` so the receiver shows amber `✉ message waiting` in the list and chip. Delivery clears the marker.
+5. A receiver that disappears leaves the body as `.undelivered`. The sender gets a notice from `tmux-ask` saying the message did not arrive and giving its path. If the receiver has a session record with an id, the notice says reopening will deliver it. Only when the sender is gone too does this fall back to a toast for every client.
 
-Leaving copy mode doesn't wait for the poll: a `pane-mode-changed[42]` hook runs `tmux-ask --kick <pane>`, which sends that pane's queued messages at once, in order, skipping the typing window. tmux counts mouse scrolling as client activity, so waiting it out cost 8 to 10s after every scroll. The hook and the deliverer can race for the same file, so each claims it by renaming it to `.sending` first; the loser finds it gone and exits.
+`tmux-ask --pending` lists queued and undelivered files in both legacy flat queues and per-server queues; legacy files without metadata get identities from their protocol header. `--retry [--to NAME]` uses receiver names to retry saved messages oldest first through normal delivery, preserving busy-user queuing. It retries only the current server and legacy flat queue; another server's same-named pane is not a destination. Unavailable receivers keep their files. `tmux-spawn --resume` invokes this after adopting the reopened pane.
+
+Leaving copy mode doesn't wait for the poll: a `pane-mode-changed[42]` hook runs `tmux-ask --kick <pane>`, which sends that pane's queued messages at once, in order, skipping the typing window. tmux counts mouse scrolling as client activity, so waiting it out cost 8 to 10s after every scroll. The hook and deliverer serialize each receiver with a kernel advisory lock (system Perl `Fcntl`). A claimed body becomes `.sending`; successful delivery removes it and its metadata. Process exit releases the lock, including SIGKILL. A later kick, deliverer or retry restores orphaned `.sending` files, and retry also restarts queued messages whose worker did not start. If a process dies after paste but before cleanup, replay may duplicate the message: delivery is at least once, not exactly once.
 
 Detecting drafts in the input line from the screen was prototyped and dropped: it depended on each TUI's look (Codex draws its placeholder dim), and the end markers make it unnecessary.
 

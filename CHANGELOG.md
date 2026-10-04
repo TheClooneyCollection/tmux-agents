@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Faster agent lists.** List rebuilds share pane and session-record snapshots and resolve each project directory once, speeding up opening the picker and switching window scope.
+
+- **Durable messages.** Queued messages keep waiting while the receiver lives, with an amber message-waiting indicator after a long delay. Missing receivers leave saved messages and notify their senders.
+- **Inspect and recover delivery.** `tmux-ask --pending` lists current and legacy messages; `--retry [--to NAME]` retries available receivers. Reopening an agent delivers its saved messages oldest first.
+
 ## v1.6.1 (2026-10-03)
 
 - The skills tell agents to reply as soon as a request's main work is done and send follow-ups (a deploy, a page going live) as notices.

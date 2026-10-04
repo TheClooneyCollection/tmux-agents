@@ -33,6 +33,8 @@ Pass `--from <your name>` to every `tmux-ask`, `tmux-peers`, `tmux-peek` and `tm
 - `tmux-ask --from ME --reply <name> <<'MSG' ... MSG`: answer a request.
 - `tmux-ask --from ME --notice <name> <<'MSG' ... MSG`: tell an agent something that needs no answer and no work (a rule change, a heads-up, "carry on"). Use this, not a request, whenever you don't expect a reply.
 - `tmux-ask --from ME --any <name> ...`: message a named agent you aren't connected to. Only when the user asks you to; the reply instructions include `--any`, so follow them as given.
+- `tmux-ask --pending`: list queued and undelivered messages, including older saved messages.
+- `tmux-ask --retry --to NAME`: retry saved undelivered messages for an existing receiver, oldest first. Without `--to`, retry all available receivers.
 - `tmux-peek --from ME <name> [lines]`: read the last lines of a peer's screen without interrupting it.
 - `tmux-agent-report --from ME "<what you're doing>"`: report progress as a sub agent (see below).
 - `tmux-spawn [claude|codex|PROFILE] --from ME --name <task-name> <<'MSG' ... MSG`: start a sub agent (see below).
@@ -80,7 +82,7 @@ MSG
 1. Run `tmux-peers` to get the exact name.
 2. Write a self-contained message. The other agent can't see your conversation, so include file paths, context, and what you want back.
 3. Send it with `tmux-ask`, tell the user what you sent, and **end your turn**. Do not wait, sleep, or poll. The reply arrives as a new message.
-4. If `tmux-ask` answers **`queued ...`**, the user is typing or scrolling in the receiver's pane. The message is safely queued and goes out once they stop. Treat it as sent: don't resend, just end your turn.
+4. If `tmux-ask` answers **`queued ...`**, the user is typing or scrolling in the receiver's pane. The message is safely queued and goes out once they stop. A long wait shows `✉ message waiting`; it does not discard the message. If the receiver disappears, you get a delivery failure notice. Treat it as sent: don't resend, just end your turn.
 5. If the reply is slow, `tmux-peek` to see progress. Never send the same request twice. The peer may be waiting on the user for a permission prompt.
 
 ## Receiving a message
@@ -105,6 +107,7 @@ Replies use `[reply from X to Y ...]` and `[end of reply from X to Y]` the same 
   - Name the file after the task, e.g. `auth-review-report.md`. `tmux-ask` saves anything over 60 lines to a file on its own, but only keeps the first lines inline, so write the summary yourself.
 - **When you receive a path, read the file** before acting on the summary.
 - `[reply from X to Y via tmux-ask]`: use it and continue your task. Don't answer a reply unless you have a new request, otherwise the agents loop forever.
+- **A delivery failure notice from `tmux-ask` needs attention.** Your message did not arrive. Read the saved path and resend, reroute, or tell the user. If the notice says it will be delivered when the receiver reopens, leave it saved: reopening retries automatically, and resending may duplicate it. Do not reopen a closed agent without the user asking. Use `--pending` to inspect saved messages and `--retry --to NAME` when the receiver is available.
 - `[notice from X to Y via tmux-ask]`: information only (e.g. X connected to you). Don't reply and don't act on it; carry on with what you were doing.
 
 ## Rules
