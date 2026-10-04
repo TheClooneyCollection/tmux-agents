@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.10.0 (2026-10-04)
 
 - **Install the skills with `npx skills add TheClooneyCollection/tmux-agents`.** Each skill is one folder under `skills/`, shared by Claude and Codex (the Codex-only sandbox notes are a section of the `tmux-agents` skill). The `tmux-agents` skill offers the setup skill when the commands aren't installed yet.
 - **Agent chain skill.** Say "start the chain" for a main agent you talk to, a secondary that coordinates and merges, and a worker that implements, side by side in your window. `install.sh` links the new `agent-chain` skill.
