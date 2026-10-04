@@ -97,7 +97,7 @@ tmux show -gv default-shell
 time fish -c true        # use your shell; compare with --no-config / --norc / -f
 ```
 
-Hundreds of milliseconds there are paid on every `prefix + a`. See [docs/performance.md](docs/performance.md) for the fix, or ask your agent to "find out why tmux-agents is slow" (the `tmux-agents-perf` skill).
+Hundreds of milliseconds there are paid on every `prefix + a` (the list itself draws its prompt first and loads the rows right after). See [docs/performance.md](docs/performance.md) for the fix, or ask your agent to "find out why tmux-agents is slow" (the `tmux-agents-perf` skill).
 
 ## Quick start
 
@@ -122,7 +122,7 @@ In the list: `enter` open · `ctrl-o` jump there · `ctrl-x` dismiss · `ctrl-d`
 
 Closed sub agents stay in a `closed` section at the bottom for 7 days: `enter` reopens one with its whole conversation. Or ask its parent to reopen it.
 
-Status: `⠹` working · `✓` done · `⚠` waiting for permission (red) · `◆` needs you (amber) · `✗` exited
+Status: `⠹` working · `○` idle (no task yet) · `✓` done · `⚠` waiting for permission (red) · `◆` needs you (amber) · `✉` message waiting for you to stop typing or scrolling · `✗` exited
 
 ## Commands
 
@@ -139,10 +139,6 @@ Agents run these for you; each takes `--help`.
 | `tmux-agent-report` | Report progress for the status line |
 
 How messages flow, sub agent details, settings and how it works: [the guide](docs/guide.md).
-
-## Slow popup startup
-
-Tmux launches popup commands through its `default-shell`. Slow non-interactive shell startup delays the popup before tmux-agents runs. Check with `time fish -c true` (or your configured shell). In fish, keep interactive-only initialization, such as prompt helpers, inside `if status is-interactive ... end`. The agent list draws its prompt first and loads rows asynchronously.
 
 ## License
 

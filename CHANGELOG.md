@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Docs:** the two READMEs are back in sync (the status line lists `○` idle and `✉` message waiting; the duplicate "Slow popup startup" section is folded into "If popups feel slow"), and AGENTS.md requires README.zh-CN.md to change with README.md in the same commit.
+
 ## v1.7.1 (2026-10-04)
 
 - **Tests:** resume delivery checks track each original message's metadata separately from bounce notices, avoiding false failures while notices are still queued.

@@ -97,7 +97,7 @@ tmux show -gv default-shell
 time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f 的结果对比
 ```
 
-如果这里要几百毫秒，每次按 `prefix + a` 都要多等这么久。解决方法见 [docs/performance.md](docs/performance.md)，或者让你的 agent "查一下 tmux-agents 为什么慢"（`tmux-agents-perf` skill）。
+如果这里要几百毫秒，每次按 `prefix + a` 都要多等这么久（列表本身会先画出提示符，紧接着加载条目）。解决方法见 [docs/performance.md](docs/performance.md)，或者让你的 agent "查一下 tmux-agents 为什么慢"（`tmux-agents-perf` skill）。
 
 ## 快速上手
 
@@ -122,7 +122,7 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 
 关掉的子 agent 会在列表底部的 `closed` 区保留 7 天：按 `enter` 就能带着完整对话重新打开。也可以让它的父 agent 帮你重开。
 
-状态：`⠹` 工作中 · `✓` 已完成 · `⚠` 等待权限（红）· `◆` 需要你（黄）· `✗` 已退出
+状态：`⠹` 工作中 · `○` 空闲（还没有任务）· `✓` 已完成 · `⚠` 等待权限（红）· `◆` 需要你（黄）· `✉` 有消息在等你停止打字或滚动 · `✗` 已退出
 
 ## 命令
 

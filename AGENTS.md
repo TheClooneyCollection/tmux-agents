@@ -24,6 +24,8 @@ Notes for AI agents working on tmux-agents.
 
 `bin/` commands, `tmux/tmux-agents.conf` bindings and hooks, `skills/` agent skills, `integrations/` per-tool glue, `install.sh`. Keep README (users), DESIGN.md and docs/design/ (why and pitfalls) and the two skills in sync when behaviour changes.
 
+**README.zh-CN.md must always match README.md.** Any change to README.md updates README.zh-CN.md in the same commit: same sections in the same order, same commands, links and code blocks, in natural Chinese rather than word for word.
+
 ## Commits and releases
 
 - Commit style: `feat: ...`, `fix: ...`, `docs: ...`, `chore: ...`.
