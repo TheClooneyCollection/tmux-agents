@@ -5,7 +5,11 @@ description: Run a chain of three agents through tmux-agents, a main agent that 
 
 # Agent chain
 
-Three agents work together through tmux-agents (see the `tmux-agents` skill for the commands): a **main agent** the user talks to, a **secondary** that coordinates, and a **worker** that implements. The user talks to one agent and still sees every agent's work in its own pane.
+Load the `tmux-agents` skill before using this workflow; follow its identity and messaging rules.
+
+If your brief says you are the secondary or worker, join the existing chain in that role. Never execute "Starting the chain" from a secondary or worker brief.
+
+Three agents work together through tmux-agents: a **main agent** the user talks to, a **secondary** that coordinates, and a **worker** that implements. The user talks to one agent and still sees every agent's work in its own pane.
 
 Names follow `<kind>-<project>-<role>`, e.g. `claude-~-main`, `claude-~-secondary`, `codex-~-worker` at home, or `claude-blog-main` in a project. `tmux-spawn --name <role>` and `tmux-rename` build them from the short role name. Use the names they print, never hard-coded ones.
 
@@ -58,7 +62,7 @@ Spawn both from the main agent, not the worker from the secondary, so the worker
 
 ## Working across projects
 
-When the user runs a chain in several projects:
+Whenever work crosses project boundaries:
 
 - Each project's secondary is its interface to other projects. Cross-project requests go secondary to secondary, never straight to another project's main agent or worker. If that project has no chain, talk to its main or current agent.
 - Requests are self-contained (goal, paths, constraints, deliverable); the receiving project decides how and who does it.

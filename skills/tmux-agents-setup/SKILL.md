@@ -28,13 +28,19 @@ Clone into `~/.local/share/tmux-agents` unless the user wants another place:
 git clone https://github.com/TheClooneyCollection/tmux-agents.git ~/.local/share/tmux-agents
 ```
 
-If it is already there, update it with `git pull --ff-only` in that directory instead.
+If it is already installed, update the actual installed checkout, not a separate development checkout:
+
+- On a branch, run `git pull --ff-only` there.
+- For a detached/tag install, run `git fetch --tags`, then `git checkout <new-tag>` for the new tag the user chooses.
+
+Then run the installer from that same checkout as below to refresh rules and rebuild skill links, including links to the old `skills/claude/` and `skills/codex/` folders.
 
 ## 3. Run install.sh
 
 Run `./install.sh --dry-run` from the checkout, summarize what it will link and copy, then run `./install.sh`.
 
-- `skipped ...: exists and isn't a link` means the user has their own file there. Show it and ask before re-running with `--force`, which replaces it. If it's a skill folder that `npx skills add` copied there (it matches the one in the checkout), say so: replacing it with the link keeps the skills current with `git pull`.
+- `skipped ...: exists and isn't a link` means a real file or directory occupies a link destination. Show it and ask before re-running with `--force`, which backs it up as `DEST.bak.YYYYmmddHHMMSS` before creating the link.
+- The installer does not migrate the skills CLI canonical copies (such as `~/.agents/skills/`) or its lock metadata. CLI copies and checkout links can coexist and diverge; managing those duplicate sources is outside this installer's scope and remains the user's responsibility.
 - If they use more than one Codex account, ask for the homes, and run it with `TMUX_AGENTS_CODEX_HOMES="name=$HOME/.codex-name ..."` so every account gets the skill and rules.
 
 ## 4. Configure

@@ -48,10 +48,10 @@ The easy way: ask Claude Code or Codex to do it.
 
 It checks what you have, runs the installer, shows you each config change before making it, and then walks you through a quick start. Later, say "tmux-agents quick start" to any agent to take the tour again.
 
-Or add the skills with the [skills CLI](https://skills.sh), then tell your agent "set up tmux-agents":
+For user-level skill installation, use the [skills CLI](https://skills.sh) below or `./install.sh` in the manual steps. After using the CLI, tell your agent "set up tmux-agents" to install the commands and configure tmux:
 
 ```sh
-npx skills add TheClooneyCollection/tmux-agents
+npx skills add TheClooneyCollection/tmux-agents -g
 ```
 
 ### By hand
@@ -69,7 +69,7 @@ cd tmux-agents
 - links the `tmux-*` commands into `~/.local/bin` (`BIN_DIR` to change)
 - links the `tmux-agents`, `tmux-agents-setup`, `tmux-agents-perf` and `agent-chain` skills into `~/.claude/skills/` and your Codex home
 - copies the Codex rules (Codex skips symlinked `.rules` files)
-- never overwrites a real file without `--force`
+- preserves real files and directories at link destinations unless `--force` backs them up as `DEST.bak.YYYYmmddHHMMSS` before linking
 
 Then add these to your own config (`install.sh` prints them with your paths):
 
@@ -90,7 +90,7 @@ Then add these to your own config (`install.sh` prints them with your paths):
 
 </details>
 
-Update with `git pull`: the links pick up the new scripts. Re-run `./install.sh` if the rules changed.
+Update the actual installed checkout: on a branch, use `git pull --ff-only`; for a detached/tag install, use `git fetch --tags` and `git checkout <new-tag>` with your chosen tag. Then re-run `./install.sh` there to refresh rules and rebuild skill links, including links to the old skill folders.
 
 Using more than one Codex account? See [the guide](docs/guide.md#more-than-one-codex-account).
 

@@ -1,10 +1,11 @@
 # Changelog
 
-## v1.10.0 (2026-10-04)
+## Unreleased
 
-- **Install the skills with `npx skills add TheClooneyCollection/tmux-agents`.** Each skill is one folder under `skills/`, shared by Claude and Codex (the Codex-only sandbox notes are a section of the `tmux-agents` skill). The `tmux-agents` skill offers the setup skill when the commands aren't installed yet.
+- **Re-run `./install.sh` after updating:** run it from the actual installed checkout to repair links that still point to the removed `skills/claude/` and `skills/codex/` folders. The skill now lives at `skills/tmux-agents/`. For a tag-pinned install, check out the chosen new tag in that installed checkout first.
+- **Install the skills with `npx skills add TheClooneyCollection/tmux-agents -g`.** Each skill is one folder under `skills/`, shared by Claude and Codex (the Codex-only sandbox notes are a section of the `tmux-agents` skill). The `tmux-agents` skill offers the setup skill when the commands aren't installed yet.
 - **Agent chain skill.** Say "start the chain" for a main agent you talk to, a secondary that coordinates and merges, and a worker that implements, side by side in your window. `install.sh` links the new `agent-chain` skill.
-- **Re-run `./install.sh` after updating:** the `tmux-agents` skill moved to `skills/tmux-agents/`, so links to the old `skills/claude/` and `skills/codex/` folders break until it relinks them.
+- **Safer installation updates.** Extra Codex accounts follow the runtime setting precedence and covered homes are printed. Forced links back up real files and directories first; enabling the chip layout warns about dangling skill links.
 - **Docs:** examples use a generic Codex profile name (`codex-work`, from `@tmux_agents_codex_homes`) instead of the maintainer's own.
 - **Docs:** AGENTS.md's release routine ends with updating your installed copy as your local setup describes; the maintainer's dotfiles no longer vendor this repo as a subtree.
 
