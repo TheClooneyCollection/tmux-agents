@@ -223,6 +223,9 @@ if [ -n "$resume" ]; then
   else
     printf 'reopened %s (%s) with its conversation; its parent is gone, so it is not connected to anyone.\n' "$resume" "$pane"
   fi
+  # Retry after adoption and state initialization: a preserved request marks
+  # the receiver working, and must not be overwritten by the idle state above.
+  "$here/tmux-ask" --retry --to "$resume"
   exit 0
 fi
 
