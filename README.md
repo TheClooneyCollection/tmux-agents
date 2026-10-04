@@ -129,6 +129,10 @@ Agents run these for you; each takes `--help`.
 
 How messages flow, sub agent details, settings and how it works: [the guide](docs/guide.md).
 
+## Slow popup startup
+
+Tmux launches popup commands through its `default-shell`. Slow non-interactive shell startup delays the popup before tmux-agents runs. Check with `time fish -c true` (or your configured shell). In fish, keep interactive-only initialization, such as prompt helpers, inside `if status is-interactive ... end`. The agent list draws its prompt first and loads rows asynchronously.
+
 ## License
 
 MIT, see [LICENSE](LICENSE).

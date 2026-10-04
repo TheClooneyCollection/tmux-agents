@@ -130,3 +130,7 @@ set-environment -g TMUX_AGENTS_CODEX_HOMES "work=$HOME/.codex-work"
 ```
 
 `tmux-spawn work "task"` starts a sub agent on that account, and a Codex started with `CODEX_HOME=$HOME/.codex-work` spawns `work` sub agents by default. Give it its own wrapper; `integrations/sh/codex.sh` shows one.
+
+## Slow popup startup
+
+Tmux launches popup commands through its `default-shell`. Slow non-interactive shell startup delays the popup before tmux-agents runs. Check with `time fish -c true` (or your configured shell). In fish, keep interactive-only initialization, such as prompt helpers, inside `if status is-interactive ... end`. The agent list draws its prompt first and loads rows asynchronously.

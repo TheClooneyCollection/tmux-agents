@@ -11,7 +11,7 @@ Notes for AI agents working on tmux-agents.
 - `tests/ask-queue.sh` checks durable queuing, escalation, bounces, legacy inspection and retries.
 - `tests/msg-waiting-ui.sh` checks message-waiting pins, ordering and chip display.
 - `tests/resume-messages.sh` checks saved messages arrive after resume in order with their original bodies.
-- `tests/list-budget.sh` enforces a process budget for both list scopes and initial picker opens on an isolated fixture with nested ownership and closed records.
+- `tests/list-budget.sh` enforces process and timing budgets for both list scopes, first rows, and startup to fzf execution on an isolated fixture with nested ownership and closed records.
 - `tests/dismiss.sh` checks descendant authorization, subtree closure order, retained children, done filtering and grandchild resume.
 - `tests/list-scope.sh` checks client window scope, ancestry, pinned attention, closed records and picker navigation.
 - `tests/spawn-split.sh` checks visible layouts, pane-local options, ownership, messages, list navigation and hidden resume.

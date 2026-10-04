@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Show the picker immediately.** The agent list starts fzf before building rows, then loads them asynchronously while preserving the selected agent. Startup avoids a redundant tmux check and defers the preview loop until rows arrive.
+- **Popup startup guidance.** Document how slow non-interactive shell configuration can delay tmux popups, and extend the list budget to measure time and tool calls before fzf starts.
+
 ## v1.7.0 (2026-10-04)
 
 - **Faster agent lists.** List rebuilds share pane and session-record snapshots and resolve each project directory once, speeding up opening the picker and switching window scope. Live rebuilds measured 4.5s to 0.10s for this window and 4.9s to 0.09s for all windows, with identical output. A process-budget test guards against regressions.
