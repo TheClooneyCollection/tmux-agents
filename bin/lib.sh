@@ -151,8 +151,8 @@ unique_name() {
 # Hidden sub agents live in one session per project: agents-<project>.
 # The project is the git root's basename, else the directory's; tmux
 # session names can't hold '.' or ':'.
-AGENTS_PREFIX="${TMUX_AGENTS_PREFIX:-agents}"
 agents_session_for() {
+  settings_get AGENTS_PREFIX TMUX_AGENTS_PREFIX @tmux_agents_session_prefix agents
   local dir="$1" root
   root="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)" || root="$dir"
   if [ "$root" = "$HOME" ]; then
@@ -165,6 +165,7 @@ agents_session_for() {
 # The project pane $1 belongs to, as in agents-<project>: a hidden sub
 # agent's from its session, any other pane's from its directory.
 pane_project() {
+  settings_get AGENTS_PREFIX TMUX_AGENTS_PREFIX @tmux_agents_session_prefix agents
   local session p
   session="$(tmux display-message -p -t "$1" '#{session_name}')"
   if is_agents_session "$session"; then p="$session"
@@ -174,6 +175,7 @@ pane_project() {
 }
 
 is_agents_session() {
+  settings_get AGENTS_PREFIX TMUX_AGENTS_PREFIX @tmux_agents_session_prefix agents
   case "$1" in "$AGENTS_PREFIX"-*) return 0 ;; *) return 1 ;; esac
 }
 
@@ -188,8 +190,10 @@ user_busy() {
 # Succeeds if a client showing pane $1 had a keypress (or scroll) in the
 # last TMUX_ASK_IDLE_SECS (default 8).
 user_typing() {
+  local idle_secs
+  settings_get idle_secs TMUX_ASK_IDLE_SECS @tmux_agents_ask_idle_secs 8
   tmux list-clients -F '#{pane_id} #{client_activity}' | awk -v p="$1" -v now="$(date +%s)" \
-    -v w="${TMUX_ASK_IDLE_SECS:-8}" '$1 == p && now - $2 < w { f = 1 } END { exit !f }'
+    -v w="$idle_secs" '$1 == p && now - $2 < w { f = 1 } END { exit !f }'
 }
 
 # Message bodies for tmux-ask. Requests carry their own reply instructions,
@@ -458,4 +462,139 @@ pane_finished() {
     done|exited) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+# Queue identity changes serialize against publication, retry and delivery.
+# Kernel locks survive exec and are released even if a process is killed.
+agent_identity_lock() {
+  local mode="$1"; shift
+  local root="/tmp/tmux-agents-$(id -u)/queue"
+  mkdir -p "$root"
+  perl -MFcntl=:flock -e '
+    $^F = 255;
+    my ($path, $mode) = splice @ARGV, 0, 2;
+    open(my $lock, ">>", $path) or die "$path: $!";
+    flock($lock, $mode eq "exclusive" ? LOCK_EX : LOCK_SH) or die "flock: $!";
+    exec @ARGV; die "exec: $!";
+  ' "$root/.identity.lock" "$mode" "$@"
+}
+
+# Called under the identity lock. Authorization belongs to the caller.
+_rename_agent_locked() {
+  local pane="$1" new="$2" old owner dir f tmp p opt cur changed root sock
+  valid_name "$new" || die "invalid name '$new' (use letters, digits, . _ ~ and -)"
+  pane_alive "$pane" || die "pane $pane no longer exists"
+  old="$(pane_name "$pane")"
+  [ "$old" != "$new" ] || { printf '%s\n' "$old"; return 0; }
+  owner="$(find_pane "$new")"
+  [ -z "$owner" ] || die "name '$new' is already used by pane $owner"
+  dir="$(sessions_dir)"
+  [ ! -e "$dir/$new" ] || die "name '$new' already has a saved session record"
+  if [ -n "$old" ]; then
+    if [ -f "$dir/$old" ]; then mv "$dir/$old" "$dir/$new" || return 1; fi
+    for f in "$dir"/*; do
+      [ -f "$f" ] || continue
+      [ "$(record_get "${f##*/}" parent)" = "$old" ] || continue
+      record_set "${f##*/}" parent "$new" || return 1
+    done
+    for p in $(tmux list-panes -a -F '#{pane_id}'); do
+      for opt in @awaiting @closed; do
+        cur="$(tmux show-options -pqv -t "$p" "$opt")"
+        changed="$(printf '%s\n' "$cur" | awk -v old="$old" -v new="$new" '{ for (i=1;i<=NF;i++) { if ($i==old) $i=new; } print }')"
+        [ "$cur" = "$changed" ] || tmux set-option -p -t "$p" "$opt" "$changed" || return 1
+      done
+    done
+    root="/tmp/tmux-agents-$(id -u)/queue"
+    sock="${TMUX:-default}"; sock="${sock%%,*}"; sock="${sock##*/}"
+    # Only this server and the legacy root, never another server directory.
+    for f in "$root/$sock"/*.meta "$root"/*.meta; do
+      [ -f "$f" ] || continue
+      tmp="$(mktemp "${f}.rename.XXXXXX")" || return 1
+      awk -v old="$old" -v new="$new" '
+        $0 == "from_name=" old { print "from_name=" new; next }
+        $0 == "to_name=" old { print "to_name=" new; next }
+        { print }
+      ' "$f" > "$tmp" || { rm -f "$tmp"; return 1; }
+      mv "$tmp" "$f" || return 1
+    done
+  fi
+  tmux set-option -p -t "$pane" @agent "$new" || return 1
+  refresh_labels || return 1
+  printf '%s\n' "$old"
+}
+
+# FINAL_NAME is already expanded, including for tmux-connect --as.
+rename_agent() {
+  local pane="$1" new="$2" old peer lib ask
+  lib="${BASH_SOURCE[0]}"
+  ask="$(dirname "$lib")/tmux-ask"
+  old="$(agent_identity_lock exclusive /bin/bash -c '. "$1"; _rename_agent_locked "$2" "$3"' rename "$lib" "$pane" "$new")" || return 1
+  [ "$old" != "$new" ] || return 0
+  "$ask" --system-notice "$pane" "you are now $new; pass --from $new from now on" || return 1
+  for peer in $(get_peers "$pane"); do
+    "$ask" --system-notice "$peer" "${old:-$pane} is now $new" || return 1
+  done
+}
+
+# Format a supplied name without choosing a collision suffix. --exact wins
+# over the local environment, the tmux option, and the prefixed default.
+format_given_name() {
+  local kind="$1" dir="$2" given="$3" exact="$4" format prefix
+  valid_name "$given" || die "invalid name '$given' (use letters, digits, . _ ~ and -)"
+  if [ "$exact" = 1 ]; then printf '%s\n' "$given"; return 0; fi
+  settings_get format TMUX_AGENTS_NAME_FORMAT @tmux_agents_name_format prefixed
+  case "${format:-prefixed}" in
+    exact) printf '%s\n' "$given" ;;
+    prefixed)
+      prefix="$(name_for "$kind" "$dir")" || return 1
+      prefix="${prefix%-*}-"
+      case "$given" in "$prefix"*) printf '%s\n' "$given" ;; *) printf '%s%s\n' "$prefix" "$given" ;; esac ;;
+    *) die "invalid name format '$format' (use exact or prefixed)" ;;
+  esac
+}
+
+# Cache one option snapshot per shell. Decode tmux's quoted output as data,
+# never eval it; NUL-delimited fields retain spaces, quotes and newlines.
+settings_load() {
+  [ "${_TMUX_SETTINGS_LOADED:-0}" = 1 ] && return 0
+  _TMUX_SETTINGS_LOADED=1
+  _TMUX_SETTING_KEYS=() _TMUX_SETTING_VALUES=()
+  local _settings_key _settings_value _settings_index=0
+  while IFS= read -r -d '' _settings_key && IFS= read -r -d '' _settings_value; do
+    _TMUX_SETTING_KEYS[$_settings_index]="$_settings_key"
+    _TMUX_SETTING_VALUES[$_settings_index]="$_settings_value"
+    _settings_index=$((_settings_index + 1))
+  done < <(tmux show-options -g 2>/dev/null | perl -ne '
+    next unless /^(@tmux_agents_\S+)\s+(.*)$/;
+    my ($key, $value) = ($1, $2);
+    if ($value =~ /^"(.*)"$/s) {
+      $value = $1;
+      $value =~ s/\\([0-7]{3}|.)/$1 =~ m{^[0-7]{3}$} ? chr(oct($1)) : $1 eq "n" ? "\n" : $1 eq "r" ? "\r" : $1 eq "t" ? "\t" : $1/ge;
+    }
+    print $key, "\0", $value, "\0";
+  ')
+}
+
+# Assign to the caller's variable; direct calls retain the snapshot cache.
+option_get() {
+  settings_load
+  local _option_i=0 _option_value="$3"
+  while [ "$_option_i" -lt "${#_TMUX_SETTING_KEYS[@]}" ]; do
+    if [ "${_TMUX_SETTING_KEYS[$_option_i]}" = "$2" ]; then
+      _option_value="${_TMUX_SETTING_VALUES[$_option_i]}"
+      [ -n "$_option_value" ] || _option_value="$3"
+      break
+    fi
+    _option_i=$((_option_i + 1))
+  done
+  printf -v "$1" '%s' "$_option_value"
+}
+
+settings_get() {
+  local _settings_env="$2"
+  if [ -n "$_settings_env" ] && [ -n "${!_settings_env:-}" ]; then
+    printf -v "$1" '%s' "${!_settings_env}"
+  else
+    option_get "$1" "$3" "$4"
+  fi
 }

@@ -30,6 +30,7 @@ case "$S" in ''|*/default) echo "ABORT: unsafe socket '$S'"; tmux -L "$sock" kil
 export TMUX="$S,1,0"
 cleanup() { tmux -L "$sock" kill-server 2>/dev/null; rm -rf "$tmp"; }
 trap cleanup EXIT
+tmux set -g default-shell /bin/sh
 
 fail=0
 ok() { echo "ok    $1"; }
@@ -39,11 +40,11 @@ peers_of() { TMUX_PANE="$1" "$B/tmux-peers" 2>/dev/null | awk 'NR > 2 { print $1
 
 # main (%0, depth 0) and secondary (%1, its depth-1 sub agent), connected.
 tmux set -p -t %0 @agent main
-CLAUDECODE=1 TMUX_PANE=%0 "$B/tmux-spawn" --name secondary "assist" </dev/null >/dev/null
+CLAUDECODE=1 TMUX_PANE=%0 "$B/tmux-spawn" --exact --name secondary "assist" </dev/null >/dev/null
 coord="$(pane_of secondary)"
 sleep 0.5
 
-out="$(TMUX_PANE=%0 "$B/tmux-spawn" codex --for secondary --name worker "build the parser" </dev/null)" || bad "spawn --for failed: $out"
+out="$(TMUX_PANE=%0 "$B/tmux-spawn" codex --for secondary --exact --name worker "build the parser" </dev/null)" || bad "spawn --for failed: $out"
 sleep 0.8
 w="$(pane_of worker)"
 [ -n "$w" ] && ok "worker spawned ($w)" || { bad "no worker pane"; exit 1; }
@@ -63,7 +64,7 @@ chip="$("$B/tmux-agents" --chip)"
 case "$chip" in *'#[fg=colour244]○ worker: idle'*) ok "chip focuses idle worker in grey" ;; *) bad "chip idle focus missing" ;; esac
 case "$chip" in *'#[fg=colour244]○ 1'*) ok "chip counts idle worker" ;; *) bad "chip idle count missing" ;; esac
 tmux set -p -t "$coord" @parent %0
-TMUX_PANE=%0 "$B/tmux-spawn" codex --name no-task </dev/null >/dev/null
+TMUX_PANE=%0 "$B/tmux-spawn" codex --exact --name no-task </dev/null >/dev/null
 no_task="$(pane_of no-task)"
 [ "$(tmux show -pqv -t "$no_task" @state)" = idle ] && ok "ordinary no-task spawn starts idle" || bad "no-task spawn did not start idle"
 TMUX_PANE=%0 "$B/tmux-dismiss" --from main no-task >/dev/null
@@ -83,12 +84,12 @@ case "$cs" in *"build the parser"*) ok "with main's brief" ;; *) bad "the brief 
 
 [ "$(grep '^depth=' "$XDG_STATE_HOME"/tmux-agents/*/sessions/worker | cut -d= -f2)" = 1 ] && ok "its depth counts from main (1)" || bad "recorded depth is not 1"
 
-TMUX_PANE=%0 "$B/tmux-spawn" codex --for secondary --name ancestor-close "cleanup check" </dev/null >/dev/null
+TMUX_PANE=%0 "$B/tmux-spawn" codex --for secondary --exact --name ancestor-close "cleanup check" </dev/null >/dev/null
 TMUX_PANE=%0 "$B/tmux-dismiss" --from main ancestor-close >/dev/null 2>&1 && ok "main can close its descendant" || bad "main could not close its descendant"
 TMUX_PANE="$coord" "$B/tmux-dismiss" --from secondary worker >/dev/null 2>&1 && ok "the secondary can close it" || bad "the secondary couldn't close it"
 
 tmux new-window -d -c "$tmp" cat; other="$(tmux list-panes -a -F '#{pane_id}' | tail -1)"; tmux set -p -t "$other" @agent stranger
-TMUX_PANE=%0 "$B/tmux-spawn" codex --for stranger --name w2 </dev/null >/dev/null 2>&1 && bad "spawned for an agent main isn't connected to" || ok "refuses an owner main isn't connected to"
+TMUX_PANE=%0 "$B/tmux-spawn" codex --for stranger --exact --name w2 </dev/null >/dev/null 2>&1 && bad "spawned for an agent main isn't connected to" || ok "refuses an owner main isn't connected to"
 
 [ "$fail" -eq 0 ] && echo "all passed" || echo "some failed"
 exit "$fail"

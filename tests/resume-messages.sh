@@ -73,7 +73,7 @@ receiver_file_count() {
 }
 notices_queued() { [ "$(find "$queue" -name '*-0.msg' -type f | wc -l | tr -d ' ')" = 3 ]; }
 received() { cmp -s "$tmp/expected" "$RESUME_MESSAGES_LOG"; }
-spawn claude --name receiver >"$tmp/spawn"
+spawn claude --exact --name receiver >"$tmp/spawn"
 old="$(pane_of receiver)"
 check 'stub receiver is ready' wait_for ready "$old"
 if [ "$fail" -ne 0 ]; then

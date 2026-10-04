@@ -30,11 +30,11 @@ gone() { ! alive "$1"; }
 reject() { if "$B/tmux-dismiss" "$@" >"$tmp/error" 2>&1; then return 1; else return 0; fi; }
 spawn() { TMUX_PANE=%0 "$B/tmux-spawn" claude --from main "$@" </dev/null >/dev/null; }
 tree() {
-  spawn --name secondary assist
+  spawn --exact --name secondary assist
   secondary="$(pane_of secondary)"
-  spawn --for secondary --name worker implement
+  spawn --for secondary --exact --name worker implement
   worker="$(pane_of worker)"
-  TMUX_AGENTS_DEPTH=1 "$B/tmux-spawn" claude --from worker --name child assist </dev/null >/dev/null
+  TMUX_AGENTS_DEPTH=1 "$B/tmux-spawn" claude --from worker --exact --name child assist </dev/null >/dev/null
   child="$(pane_of child)"
 }
 records="$XDG_STATE_HOME/tmux-agents/$(basename "$S")/sessions"
@@ -43,7 +43,7 @@ check 'worker belongs to secondary via --for' test "$(tmux show -pqv -t "$worker
 check 'child belongs to worker' test "$(tmux show -pqv -t "$child" @parent)" = "$worker"
 check 'self dismissal refused' reject --from main main
 check 'ancestor dismissal refused' reject --from child secondary
-spawn --name stranger assist
+spawn --exact --name stranger assist
 stranger="$(pane_of stranger)"
 check 'unrelated dismissal refused' reject --from stranger worker
 check 'nonexistent caller pane refused' reject --from %999999 worker

@@ -18,6 +18,13 @@ Bound to prefix + a.
   ctrl-a  toggle between sub agents and every named pane
   ctrl-t  toggle between this window and all windows
   ctrl-r  refresh
+
+Settings (environment overrides option):
+  retention: option @tmux_agents_resume_days, env TMUX_AGENTS_RESUME_DAYS (7 days)
+  preview: option @tmux_agents_preview_secs, env TMUX_AGENTS_PREVIEW_SECS (0.5 seconds)
+  blink: option @tmux_agents_blink_secs, env TMUX_AGENTS_BLINK_SECS (60 seconds)
+  animation: option @tmux_agents_chip_fps (10 frames per second)
+  sessions: option @tmux_agents_session_prefix, env TMUX_AGENTS_PREFIX (agents)
 EOF
 }
 
@@ -43,7 +50,9 @@ list_agents() {
   local mode="${1:-sub}" scope="${2:-window}" client="${3:-}" snapshot window="" clients c w
   local now records="" raw="" mtimes="" dir sock f tag rest path root project paths="" projects=""
   local -a files=() expired=()
-  local tab=$'\t' nl=$'\n'
+  local tab=$'\t' nl=$'\n' resume_days
+  settings_get AGENTS_PREFIX TMUX_AGENTS_PREFIX @tmux_agents_session_prefix agents
+  settings_get resume_days TMUX_AGENTS_RESUME_DAYS @tmux_agents_resume_days 7
   snapshot="$(tmux list-panes -a -F 'P	#{pane_id}	#{?@agent,#{@agent},-}	#{pane_dead}	#{?@perm_since,#{@perm_since},-}	#{?@state,#{@state},-}	#{?@parent,#{@parent},-}	#{session_name}	#{?@activity,#{@activity},-}	#{pane_current_path}	#{session_name}:#{window_index}	#{?@attention_since,#{@attention_since},-}	#{?@msg_waiting_since,#{@msg_waiting_since},-}	#{window_id}')"
   if [ -n "$client" ]; then
     clients="$(tmux list-clients -F '#{client_name}	#{window_id}')"
@@ -61,7 +70,7 @@ list_agents() {
       darwin*|*bsd*) mtimes="$(stat -f "%m$tab%N" "${files[@]}")" ;;
       *) mtimes="$(stat -c "%Y$tab%n" "${files[@]}")" ;;
     esac
-    raw="$(LIST_MTIMES="$mtimes" awk -v now="$now" -v keep="$(( ${TMUX_AGENTS_RESUME_DAYS:-7} * 86400 ))" -f "$here/tmux-agents-records.awk" "${files[@]}")"
+    raw="$(LIST_MTIMES="$mtimes" awk -v now="$now" -v keep="$(( $resume_days * 86400 ))" -f "$here/tmux-agents-records.awk" "${files[@]}")"
     while IFS="$tab" read -r tag rest; do
       if [ "$tag" = X ]; then expired+=("$rest")
       elif [ "$tag" = R ]; then records="$records$tag$tab$rest$nl"
@@ -98,7 +107,7 @@ chip_layout() {
     cur="$(tmux show-options -gv 'status-format[0]')"
     case "$cur" in *"tmux-agents --chip"*|*"@chip"*) ;; *) tmux set-option -g @tmux_agents_main_format "$cur" ;; esac
     main="$(tmux show-options -gqv @tmux_agents_main_format)"
-    fps="$(tmux show-options -gqv @tmux_agents_chip_fps)"
+    settings_get fps "" @tmux_agents_chip_fps 10
     tmux set-option -g 'status-format[1]' "$main"
     if [ "${fps:-10}" -gt 1 ] 2>/dev/null; then
       # Pushed by the chip daemon at $fps frames a second.
@@ -137,7 +146,7 @@ chip_daemon() {
   log="/tmp/tmux-agents-$(id -u)/chip-daemon.log"
   mkdir -p "$(dirname "$log")"
   exec 2>>"$log"
-  fps="$(tmux show-options -gqv @tmux_agents_chip_fps)"
+  settings_get fps "" @tmux_agents_chip_fps 10
   case "$fps" in ''|*[!0-9]*) fps=10 ;; esac
   [ "$fps" -le 30 ] || fps=30
   delay="$(awk -v f="$fps" 'BEGIN { printf "%.3f", 1 / f }')"
@@ -177,7 +186,9 @@ short_task() {
 # per-project counts. Agents waiting for permission take over the focus and turn red; past
 # TMUX_AGENTS_BLINK_SECS (default 60) unanswered, they blink.
 chip() {
-  local now frames spin rows id name dead st session since activity state act attention waiting
+  local now frames spin rows id name dead st session since activity state act attention waiting blink_secs
+  settings_get AGENTS_PREFIX TMUX_AGENTS_PREFIX @tmux_agents_session_prefix agents
+  settings_get blink_secs TMUX_AGENTS_BLINK_SECS @tmux_agents_blink_secs 60
   local -a ids names states acts projs sinces
   now="$(date +%s)"
   frames=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
@@ -258,7 +269,7 @@ EOF
   focus="$icon $(short_task "${names[i]}"): ${acts[i]}"
   if [ "${states[i]}" = perm ] || [ "${states[i]}" = needs ] || [ "${states[i]}" = message ]; then
     if [ "${states[i]}" = perm ]; then style="fg=white,bg=red,bold"; else style="fg=black,bg=colour214,bold"; fi
-    [ $((now - ${sinces[i]})) -lt "${TMUX_AGENTS_BLINK_SECS:-60}" ] || style="$style,blink"
+    [ $((now - ${sinces[i]})) -lt "$blink_secs" ] || style="$style,blink"
     focus="#[$style] $focus #[default]"
   elif [ "${states[i]}" = idle ]; then
     focus="#[fg=colour244]$focus#[default]"
@@ -309,8 +320,9 @@ case "${1:-}" in
   # Started by fzf on "start": keep the preview live by asking fzf (on its
   # --listen port) to refresh it. Ends when fzf exits and the port closes.
   --preview-loop)
+    settings_get preview_secs TMUX_AGENTS_PREVIEW_SECS @tmux_agents_preview_secs 0.5
     while curl -fs -XPOST "http://localhost:${FZF_PORT:?}" -d refresh-preview >/dev/null 2>&1; do
-      sleep "${TMUX_AGENTS_PREVIEW_SECS:-0.5}"
+      sleep "$preview_secs"
     done
     exit 0
     ;;

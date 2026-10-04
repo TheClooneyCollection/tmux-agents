@@ -4,6 +4,23 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 . "$here/lib.sh"
 
+# Identity migration must not race metadata publication/deletion. Workers
+# acquire this only for one attempt, so idle delivery loops never block rename.
+case "${1:-}" in
+  --deliver|--retry|--kick|--pending) ;;
+  *) if [ "${TMUX_ASK_IDENTITY_LOCKED:-}" != 1 ]; then
+       agent_identity_lock shared env TMUX_ASK_IDENTITY_LOCKED=1 "$here/tmux-ask" "$@"
+       exit $?
+     fi ;;
+esac
+# Background workers must acquire their own locks rather than inherit a flag.
+unset TMUX_ASK_IDENTITY_LOCKED
+
+settings_get ask_enter_delay TMUX_ASK_ENTER_DELAY @tmux_agents_ask_enter_delay 0.5
+settings_get ask_queue_secs TMUX_ASK_QUEUE_SECS @tmux_agents_ask_queue_secs 1800
+settings_get ask_copy_idle_secs TMUX_ASK_COPY_IDLE_SECS @tmux_agents_ask_copy_idle_secs 300
+settings_get ask_max_lines TMUX_ASK_MAX_LINES @tmux_agents_ask_max_lines 60
+
 # Paste $2 into pane $1 and submit it. Bracketed paste keeps multi-line
 # text as one message. user_busy keeps us out of copy mode, where Enter
 # would go to tmux instead of the program.
@@ -11,7 +28,7 @@ deliver() {
   local buf="tmux-ask-$$-${1#%}"
   printf '%s' "$2" | tmux load-buffer -b "$buf" - || return 1
   tmux paste-buffer -p -d -b "$buf" -t "$1" || return 1
-  sleep "${TMUX_ASK_ENTER_DELAY:-0.5}"
+  sleep "$ask_enter_delay"
   tmux send-keys -t "$1" Enter
 }
 
@@ -91,7 +108,7 @@ refresh_waiting() {
     [ -f "$f" ] || continue
     stamp="$(basename "$f")"; stamp="${stamp%%-*}"
     case "$stamp" in ''|*[!0-9]*) continue ;; esac
-    if [ "$((now - stamp))" -ge "${TMUX_ASK_QUEUE_SECS:-1800}" ]; then
+    if [ "$((now - stamp))" -ge "$ask_queue_secs" ]; then
       [ -n "$oldest" ] && [ "$oldest" -le "$stamp" ] || oldest="$stamp"
     fi
   done
@@ -109,7 +126,7 @@ refresh_waiting() {
 start_deliverer() {
   local envs="" v val
   for v in TMUX_ASK_IDLE_SECS TMUX_ASK_QUEUE_SECS TMUX_ASK_COPY_IDLE_SECS TMUX_ASK_ENTER_DELAY; do
-    eval "val=\${$v:-}"
+    val="${!v:-}"
     case "$val" in ''|*[!0-9.]*) continue ;; esac
     envs="$envs$v='$val' "
   done
@@ -198,6 +215,19 @@ try_delivery_locked() {
   active_file=""
   return 1
 }
+
+# Internal durable notice entry point for rename; no request/reply state effects.
+if [ "${1:-}" = --system-notice ]; then
+  [ "$#" = 3 ] || die 'invalid system notice'
+  require_tmux
+  to_pane="$(resolve_pane "$2")" to_name="$(pane_name "$2")"
+  from_pane="" from_name=tmux-rename kind=notice queued_at="$(date +%s)"
+  publish "$(notice_body tmux-rename "$3" "$to_name")"
+  if ! try_delivery "$to_pane" "$file"; then
+    start_deliverer "$to_pane" "$file" || printf 'notice retained at %s\n' "$file" >&2
+  fi
+  exit 0
+fi
 
 if [ "${1:-}" = --pending ]; then
   printf 'time\tsender\treceiver\tstate\tpath\n'
@@ -296,7 +326,7 @@ if [ "${1:-}" = --deliver ]; then
     else
       copy_idle=0
     fi
-    limit="${TMUX_ASK_COPY_IDLE_SECS:-300}"
+    limit="$ask_copy_idle_secs"
     if [ "$limit" -gt 0 ] 2>/dev/null && [ "$copy_idle" -ge "$limit" ]; then
       tmux send-keys -t "$peer" -X cancel 2>/dev/null || true
       for c in $(tmux list-clients -F '#{client_name}'); do
@@ -339,11 +369,13 @@ is queued and sent once they stop typing or leave copy mode. A pane
 left in copy mode with no keys for TMUX_ASK_COPY_IDLE_SECS is taken out
 of it, so the message goes through.
 
-env: TMUX_ASK_IDLE_SECS    seconds without keys before a pane counts as free (default 8)
-     TMUX_ASK_QUEUE_SECS   escalate a still-queued message after this long (default 1800)
-     TMUX_ASK_COPY_IDLE_SECS  leave a forgotten copy mode after this long
-                              with no keys (default 300; 0 = never)
-     TMUX_ASK_ENTER_DELAY  seconds between paste and Enter (default 0.5)
+Settings (environment overrides option):
+  idle seconds: option @tmux_agents_ask_idle_secs, env TMUX_ASK_IDLE_SECS (8)
+  escalation seconds: option @tmux_agents_ask_queue_secs, env TMUX_ASK_QUEUE_SECS (1800)
+  copy-mode idle seconds: option @tmux_agents_ask_copy_idle_secs,
+    env TMUX_ASK_COPY_IDLE_SECS (300; 0 = never leave automatically)
+  long-message lines: option @tmux_agents_ask_max_lines, env TMUX_ASK_MAX_LINES (60)
+  paste-to-Enter seconds: option @tmux_agents_ask_enter_delay, env TMUX_ASK_ENTER_DELAY (0.5)
 EOF
 }
 
@@ -389,7 +421,7 @@ fi
 
 # Safety net for long messages: keep the full text in a file and send the
 # head plus the path. Agents are asked to do this themselves with a summary.
-max="${TMUX_ASK_MAX_LINES:-60}"
+max="$ask_max_lines"
 lines="$(printf '%s\n' "$msg" | wc -l | tr -d ' ')"
 if [ "$lines" -gt "$max" ]; then
   dir="${TMPDIR:-/tmp}"; dir="${dir%/}/tmux-agents/$me"

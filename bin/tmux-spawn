@@ -4,12 +4,12 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 . "$here/lib.sh"
 
-MAX_DEPTH="${TMUX_AGENTS_MAX_DEPTH:-2}"
+settings_get MAX_DEPTH TMUX_AGENTS_MAX_DEPTH @tmux_agents_max_depth 2
 
 usage() {
   cat <<'EOF'
-usage: tmux-spawn [claude|codex|PROFILE] [--from ME] [--name NAME] [task...]
-       tmux-spawn [claude|codex|PROFILE] --for OWNER [--from ME] [--name NAME] [brief...]
+usage: tmux-spawn [claude|codex|PROFILE] [--from ME] [--name NAME] [--exact] [task...]
+       tmux-spawn [claude|codex|PROFILE] --for OWNER [--from ME] [--name NAME] [--exact] [brief...]
        tmux-spawn [claude|codex|PROFILE] --split PANE [--right | --below] [--size N%] [task...]
        tmux-spawn --resume NAME [--from ME | --parent NAME]
 
@@ -21,8 +21,11 @@ same kind as the caller, in auto mode (Claude --permission-mode auto,
 Codex approvals_reviewer=auto_review).
 
   --from ME     your own name (needed where $TMUX_PANE is wrong, e.g. Codex)
-  --name NAME   short task name, e.g. auth-review; -2, -3... is added
-                if taken (default: <agent>-<dir>-<N>)
+  --name NAME   short task name, e.g. auth-review, becomes <agent>-<dir>-NAME;
+                an existing prefix is kept; clashes add -2, -3...
+                profiles use codex as <agent>, home uses ~ as <dir>
+                (without --name: <agent>-<dir>-<N>)
+  --exact       use --name verbatim, without its agent/directory prefix
   --for OWNER   spawn it for OWNER, an agent you're connected to: it becomes
                 OWNER's sub agent, connected to OWNER only, and starts without
                 a task. OWNER is told, with your brief, and sends the first
@@ -32,32 +35,40 @@ Codex approvals_reviewer=auto_review).
   --below       split top/bottom; the new pane is below
   --size N%     new pane share, 1% to 99% (default 50%)
   --resume NAME reopen a closed sub agent with its conversation, in the
-                same project in a hidden window, connected to you (or to --parent)
+                same project in a hidden window, connected to you (or to --parent);
+                keeps its recorded name; cannot combine with --name or --exact
 
 Each sub agent's session is recorded (see sessions_dir in lib.sh), so a
 closed one can be reopened. Codex records it when its first turn ends.
 
+Given-name format: --exact overrides TMUX_AGENTS_NAME_FORMAT, then the tmux
+option @tmux_agents_name_format (exact or prefixed; default prefixed).
+
 Browse agents with tmux-agents (prefix + a).
 
-env: TMUX_AGENTS_CODEX_HOMES  more Codex accounts as PROFILE=CODEX_HOME pairs,
-                              e.g. "work=$HOME/.codex-work" (no spaces in paths);
-                              read from tmux's global environment if unset
-     TMUX_AGENTS_MAX_DEPTH  spawn levels allowed (default 2)
-     TMUX_SPAWN_BIN         dir put first on the agent's PATH (for tests)
+Settings (environment overrides option):
+  accounts: option @tmux_agents_codex_homes, env TMUX_AGENTS_CODEX_HOMES
+    PROFILE=CODEX_HOME pairs, e.g. "work=$HOME/.codex-work" (no spaces in paths);
+    default none; legacy tmux global environment is the final fallback
+  name format: option @tmux_agents_name_format, env TMUX_AGENTS_NAME_FORMAT
+    exact or prefixed (default prefixed); --exact wins for one call
+  depth: option @tmux_agents_max_depth, env TMUX_AGENTS_MAX_DEPTH (default 2)
+  sessions: option @tmux_agents_session_prefix, env TMUX_AGENTS_PREFIX (agents)
+Test hook: TMUX_SPAWN_BIN puts a directory first on the agent's PATH.
 EOF
 }
 
-# Extra Codex accounts: TMUX_AGENTS_CODEX_HOMES="name=CODEX_HOME ...".
-# Agents started before it was set don't have it in their environment, so
-# fall back to tmux's global one (set-environment -g in tmux.conf).
-if [ -z "${TMUX_AGENTS_CODEX_HOMES:-}" ] && [ -n "${TMUX:-}" ]; then
+# Keep resolved settings separate from explicit environment overrides. Legacy
+# tmux global environment remains the final profile fallback.
+settings_get codex_homes TMUX_AGENTS_CODEX_HOMES @tmux_agents_codex_homes ""
+if [ -z "$codex_homes" ] && [ -n "${TMUX:-}" ]; then
   v="$(tmux show-environment -g TMUX_AGENTS_CODEX_HOMES 2>/dev/null || true)"
-  case "$v" in TMUX_AGENTS_CODEX_HOMES=?*) export TMUX_AGENTS_CODEX_HOMES="${v#*=}" ;; esac
+  case "$v" in TMUX_AGENTS_CODEX_HOMES=?*) codex_homes="${v#*=}" ;; esac
 fi
 
 codex_home_for() {
   local e
-  for e in ${TMUX_AGENTS_CODEX_HOMES:-}; do
+  for e in $codex_homes; do
     [ "${e%%=*}" != "$1" ] || { printf '%s\n' "${e#*=}"; return 0; }
   done
   return 1
@@ -65,7 +76,7 @@ codex_home_for() {
 
 codex_profile_for_home() {
   local e
-  for e in ${TMUX_AGENTS_CODEX_HOMES:-}; do
+  for e in $codex_homes; do
     [ "${e#*=}" != "$1" ] || { printf '%s\n' "${e%%=*}"; return 0; }
   done
   return 1
@@ -74,6 +85,9 @@ codex_profile_for_home() {
 # Inside the new pane: start the agent with the task as its first prompt.
 if [ "${1:-}" = "--run" ]; then
   agent="$2" file="$3" sid="${4:-}" mode="${5:-new}"
+  # Preserve the caller's resolution across tmux's global-env inheritance.
+  codex_homes="${TMUX_SPAWN_CODEX_HOMES-$codex_homes}"
+  unset TMUX_SPAWN_CODEX_HOMES
   prompt=""
   [ -z "$file" ] || { prompt="$(cat "$file")"; rm -f "$file"; }
   export PATH="$here:$PATH"
@@ -119,6 +133,7 @@ if [ "${1:-}" = "--run" ]; then
 fi
 
 agent="" name="" task="" FROM_PANE="" resume="" parent_name="" for_name=""
+exact=0 name_given=0
 split_target="" split_pane="" split_direction="" split_size="50%" split_options=0
 case "${1:-}" in
   claude|codex) agent="$1"; shift ;;
@@ -128,7 +143,10 @@ esac
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
-    --name) name="${2:-}"; shift 2 ;;
+    --name)
+      [ -n "${2:-}" ] || die "--name needs a name"
+      name="$2"; name_given=1; shift 2 ;;
+    --exact) exact=1; shift ;;
     --from) FROM_PANE="${2:-}"; shift 2 ;;
     --resume) resume="${2:-}"; shift 2 ;;
     --parent) parent_name="${2:-}"; shift 2 ;;
@@ -147,6 +165,8 @@ while [ $# -gt 0 ]; do
     *) task="$*"; break ;;
   esac
 done
+[ -z "$resume" ] || { [ "$name_given" -eq 0 ] && [ "$exact" -eq 0 ]; } || die "--resume keeps its recorded name; --name and --exact are only for new sub agents"
+[ "$exact" -eq 0 ] || [ "$name_given" -eq 1 ] || die "--exact requires --name"
 [ "$split_options" -eq 0 ] || [ -n "$split_target" ] || die "--right, --below and --size require --split"
 [ -z "$resume" ] || [ -z "$split_target" ] || die "--resume reopens hidden; --split is only for new sub agents"
 size_re='^([1-9]|[1-9][0-9])%$'
@@ -174,7 +194,7 @@ adopt() {
 # Open a new window for a sub agent in session $1, directory $2, name $3,
 # running $4 with depth $5. Prints the pane id.
 open_window() {
-  local env_args=(-e "TMUX_AGENTS_DEPTH=$5")
+  local env_args=(-e "TMUX_AGENTS_DEPTH=$5" -e "TMUX_SPAWN_CODEX_HOMES=$codex_homes")
   [ -z "${TMUX_SPAWN_BIN:-}" ] || env_args+=(-e "TMUX_SPAWN_BIN=$TMUX_SPAWN_BIN")
   [ -z "${TMUX_AGENTS_CODEX_HOMES:-}" ] || env_args+=(-e "TMUX_AGENTS_CODEX_HOMES=$TMUX_AGENTS_CODEX_HOMES")
   if tmux has-session -t "=$1" 2>/dev/null; then
@@ -187,7 +207,7 @@ open_window() {
 # Split a resolved pane, leaving focus and the shared window options alone.
 # Directory, command and environment match open_window.
 open_split() {
-  local direction=-h env_args=(-e "TMUX_AGENTS_DEPTH=$4")
+  local direction=-h env_args=(-e "TMUX_AGENTS_DEPTH=$4" -e "TMUX_SPAWN_CODEX_HOMES=$codex_homes")
   [ "$split_direction" != --below ] || direction=-v
   [ -z "${TMUX_SPAWN_BIN:-}" ] || env_args+=(-e "TMUX_SPAWN_BIN=$TMUX_SPAWN_BIN")
   [ -z "${TMUX_AGENTS_CODEX_HOMES:-}" ] || env_args+=(-e "TMUX_AGENTS_CODEX_HOMES=$TMUX_AGENTS_CODEX_HOMES")
@@ -280,7 +300,10 @@ fi
 
 cwd="$(tmux display-message -p -t "$self" '#{pane_current_path}')"
 if [ -n "$name" ]; then
-  name="$(unique_name "$(sanitize_name "$name")")"
+  kind=codex
+  [ "$agent" != claude ] || kind=claude
+  name="$(format_given_name "$kind" "$cwd" "$name" "$exact")"
+  name="$(unique_name "$name")"
 else
   name="$(name_for "$agent" "$cwd")"
 fi

@@ -28,7 +28,8 @@ elsewhere: WHERE is a project (codex@stone-age: its name, or part of it)
 or a window (codex@2 in this session, codex@work:2). Connecting to an agent
 in another window sends it a short notice saying who connected.
 
-env: TMUX_CONNECT_HIGHLIGHT  style for the tinted pane (default bg=colour24)
+option: @tmux_agents_connect_highlight  style for the tinted pane (default bg=colour24)
+env:    TMUX_CONNECT_HIGHLIGHT          overrides the tmux option
 EOF
 }
 
@@ -102,7 +103,8 @@ if [ "${1:-}" = "--highlight" ]; then
   for p in ${TMUX_CONNECT_PANES:-}; do
     tmux set-option -pu -t "$p" window-style 2>/dev/null || true
   done
-  [ -n "${2:-}" ] && tmux set-option -p -t "$2" window-style "${TMUX_CONNECT_HIGHLIGHT:-bg=colour24}"
+  settings_get highlight TMUX_CONNECT_HIGHLIGHT @tmux_agents_connect_highlight bg=colour24
+  [ -n "${2:-}" ] && tmux set-option -p -t "$2" window-style "$highlight"
   exit 0
 fi
 
@@ -299,7 +301,15 @@ name_form() {
   for ((i = 0; i < n; i++)); do printf '%s\n' "${names[i]}"; done
 }
 
-[ -z "$as" ] || set_name "$self" "$as"
+# Existing names carry persistent references; keep --as exact while migrating
+# them through the same helper as tmux-rename. self_pane above still validates
+# --from before any name can change.
+connect_name() {
+  if [ -n "$(pane_name "$1")" ]; then rename_agent "$1" "$2"
+  else set_name "$1" "$2"; fi
+}
+
+[ -z "$as" ] || connect_name "$self" "$as"
 
 # Pick the target.
 if [ -z "$target" ] && [ "$agent_mode" -eq 1 ]; then
@@ -367,7 +377,7 @@ elif [ ${#todo[@]} -gt 0 ]; then
   chosen="$(name_form "${form[@]}")"
   i=1
   for pane in "${todo[@]}"; do
-    set_name "$pane" "$(printf '%s\n' "$chosen" | sed -n "${i}p")"
+    connect_name "$pane" "$(printf '%s\n' "$chosen" | sed -n "${i}p")"
     i=$((i + 1))
   done
 fi

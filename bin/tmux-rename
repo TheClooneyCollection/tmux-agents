@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Rename an agent and every persisted reference to its name.
+set -euo pipefail
+. "$(dirname "$0")/lib.sh"
+FROM_PANE="" target="" new="" exact=0
+usage() {
+  cat <<'EOF'
+usage: tmux-rename [--from ME] <agent> <new> [--exact]
+
+Give a live agent a new name and update its saved references and peer labels.
+With --from, rename yourself or a descendant. Without it, the user may rename
+any agent. The renamed agent and its peers receive notices; use the new name
+in later commands, including --from. There is no alias for the old name.
+
+Short names get the command-directory prefix; a matching prefix is kept.
+--exact uses the name verbatim. Names must use letters, digits, . _ ~ or -;
+existing pane names and saved session names are refused.
+
+Setting: option @tmux_agents_name_format, env TMUX_AGENTS_NAME_FORMAT
+(exact or prefixed; default prefixed). --exact overrides either setting.
+EOF
+}
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --from) [ "$#" -ge 2 ] && [ -n "$2" ] || die '--from needs an agent'; FROM_PANE="$2"; shift 2 ;;
+    --exact) exact=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    -*) die "unknown option '$1'" ;;
+    *) if [ -z "$target" ]; then target="$1"; elif [ -z "$new" ]; then new="$1"; else die 'only an agent and a new name are allowed'; fi; shift ;;
+  esac
+done
+[ -n "$target" ] && [ -n "$new" ] || { usage >&2; exit 1; }
+require_tmux
+pane="$(resolve_pane "$target")"
+if [ -n "$FROM_PANE" ]; then
+  caller="$(resolve_pane "$FROM_PANE")"
+  [ "$caller" = "$pane" ] || pane_is_descendant "$pane" "$caller" || die "'$target' is not you or your descendant"
+fi
+new="$(format_given_name "$(pane_command "$pane")" "$(tmux display-message -p -t "$pane" '#{pane_current_path}')" "$new" "$exact")"
+rename_agent "$pane" "$new"
+printf 'renamed to %s (%s)\n' "$new" "$pane"
