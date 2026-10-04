@@ -7,27 +7,49 @@ Notes for AI agents working on tmux-agents.
 - **Never touch the user's tmux server.** Test on your own socket: `tmux -L <testname>`.
 - Before pointing `TMUX=` at a test socket, check the server is up (`tmux -L <testname> has-session`) and the socket path is non-empty and not `*/default`. A failed test server plus an empty `TMUX` falls back to the user's server.
 - Clean up with `tmux -L <testname> kill-server` only. Never run a bare `tmux kill-server`.
-- Fake agents: point `TMUX_SPAWN_BIN` at a directory with stub `claude`/`codex` scripts.
-- `tests/ask-queue.sh` checks durable queuing, escalation, bounces, legacy inspection and retries.
-- `tests/msg-waiting-ui.sh` checks message-waiting pins, ordering and chip display.
-- `tests/resume-messages.sh` checks saved messages arrive after resume in order with their original bodies.
-- `tests/list-budget.sh` enforces process and timing budgets for both list scopes, first rows, and startup to fzf execution on an isolated fixture with nested ownership and closed records.
-- `tests/dismiss.sh` checks descendant authorization, subtree closure order, retained children, done filtering and grandchild resume.
-- `tests/list-scope.sh` checks client window scope, ancestry, pinned attention, closed records and picker navigation.
-- `tests/spawn-split.sh` checks visible layouts, pane-local options, ownership, messages, list navigation and hidden resume.
-- `tests/spawn-for.sh` checks `tmux-spawn --for`: ownership, links, no task, depth, who may close it, and idle state in the list and chip.
-- `tests/names.sh` checks that names that no longer exist fail instead of resolving to another pane, and that real tmux targets still work. Run it after touching name or target lookup.
-- `tests/needs-you.sh` checks when sub agents are and aren't flagged "needs you". Run it after touching `tmux-agent-report`, `tmux-ask` or the skills' messaging rules; add a case for every new workflow.
+- Test servers use `set -g default-shell /bin/sh`, so the user's shell config doesn't run in test panes.
+- Stub both agents: point `TMUX_SPAWN_BIN` at a directory with `claude` and `codex` scripts that print a marker and `exec cat`, and check the marker before going on. In `tmux-spawn`, the agent type comes before the options.
+- Run every suite before a release; each file's header says what it covers:
+
+  ```sh
+  for t in tests/*.sh; do /bin/bash "$t" </dev/null || echo "FAILED $t"; done
+  ```
+
+  `</dev/null` matters: `tmux-spawn` reads a task from stdin when given none, so a test without it can hang.
+- After touching something, run at least:
+
+  | Touching | Run |
+  | --- | --- |
+  | `tmux-agent-report`, `tmux-ask`, the skills' messaging rules | `needs-you.sh`, `ask-queue.sh`, `resume-messages.sh` |
+  | `tmux-agents` (list, chip, picker) | `list-budget.sh`, `list-scope.sh`, `msg-waiting-ui.sh` |
+  | `tmux-spawn` | `spawn-for.sh`, `spawn-split.sh`, `resume-messages.sh` |
+  | `tmux-dismiss` | `dismiss.sh` |
+  | name or target lookup (`lib.sh`) | `names.sh` |
+
+- Every fix gets a test that fails without it; every new workflow gets a case in its suite.
+- **A flaky test blocks the release** until its cause is known. Rerun a suspect suite about ten times with background CPU load, and fix the cause, never with a sleep. Async tests wait for explicit conditions and assert on a message's identity (its body and `.meta`), not on how many files a directory holds.
 - Target bash 3.2 (macOS): see [environment](docs/design/environment.md#macos-bash-32) and [pitfalls](docs/design/pitfalls-and-testing.md).
+
+## Rules that keep it fast and correct
+
+- **The list build has a budget:** one `tmux list-panes -a` snapshot and one read of the session records per build, lookups and ancestor walks in memory, never an external command per agent or per ancestor step. A change to the open path measures start→fzf and start→first rows. See [docs/performance.md](docs/performance.md) and its [decision](docs/decisions/2026-10-04-list-build-budget.md); `tests/list-budget.sh` enforces it.
+- **Sub agent states** (working, idle, done, needs you, permission, message waiting): before changing how `@state` or its markers are set, read [docs/design/sub-agents.md](docs/design/sub-agents.md) ("Done state and cleanup") and add a `needs-you.sh` case for the workflow.
+- **Decisions first:** record behaviour changes the user decides in [docs/decisions/](docs/decisions/README.md), one file each, indexed in its README, and answer UX questions before building.
+
+## Working together
+
+- Agents may share one checkout. Agree file ownership first and hand over shared files in turn. Commit only your own paths (`git commit -- <paths>`), never `git add -A` while others are working; reread HEAD and your diff before committing; never reset, stash or rebase over others' uncommitted changes (push directly if origin hasn't moved, otherwise coordinate).
 
 ## Layout
 
-`bin/` commands, `tmux/tmux-agents.conf` bindings and hooks, `skills/` agent skills, `integrations/` per-tool glue, `install.sh`. Keep README (users), DESIGN.md and docs/design/ (why and pitfalls) and the two skills in sync when behaviour changes.
+`bin/` commands, `tmux/tmux-agents.conf` bindings and hooks, `skills/` (the `tmux-agents` skill in `claude/` and `codex/`, which match except Codex's Sandbox section, plus the shared `tmux-agents-setup` and `tmux-agents-perf`), `integrations/` per-tool glue, `install.sh`, `tests/`. Docs: README (users), `docs/guide.md` (details), DESIGN.md and `docs/design/` (how and why), `docs/decisions/` (what the user decided), `docs/performance.md`. Keep them and the skills in sync when behaviour changes. No em dashes; keep the README short and move details to the guide.
 
 **README.zh-CN.md must always match README.md.** Any change to README.md updates README.zh-CN.md in the same commit: same sections in the same order, same commands, links and code blocks, in natural Chinese rather than word for word.
 
 ## Commits and releases
 
-- Commit style: `feat: ...`, `fix: ...`, `docs: ...`, `chore: ...`.
-- Releases are semver tags `vX.Y.Z` with a GitHub release; add the notes to CHANGELOG.md first.
-- The maintainer's dotfiles vendor this repo as a subtree at `.local/share/tmux-agents`. It may be changed in either place, but every change must be synced both ways (`git subtree push` / `git subtree pull --squash`, run from the dotfiles root; see the dotfiles' AGENTS.md).
+- Commit style: `feat: ...`, `fix: ...`, `docs: ...`, `test: ...`, `chore: ...`.
+- Release: turn CHANGELOG.md's "Unreleased" into the version (semver: minor for new options or changed behaviour, patch for fixes and docs), run every suite, commit and push, then `gh release create vX.Y.Z --target main` as a separate step. Before tagging, check new messages, HEAD and existing tags; a hold on the release must be lifted explicitly.
+- Reply as soon as the release is out; send follow-ups (syncs, announcements) as notices.
+- Never move or delete a published tag. If something missed a release, ship a follow-up patch.
+- The maintainer vendors this repo into their dotfiles as a subtree; sync both ways by default, as described in the dotfiles' AGENTS.md. When a task says not to release or sync, don't, and say in your reply what's left unsynced.

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Docs:** AGENTS.md is reorganised from what the agents learned building v1.6 and v1.7: a run-all command and a "touching X, run Y" table instead of per-test lines, rules for flaky and async tests, the list-build budget, state changes, shared checkouts, decisions and releases. DESIGN.md's goals, architecture and script table describe the current behaviour (session records and the message queue as the only files, visible splits, --for, subtree closing, never-drop delivery).
+
 ## v1.7.2 (2026-10-04)
 
 - **Docs:** the two READMEs are back in sync (the status line lists `○` idle and `✉` message waiting; the duplicate "Slow popup startup" section is folded into "If popups feel slow"), and AGENTS.md requires README.zh-CN.md to change with README.md in the same commit.
