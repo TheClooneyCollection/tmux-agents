@@ -54,6 +54,24 @@ spawn() { "$B/tmux-spawn" "$@" --from main </dev/null; }
 ready() { tmux capture-pane -p -S -100 -t "$1" | grep -q 'STUB READY'; }
 file_count() { find "$queue" -name "$1" -type f | wc -l | tr -d ' '; }
 bounced() { [ "$(file_count '*.undelivered')" -eq 3 ]; }
+original_metadata_intact() {
+  local f
+  for f in "$tmp"/original/*.meta; do
+    cmp -s "$f" "$queue/${f##*/}" || return 1
+  done
+}
+receiver_file_count() {
+  local extension="$1" f n=0 current="${new:-none}"
+  current="${current#%}"
+  for f in "$queue"/*."$extension"; do
+    [ -f "$f" ] || continue
+    case "$f" in
+      *-"${old#%}"."$extension"|*-"$current"."$extension") n=$((n+1)) ;;
+    esac
+  done
+  printf '%s\n' "$n"
+}
+notices_queued() { [ "$(find "$queue" -name '*-0.msg' -type f | wc -l | tr -d ' ')" = 3 ]; }
 received() { cmp -s "$tmp/expected" "$RESUME_MESSAGES_LOG"; }
 spawn claude --name receiver >"$tmp/spawn"
 old="$(pane_of receiver)"
@@ -74,16 +92,23 @@ sleep 1
 check 'all three sends really queued' test "$(grep -l '^queued ' "$tmp"/queued-* | wc -l | tr -d ' ')" = 3
 check 'queue retains all three message bodies' test "$(file_count '*.msg')" = 3
 check 'every queued message has metadata' test "$(file_count '*.meta')" = 3
+mkdir "$tmp/original"
 : >"$tmp/expected"
 # Keep byte-exact originals, including headers, reply instructions and kinds.
 for f in $(find "$queue" -name '*.msg' | sort); do
+  cp "${f%.msg}.meta" "$tmp/original/"
   cat "$f" >>"$tmp/expected"
   printf '\n' >>"$tmp/expected"
 done
+# Hold bounce notices at the sender so their own metadata coexists with
+# the original messages deterministically, even on an otherwise idle machine.
+tmux copy-mode -t %0
 "$B/tmux-dismiss" --from main receiver >"$tmp/dismiss"
 check 'receiver is actually gone' test -z "$(pane_of receiver)"
 check 'delivery workers bounce all three after closure' wait_for bounced
-check 'bounce retains all message metadata' test "$(file_count '*.meta')" = 3
+check 'three bounce notices remain queued for the busy sender' wait_for notices_queued
+check 'bounce metadata coexists with all original metadata' test "$(file_count '*.meta')" = 6
+check 'bounce retains all message metadata' original_metadata_intact
 check 'nothing was delivered before resume' test ! -s "$RESUME_MESSAGES_LOG"
 # Retry must find the new pane by the recorded receiver name, not its old id.
 spawn --resume receiver >"$tmp/resume"
@@ -94,9 +119,10 @@ check 'resume restores ownership before retry' test "$(info "$new" @parent)" = %
 check 'resume delivers original messages exactly once, oldest first' wait_for received
 check 'retried request leaves resumed receiver working' test "$(info "$new" @state)" = working
 check 'sender still awaits the resumed receiver' test "$(info %0 @awaiting)" = receiver
-check 'successful retry removes saved messages' test "$(file_count '*.undelivered')" = 0
-check 'successful retry leaves no queued messages' test "$(file_count '*.msg')" = 0
-check 'successful retry removes metadata' test "$(file_count '*.meta')" = 0
+check 'successful retry removes saved messages' test "$(receiver_file_count undelivered)" = 0
+check 'successful retry leaves no queued messages' test "$(receiver_file_count msg)" = 0
+check 'successful retry removes metadata' test "$(receiver_file_count meta)" = 0
+check 'retry leaves unrelated bounce notices queued' notices_queued
 "$B/tmux-ask" --retry --to receiver >"$tmp/retry-again"
 check 'explicit retry does not duplicate delivered messages' received
 "$B/tmux-dismiss" --from main receiver >"$tmp/dismiss-again"
