@@ -48,6 +48,12 @@ agent 之间可以互相派任务、同步进度。它们的 pane 会一直保�
 
 它会检查你的环境、运行安装脚本，每处配置改动都先给你看，然后带你走一遍 quick start。之后对任何 agent 说 "tmux-agents quick start"，就能再走一遍。
 
+也可以用 [skills CLI](https://skills.sh) 添加这些 skill，然后对你的 agent 说 "set up tmux-agents"：
+
+```sh
+npx skills add TheClooneyCollection/tmux-agents
+```
+
 ### 手动安装
 
 需要 tmux 3.2+ 和 bash。`fzf` 可选（选择器和实时 agent 列表会更好用）。
@@ -61,7 +67,7 @@ cd tmux-agents
 `install.sh` 会：
 
 - 把 `tmux-*` 命令链接到 `~/.local/bin`（用 `BIN_DIR` 修改）
-- 把 `tmux-agents`、`tmux-agents-setup` 和 `tmux-agents-perf` 三个 skill 链接到 `~/.claude/skills/` 和你的 Codex home
+- 把 `tmux-agents`、`tmux-agents-setup`、`tmux-agents-perf` 和 `agent-chain` 四个 skill 链接到 `~/.claude/skills/` 和你的 Codex home
 - 复制 Codex rules（Codex 会忽略符号链接的 `.rules` 文件）
 - 不加 `--force` 时，绝不覆盖已有的真实文件
 
@@ -132,6 +138,7 @@ set -g @tmux_agents_name_format exact
 2. 对 Claude 说："用 tmux-agents 连接 codex 那个 pane，让它 review 这个 diff"。请求会出现在 Codex 的 pane 里，回复会回到 Claude。
 3. 对 Claude 说："开一个子 agent 给 parser 加测试"。它在隐藏窗口里运行，状态栏上方那一行会显示它的进度。
 4. 按 `prefix + a` 查看它。按 Enter 用 popup 打开，按 `prefix + d` 返回。
+5. 对 Claude 说："start the chain"。它会成为和你对话的 main agent，再开一个负责协调的 secondary 和一个负责实现的 Codex worker，三个并排在你的窗口里（`agent-chain` skill）。
 
 也可以让 agent 带你走一遍：对它说 "tmux-agents quick start"。
 
