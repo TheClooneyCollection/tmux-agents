@@ -134,6 +134,7 @@ cleanup() {
 trap cleanup EXIT
 
 require_tmux
+ensure_agent_ids
 self="$(self_pane)"
 
 # --list: for agents, every pane they could connect to, by window.

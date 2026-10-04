@@ -10,6 +10,7 @@ case "${1:-}" in
 esac
 
 require_tmux
+ensure_agent_ids
 self="$(self_pane)"
 peer="$(resolve_peer "$self" "$1")"
 lines="${2:-40}"

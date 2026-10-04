@@ -22,6 +22,7 @@ while [ $# -gt 0 ]; do
 done
 
 require_tmux
+ensure_agent_ids
 self="$(self_pane)"
 
 if [ -n "$target" ]; then

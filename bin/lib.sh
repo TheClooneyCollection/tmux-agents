@@ -224,6 +224,8 @@ set_name() {
   if [ -n "$owner" ] && [ "$owner" != "$1" ]; then
     die "name '$2' is already used by pane $owner"
   fi
+  ensure_agent_ids || return 1
+  ensure_agent_id "$1" >/dev/null || return 1
   tmux set-option -p -t "$1" @agent "$2"
 }
 
@@ -259,9 +261,9 @@ is_peer() {
 }
 
 add_peer() {
-  # A live pane with this name is back, so it's no longer "closed".
+  # The same identity is back; reusing its label must not clear history.
   local name cur
-  name="$(pane_name "$2")"
+  name="$(pane_agent_id "$2")"
   cur="$(closed_names "$1")"
   case " $cur " in
     *" $name "*) cur="$(printf '%s\n' "$cur" | awk -v n="$name" '{ for (i = 1; i <= NF; i++) if ($i != n) o = o (o ? " " : "") $i } END { print o }')"
@@ -314,7 +316,7 @@ remove_word() {
   if [ -n "$cur" ]; then tmux set-option -p -t "$1" "$2" "$cur"; else tmux set-option -pu -t "$1" "$2" 2>/dev/null || true; fi
 }
 
-# Names of agents the user closed that pane $1 was connected to (@closed).
+# IDs of agents the user closed that pane $1 was connected to (@closed).
 closed_names() {
   tmux show-options -pqv -t "$1" @closed 2>/dev/null
 }
@@ -324,7 +326,7 @@ closed_names() {
 # $2, if given, is the pane doing the closing; it already knows.
 note_closed() {
   local name peer cur
-  name="$(pane_name "$1")"
+  name="$(pane_agent_id "$1")"
   [ -n "$name" ] || return 0
   for peer in $(get_peers "$1"); do
     [ "$peer" != "${2:-}" ] || continue
@@ -336,11 +338,11 @@ note_closed() {
 
 # Resolve a name to a connected peer of pane $1.
 resolve_peer() {
-  local id
+  local id closed_id
   if [ -z "$(find_pane "$2")" ]; then
-    case " $(closed_names "$1") " in
-      *" $2 "*) die "'$2' was closed by the user. Don't reopen it on your own; if the user asks for it back, tmux-spawn --resume $2 brings it back with its conversation. Otherwise, if you still need it, spawn a new sub agent and pass along any report paths it gave you." ;;
-    esac
+    for closed_id in $(closed_names "$1"); do
+      [ "$(agent_name_by_id "$closed_id")" != "$2" ] || die "'$2' was closed by the user. Don't reopen it on your own; if the user asks for it back, tmux-spawn --resume $2 brings it back with its conversation. Otherwise, if you still need it, spawn a new sub agent and pass along any report paths it gave you."
+    done
   fi
   id="$(resolve_pane "$2")"
   is_peer "$1" "$id" || die "'$2' is not connected to $(label "$1"). If that isn't you, pass --from <your name> (see tmux-peers)"
@@ -384,39 +386,267 @@ label() {
   printf '%s (%s)' "${name:-unnamed}" "$1"
 }
 
-# Session records: what it takes to reopen a closed sub agent. One file per
-# sub agent name, per tmux server (pane ids and names are per server), as
-# key=value lines: kind (claude, codex or a Codex profile), id (the agent's
-# session id; Codex's arrives with its first turn end), dir, parent (name),
-# depth, closed (epoch, once closed). They outlive the pane, so tmux-spawn
-# --resume NAME and the agent list can bring the conversation back.
+# Session records use hidden agent IDs as filenames. name is a label;
+# id remains the Claude/Codex conversation ID. parent is an agent ID,
+# parent_name is a display snapshot. agent_id explicitly marks the format.
 sessions_dir() {
-  local sock="${TMUX%%,*}"
-  printf '%s/tmux-agents/%s/sessions\n' "${XDG_STATE_HOME:-$HOME/.local/state}" "$(basename "${sock:-default}")"
+  local sock="${TMUX:-default}"
+  sock="${sock%%,*}"; sock="${sock##*/}"
+  printf '%s/tmux-agents/%s/sessions\n' "${XDG_STATE_HOME:-$HOME/.local/state}" "${sock:-default}"
 }
 
-# record_get NAME KEY: print the value, empty if unset.
+# Identity helpers never run merely from sourcing this file.
+valid_agent_id() {
+  [ "${#1}" -eq 13 ] || return 1
+  case "$1" in a*) ;; *) return 1 ;; esac
+  case "${1#a}" in *[!0-9a-f]*) return 1 ;; esac
+}
+
+new_agent_id() {
+  local aid dir
+  dir="$(sessions_dir)"
+  while :; do
+    aid="a$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')" || return 1
+    valid_agent_id "$aid" || return 1
+    [ ! -e "$dir/$aid" ] && [ -z "$(find_pane_by_id "$aid")" ] || continue
+    printf '%s\n' "$aid"
+    return 0
+  done
+}
+
+pane_agent_id() {
+  tmux display-message -p -t "$1" '#{@agent_id}' 2>/dev/null
+}
+
+find_pane_by_id() {
+  valid_agent_id "$1" || return 1
+  tmux list-panes -a -F '#{pane_id} #{@agent_id}' | awk -v id="$1" '$2 == id { print $1; exit }'
+}
+
+_ensure_agent_id_locked() {
+  local pane="$1" requested="${2:-}" aid owner
+  pane_alive "$pane" || return 1
+  aid="$(pane_agent_id "$pane")"
+  if [ -n "$requested" ]; then
+    valid_agent_id "$requested" || return 1
+    [ -z "$aid" ] || [ "$aid" = "$requested" ] || return 1
+    owner="$(find_pane_by_id "$requested")"
+    [ -z "$owner" ] || [ "$owner" = "$pane" ] || return 1
+    aid="$requested"
+  elif ! valid_agent_id "$aid"; then
+    aid="$(new_agent_id)" || return 1
+  fi
+  tmux set-option -p -t "$pane" @agent_id "$aid" || return 1
+  printf '%s\n' "$aid"
+}
+
+# Print the pane's stable ID. An explicit ID restores a closed identity;
+# refuse to overwrite another identity or adopt an ID already live elsewhere.
+ensure_agent_id() {
+  local aid
+  aid="$(pane_agent_id "$1")" || return 1
+  if valid_agent_id "$aid"; then
+    [ -z "${2:-}" ] || [ "$aid" = "$2" ] || return 1
+    printf '%s\n' "$aid"
+    return 0
+  fi
+  agent_identity_lock exclusive /bin/bash -c '. "$1"; _ensure_agent_id_locked "$2" "$3"' \
+    identity "${BASH_SOURCE[0]}" "$1" "${2:-}"
+}
+
+agent_name_by_id() {
+  local pane
+  valid_agent_id "$1" || return 1
+  pane="$(find_pane_by_id "$1")"
+  if [ -n "$pane" ]; then pane_name "$pane"; else record_get "$1" name; fi
+}
+
+record_ids_by_name() {
+  local dir f
+  dir="$(sessions_dir)"
+  for f in "$dir"/*; do
+    [ -f "$f" ] || continue
+    valid_agent_id "${f##*/}" || continue
+    [ "$(record_get "${f##*/}" name)" != "$1" ] || printf '%s\n' "${f##*/}"
+  done
+}
+
+# Call BEFORE a queue shared lock, never upgrade shared -> exclusive.
+# The optional queue root exists for isolated migration tests, not settings.
+# A completed check uses only builtins (including sessions_dir).
+ensure_agent_ids() {
+  local dir
+  dir="$(sessions_dir)"
+  [ ! -f "$dir/.ids-v1" ] || return 0
+  agent_identity_lock exclusive /bin/bash -c '. "$1"; _migrate_agent_ids_locked "$2"' \
+    migrate "${BASH_SOURCE[0]}" "${1:-}"
+}
+
+# Caller holds identity EX lock. Journal the original names/options before
+# replacing anything; replay it until the final marker is written. The journal
+# also disambiguates legacy names that happen to look exactly like agent IDs.
+_migrate_agent_ids_locked() {
+  local dir root sock
+  dir="$(sessions_dir)"
+  [ ! -f "$dir/.ids-v1" ] || return 0
+  root="${1:-/tmp/tmux-agents-$(id -u)/queue}"
+  sock="${TMUX:-default}"; sock="${sock%%,*}"; sock="${sock##*/}"
+  mkdir -p "$dir" || return 1
+  perl -MFile::Temp=tempfile -MJSON::PP -e '
+    use strict; use warnings;
+    my ($dir, $root, $sock) = @ARGV;
+    sub read_file {
+      my ($f) = @_; open(my $h, "<", $f) or die "$f: $!";
+      local $/; my $text = <$h>; close $h; return defined($text) ? $text : "";
+    }
+    sub atomic {
+      my ($f, $text) = @_;
+      my ($h, $tmp) = tempfile(".ids-write.XXXXXX", DIR => ($f =~ m{^(.*)/} ? $1 : "."), UNLINK => 0);
+      print {$h} $text or die "$tmp: $!"; close($h) or die "$tmp: $!";
+      rename($tmp, $f) or die "$tmp -> $f: $!";
+    }
+    sub fields {
+      my ($text) = @_; my %v;
+      for (split /\n/, $text) { $v{$1} = $2 if /^([^=]+)=(.*)$/; }
+      return \%v;
+    }
+    sub replace_fields {
+      my ($text, $values) = @_;
+      my @lines = grep { !/^([^=]+)=/ || !exists $values->{$1} } split /\n/, $text;
+      push @lines, map { $_ . "=" . $values->{$_} } grep { length $values->{$_} } sort keys %$values;
+      return join("\n", @lines) . "\n";
+    }
+    sub tmux_set {
+      my ($pane, $key, $value) = @_;
+      system("tmux", "set-option", "-p", "-t", $pane, $key, $value) == 0 or die "tmux set $pane $key failed";
+    }
+    open(my $ph, "-|", "tmux", "list-panes", "-a", "-F", "#{pane_id}\t\#{\@agent}\t\#{\@agent_id}\t\#{\@awaiting}\t\#{\@closed}") or die "tmux: $!";
+    my (%panes, %used, %live);
+    while (<$ph>) {
+      chomp; my ($p, $name, $id, $awaiting, $closed) = split /\t/, $_, -1;
+      $panes{$p} = {name=>$name, id=>$id, awaiting=>$awaiting, closed=>$closed};
+      $used{$id} = 1 if length $id;
+      $live{$name} = $p if length $name;
+    }
+    close($ph) or die "tmux snapshot failed";
+    opendir(my $dh, $dir) or die "$dir: $!";
+    my @files = sort grep { !/^\./ && -f "$dir/$_" } readdir($dh); closedir($dh);
+    $used{$_} = 1 for @files;
+    sub fresh_id {
+      while (1) {
+        open(my $random, "<", "/dev/urandom") or die "urandom: $!";
+        read($random, my $bytes, 6) == 6 or die "short random read"; close($random);
+        my $id = "a" . unpack("H*", $bytes);
+        next if $used{$id}; $used{$id} = 1; return $id;
+      }
+    }
+    my $journal = "$dir/.ids-journal";
+    my $plan;
+    if (-f $journal) { $plan = decode_json(read_file($journal)); }
+    else {
+      $plan = {names=>{}, records=>[], panes=>{}};
+      # Existing new-format records recover mappings even if an old record
+      # was already deleted by an interrupted conversion.
+      for my $file (@files) {
+        my $v = fields(read_file("$dir/$file"));
+        if ($file =~ /^a[0-9a-f]{12}$/ && ($v->{agent_id}//"") eq $file) {
+          $plan->{names}{$v->{name}} = $file if length($v->{name}//"");
+        }
+      }
+      for my $p (sort keys %panes) {
+        my $v = $panes{$p}; next unless length $v->{name};
+        my $id = $v->{id} =~ /^a[0-9a-f]{12}$/ ? $v->{id} : ($plan->{names}{$v->{name}} // fresh_id());
+        $plan->{names}{$v->{name}} = $id;
+        $plan->{panes}{$p} = {%$v, id=>$id};
+      }
+      for my $file (@files) {
+        my $text = read_file("$dir/$file"); my $v = fields($text);
+        next if $file =~ /^a[0-9a-f]{12}$/ && ($v->{agent_id}//"") eq $file;
+        my $id = $plan->{names}{$file} // fresh_id();
+        $plan->{names}{$file} = $id;
+        push @{$plan->{records}}, {old=>$file, id=>$id, text=>$text};
+      }
+      # Also capture unnamed panes options, which may reference named agents.
+      for my $p (keys %panes) { $plan->{panes}{$p} //= $panes{$p}; }
+      atomic($journal, encode_json($plan));
+    }
+    my $names = $plan->{names};
+    for my $r (@{$plan->{records}}) {
+      my $v = fields($r->{text}); my %updates = (agent_id=>$r->{id}, name=>$r->{old});
+      if (length($v->{parent}//"")) {
+        $updates{parent_name} = $v->{parent};
+        $updates{parent} = $names->{$v->{parent}} // "";
+      }
+      atomic("$dir/$r->{id}", replace_fields($r->{text}, \%updates));
+      # Do not delete before replacement is complete, including same-name
+      # id-shaped legacy records (fresh IDs never reuse any source filename).
+      unlink("$dir/$r->{old}") or die "unlink $r->{old}: $!" if -f "$dir/$r->{old}" && $r->{old} ne $r->{id};
+    }
+    for my $p (sort keys %{$plan->{panes}}) {
+      next unless exists $panes{$p};
+      my $v = $plan->{panes}{$p};
+      tmux_set($p, "\@agent_id", $v->{id}) if length $v->{name};
+      for my $opt (qw(awaiting closed)) {
+        my %seen; my @ids;
+        for my $name (split /\s+/, $v->{$opt}) {
+          my $id = $names->{$name} // ($name =~ /^a[0-9a-f]{12}$/ && $used{$name} ? $name : "");
+          push @ids, $id if length($id) && !$seen{$id}++;
+        }
+        tmux_set($p, "\@$opt", join(" ", @ids));
+      }
+    }
+    # Per-server queued AND undelivered metadata, plus legacy flat files.
+    # Legacy files with explicit foreign server attribution are untouched.
+    my @meta;
+    for my $q ("$root/$sock", $root) {
+      next unless -d $q; opendir(my $qh, $q) or die "$q: $!";
+      push @meta, map { "$q/$_" } grep { /\.meta$/ && -f "$q/$_" } readdir($qh);
+      closedir($qh);
+    }
+    for my $f (@meta) {
+      my $text = read_file($f); my $v = fields($text); my %updates;
+      if ($f !~ m{^\Q$root/$sock/\E}) {
+        my $server = $v->{socket} // $v->{server} // "";
+        $server =~ s{.*/}{}; next if length($server) && $server ne $sock;
+        # At least one endpoint must belong to this server.
+        next unless exists $names->{$v->{from_name}//""} || exists $names->{$v->{to_name}//""};
+      }
+      for my $side (qw(from to)) {
+        next if length($v->{"${side}_id"}//"");
+        my $id = $names->{$v->{"${side}_name"}//""};
+        $updates{"${side}_id"} = $id if defined $id;
+      }
+      atomic($f, replace_fields($text, \%updates)) if keys %updates;
+    }
+    atomic("$dir/.ids-v1", "1\n");
+    unlink($journal) or die "unlink journal: $!";
+  ' "$dir" "$root" "${sock:-default}"
+}
+
+# record_get AGENT_ID KEY: print the value, empty if unset.
 record_get() {
+  valid_agent_id "$1" || return 1
   local f
   f="$(sessions_dir)/$1"
   [ -f "$f" ] || return 0
   awk -F= -v k="$2" '$1 == k { sub(/^[^=]*=/, ""); v = $0 } END { printf "%s", v }' "$f"
 }
 
-# record_set NAME KEY VALUE: set one key (empty VALUE removes it).
+# record_set AGENT_ID KEY VALUE: set one key (empty VALUE removes it).
 record_set() {
+  valid_agent_id "$1" || return 1
   local d f tmp
   d="$(sessions_dir)"; f="$d/$1"
   mkdir -p "$d"
   tmp="$(mktemp "$d/.rec.XXXXXX")"
-  { [ ! -f "$f" ] || awk -F= -v k="$2" '$1 != k' "$f"; [ -z "$3" ] || printf '%s=%s\n' "$2" "$3"; } > "$tmp"
+  { [ ! -f "$f" ] || awk -F= -v k="$2" '$1 != k && $1 != "agent_id"' "$f"; printf 'agent_id=%s\n' "$1"; [ -z "$3" ] || printf '%s=%s\n' "$2" "$3"; } > "$tmp"
   mv -f "$tmp" "$f"
 }
 
 # Mark the sub agent in pane $1 closed, if it has a record.
 record_closed() {
   local name
-  name="$(pane_name "$1")"
+  name="$(pane_agent_id "$1")"
   [ -n "$name" ] && [ -f "$(sessions_dir)/$name" ] || return 0
   record_set "$name" closed "$(date +%s)"
 }
@@ -481,43 +711,17 @@ agent_identity_lock() {
 
 # Called under the identity lock. Authorization belongs to the caller.
 _rename_agent_locked() {
-  local pane="$1" new="$2" old owner dir f tmp p opt cur changed root sock
+  local pane="$1" new="$2" old owner dir aid
+  _migrate_agent_ids_locked || return 1
   valid_name "$new" || die "invalid name '$new' (use letters, digits, . _ ~ and -)"
   pane_alive "$pane" || die "pane $pane no longer exists"
   old="$(pane_name "$pane")"
+  aid="$(_ensure_agent_id_locked "$pane")" || return 1
   [ "$old" != "$new" ] || { printf '%s\n' "$old"; return 0; }
   owner="$(find_pane "$new")"
   [ -z "$owner" ] || die "name '$new' is already used by pane $owner"
   dir="$(sessions_dir)"
-  [ ! -e "$dir/$new" ] || die "name '$new' already has a saved session record"
-  if [ -n "$old" ]; then
-    if [ -f "$dir/$old" ]; then mv "$dir/$old" "$dir/$new" || return 1; fi
-    for f in "$dir"/*; do
-      [ -f "$f" ] || continue
-      [ "$(record_get "${f##*/}" parent)" = "$old" ] || continue
-      record_set "${f##*/}" parent "$new" || return 1
-    done
-    for p in $(tmux list-panes -a -F '#{pane_id}'); do
-      for opt in @awaiting @closed; do
-        cur="$(tmux show-options -pqv -t "$p" "$opt")"
-        changed="$(printf '%s\n' "$cur" | awk -v old="$old" -v new="$new" '{ for (i=1;i<=NF;i++) { if ($i==old) $i=new; } print }')"
-        [ "$cur" = "$changed" ] || tmux set-option -p -t "$p" "$opt" "$changed" || return 1
-      done
-    done
-    root="/tmp/tmux-agents-$(id -u)/queue"
-    sock="${TMUX:-default}"; sock="${sock%%,*}"; sock="${sock##*/}"
-    # Only this server and the legacy root, never another server directory.
-    for f in "$root/$sock"/*.meta "$root"/*.meta; do
-      [ -f "$f" ] || continue
-      tmp="$(mktemp "${f}.rename.XXXXXX")" || return 1
-      awk -v old="$old" -v new="$new" '
-        $0 == "from_name=" old { print "from_name=" new; next }
-        $0 == "to_name=" old { print "to_name=" new; next }
-        { print }
-      ' "$f" > "$tmp" || { rm -f "$tmp"; return 1; }
-      mv "$tmp" "$f" || return 1
-    done
-  fi
+  if [ -f "$dir/$aid" ]; then record_set "$aid" name "$new" || return 1; fi
   tmux set-option -p -t "$pane" @agent "$new" || return 1
   refresh_labels || return 1
   printf '%s\n' "$old"
