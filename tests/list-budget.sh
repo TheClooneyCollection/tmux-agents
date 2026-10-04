@@ -58,15 +58,25 @@ mkdir "$tmp/ui"
 cat >"$tmp/ui/fzf" <<'STUB'
 #!/bin/bash
 set -eu
-# Consume the initial batch and exit: completion time conservatively includes
-# the few shell steps after fzf receives the rows, without Python startup noise.
+: >"$BENCH_EXECUTED"
+while IFS= read -r call; do printf '%s\n' "$call"; done <"$BENCH_CALLS" >"$BENCH_EXEC_CALLS"
+reload=""
+for arg in "$@"; do
+  case "$arg" in
+    --prompt=*) export FZF_PROMPT="${arg#--prompt=}" ;;
+    start:reload\(*) reload="${arg#start:reload(}"; reload="${reload%)}" ;;
+  esac
+done
+if [ -n "$reload" ]; then exec < <(eval "$reload"); fi
+# Consume the initial batch and record its arrival before exiting; time measures
+# receipt of the first batch, without Python startup noise.
 found=0
 while IFS= read -r -d '' row; do
   case "$row" in *NAME*) found=1 ;; esac
 done
 [ "$found" = 1 ]
 if [ -n "${BENCH_SELECT:-}" ]; then
-  case "$*" in *'load:pos('*) ;; *) exit 2 ;; esac
+  case "$*" in *'load:pos('*|*'load:transform:'*) ;; *) exit 2 ;; esac
 fi
 printf 'ready' >"$BENCH_RECEIVED"
 exit 1
@@ -76,7 +86,7 @@ chmod +x "$tmp/ui/fzf"
 # Shims exec the real binaries and never intercept socket selection/cleanup.
 mkdir "$tmp/count"
 export BENCH_CALLS="$tmp/calls" BENCH_NOW="$now"
-for tool in tmux awk git basename sed date stat dirname tr column sort cut cat rm head wc fzf; do
+for tool in tmux awk git basename sed date stat dirname tr column sort cut cat rm head wc mktemp fzf; do
   if [ "$tool" = fzf ]; then real="$tmp/ui/fzf"; else real="$(command -v "$tool")"; fi
   {
     printf '#!/bin/bash\n'
@@ -91,7 +101,7 @@ for tool in tmux awk git basename sed date stat dirname tr column sort cut cat r
   } >"$tmp/count/$tool"
   chmod +x "$tmp/count/$tool"
 done
-export PATH="$tmp/count:$PATH" BENCH_RECEIVED="$tmp/received"
+export PATH="$tmp/count:$PATH" BENCH_RECEIVED="$tmp/received" BENCH_EXECUTED="$tmp/executed" BENCH_EXEC_CALLS="$tmp/exec-calls"
 mkdir "$tmp/installed"
 for file in "$here"/bin/tmux-* "$here/bin/lib.sh"; do ln -s "$file" "$tmp/installed/${file##*/}"; done
 python3 - "$before" "$tmp/installed/tmux-agents" "$client" <<'PY'
@@ -102,6 +112,7 @@ print('fixture: 50 panes, 100 records, nested/closed ancestors, 3 paths', flush=
 # Keep a loose 1s regression cap, overridable on reliably faster/slower hosts.
 cap = float(os.environ.get('TMUX_LIST_BUDGET_MS', '1000'))
 print(f'budget: <=20 external tools per build; <={cap:g}ms median of 3 after runs', flush=True)
+print(f'pre-fzf budget: <=3 tools and <={cap:g}ms per open', flush=True)
 old = {}
 checks = 0
 for label, script in [('before', before), ('after', after)]:
@@ -113,10 +124,11 @@ for label, script in [('before', before), ('after', after)]:
         args = [script, '--list'] if mode in ('local','all') else [script, '--client', client]
         env['BENCH_SELECT'] = '1' if mode == 'open-select' else ''
         if mode == 'open-select': args += ['--select', 'agent-1']
-        timings, counts = [], []
-        for repeat in range(1 if label == 'before' else 3):
+        timings, counts, exec_times, exec_counts = [], [], [], []
+        for repeat in range(3):
             open(env['BENCH_CALLS'], 'w').close()
-            if os.path.exists(env['BENCH_RECEIVED']): os.unlink(env['BENCH_RECEIVED'])
+            for key in ('BENCH_RECEIVED', 'BENCH_EXECUTED', 'BENCH_EXEC_CALLS'):
+                if os.path.exists(env[key]): os.unlink(env[key])
             start = time.time()
             result = subprocess.run(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
             end = time.time()
@@ -124,6 +136,9 @@ for label, script in [('before', before), ('after', after)]:
                 raise RuntimeError(result.stderr.decode())
             if mode.startswith('open'):
                 with open(env['BENCH_RECEIVED']) as f: assert f.read() == 'ready'
+                end = os.stat(env['BENCH_RECEIVED']).st_mtime_ns / 1e9
+                exec_times.append((os.stat(env['BENCH_EXECUTED']).st_mtime_ns / 1e9 - start)*1000)
+                exec_counts.append(sum(c != 'snapshot' for c in open(env['BENCH_EXEC_CALLS']).read().splitlines()))
             else:
                 assert b'message waiting' in result.stdout and b'closed-100' in result.stdout
                 if label == 'before': old[mode] = result.stdout
@@ -136,10 +151,16 @@ for label, script in [('before', before), ('after', after)]:
             timings.append((end-start)*1000)
             counts.append(len(calls))
             if label == 'after':
+                if mode.startswith('open'):
+                    assert exec_counts[-1] <= 3, (mode, exec_counts)
+                    assert exec_times[-1] <= cap, (mode, exec_times)
+                    checks += 2
                 assert len(calls) <= 20, (mode, len(calls), detail)
                 assert snapshots == 1, calls
                 assert detail['git'] == 3, detail
                 checks += 3
+        if exec_times:
+            print(f'{label:6s} {mode:11s} to fzf exec: {statistics.median(exec_times):.1f} ms; {max(exec_counts)} tools', flush=True)
         median = statistics.median(timings)
         print(f'{label:6s} {mode:11s} {median:8.1f} ms; {max(counts)} tools; {dict(detail)}', flush=True)
         if label == 'after':

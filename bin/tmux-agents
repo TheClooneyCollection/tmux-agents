@@ -283,6 +283,17 @@ case "${1:-}" in
     fi
     exit 0
     ;;
+  --initial-list)
+    parse_prompt "${FZF_PROMPT:-}"
+    rows="$(list_agents "$list_mode" "$list_scope" "${TMUX_AGENTS_LIST_CLIENT:-}")"
+    if [ -n "${TMUX_AGENTS_SELECT_FILE:-}" ]; then
+      # Write positioning before publishing rows; load runs after this reload.
+      printf '%s' "$rows" | awk -v RS='\036' -v s="$TMUX_AGENTS_SELECT" '
+        NR > 1 { sub(/^[^ ]+ +/, ""); if (index($0,s " ")==1 || index($0,"\n" s " ")) { print NR-1; exit } }
+      ' >"$TMUX_AGENTS_SELECT_FILE"
+    fi
+    printf '%s' "$rows" | tr '\036' '\0'
+    exit 0 ;;
   --list) require_tmux; parse_prompt "${FZF_PROMPT:-}"; list_agents "$list_mode" "$list_scope" "${TMUX_AGENTS_LIST_CLIENT:-}" | tr '\036' '\0'; exit 0 ;;
   # Popup body: a nested client on the hidden session, showing pane $2.
   # Detaching (prefix + d) brings back the list, on the same agent.
@@ -377,9 +388,10 @@ while [ $# -gt 0 ]; do
     *) shift ;;
   esac
 done
-require_tmux
+# The defaults lookup also validates the server; no separate list-sessions.
 # Fetch picker defaults together, rather than another tmux process per option.
-IFS=$'\t' read -r default_client default_mode prefix <<<"$(tmux display-message -p '#{?client_name,#{client_name},-}	#{?@tmux_agents_list_mode,#{@tmux_agents_list_mode},-}	#{prefix}')"
+defaults="$(tmux display-message -p '#{?client_name,#{client_name},-}	#{?@tmux_agents_list_mode,#{@tmux_agents_list_mode},-}	#{prefix}')" || die "can't reach the tmux server"
+IFS=$'\t' read -r default_client default_mode prefix <<<"$defaults"
 [ "$default_client" != - ] || default_client=""
 [ -n "$client" ] || client="$default_client"
 command -v fzf >/dev/null 2>&1 || die "fzf is required"
@@ -390,25 +402,31 @@ export TMUX_AGENTS_LIST_CLIENT="$client"
 [ -n "$mode" ] || mode="$default_mode"
 [ "$mode" = all ] || mode=sub
 [ "$scope" = all ] || scope=window
-prompt="$(list_prompt "$mode" "$scope")"
-rows="$(list_agents "$mode" "$scope" "$client")"
+prompt="agents · this window> "
+[ "$mode" != all ] || prompt="all · this window> "
+[ "$scope" != all ] || prompt="${prompt/this window/all windows}"
 # The tmux prefix (C-b -> ctrl-b) arms "d" to close the list: prefix + d.
 prefix_keys=()
 case "$prefix" in
   C-[a-z]) pk="ctrl-${prefix#C-}"
     prefix_keys=(--bind "$pk:execute-silent(tmux set-option -g @tmux_agents_prefix_at \$(date +%s))" --bind "d:transform:'$self' --prefix-d") ;;
 esac
-start=""
+selection=()
 if [ -n "$select" ]; then
-  n="$(printf '%s' "$rows" | awk -v RS='\036' -v s="$select" 'NR > 1 { sub(/^[^ ]+ +/, ""); if (index($0, s " ") == 1 || index($0, "\n" s " ")) { print NR - 1; exit } }')"
-  [ -z "$n" ] || start="load:pos($n)+unbind(load)"
+  export TMUX_AGENTS_SELECT="$select"
+  TMUX_AGENTS_SELECT_FILE="$(mktemp "${TMPDIR:-/tmp}/tmux-agents-select.XXXXXX")"
+  export TMUX_AGENTS_SELECT_FILE
+  trap 'rm -f "$TMUX_AGENTS_SELECT_FILE"' EXIT
+  # An empty initial load must not consume the positioning action.
+  selection=(--bind "load:transform:if [ -s \"\$TMUX_AGENTS_SELECT_FILE\" ]; then read -r n < \"\$TMUX_AGENTS_SELECT_FILE\"; printf 'pos(%s)+unbind(load)' \"\$n\"; fi")
 fi
-out="$(printf '%s' "$rows" | tr '\036' '\0' | fzf --read0 --ansi --reverse --no-sort --header-lines=1 --with-nth=2.. --prompt="$prompt" \
-  ${start:+--bind "$start"} \
+out="$(fzf </dev/null --read0 --ansi --reverse --no-sort --header-lines=1 --with-nth=2.. --prompt="$prompt" \
+  ${selection[@]+"${selection[@]}"} \
   ${prefix_keys[@]+"${prefix_keys[@]}"} \
   --with-shell 'bash -c' \
-  --listen --bind "start:execute-silent('$self' --preview-loop >/dev/null 2>&1 &)" \
-  --footer="$(printf 'enter open · ^o jump (prefix+L back) · ^x dismiss\n^d clean done · ^a all/sub · ^t this/all windows · ^r refresh · prefix+d close')" --footer-border=rounded \
+  --listen --bind "start:reload('$self' --initial-list)" \
+  --bind "focus:execute-silent('$self' --preview-loop >/dev/null 2>&1 &)+unbind(focus)" \
+  --footer=$'enter open · ^o jump (prefix+L back) · ^x dismiss\n^d clean done · ^a all/sub · ^t this/all windows · ^r refresh · prefix+d close' --footer-border=rounded \
   --preview "case {1} in closed:*) '$self' --closed-info {1} ;; *) tmux capture-pane -ep -J -t {1} -S -300 ;; esac" --preview-window='right,55%,follow' \
   --bind "ctrl-x:execute-silent('$self' --dismiss {1})+reload('$self' --list)" \
   --bind "ctrl-r:reload('$self' --list)" \

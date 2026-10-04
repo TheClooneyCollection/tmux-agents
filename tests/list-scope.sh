@@ -161,6 +161,10 @@ cat >"$tmp/ui/tmux" <<'STUB'
 #!/bin/sh
 case "$1" in
   run-shell) printf '%s\n' "$*" >"$SCOPE_UI_LOG"; exit 0 ;;
+  list-panes)
+    if [ -n "${SCOPE_LIST_GATE:-}" ]; then
+      while [ ! -f "$SCOPE_LIST_GATE" ]; do sleep 0.05; done
+    fi ;;
   -S) exit 0 ;; # Stub only the nested viewer attachment.
 esac
 exec "$SCOPE_REAL_TMUX" "$@"
@@ -172,18 +176,20 @@ check 'picker wires ctrl-t to scope transform' grep -q 'ctrl-t:transform:.*--tog
 check 'accepted prompt carries both scopes into popup' grep -q -- "--view $hidden $client all all" "$SCOPE_UI_LOG"
 SCOPE_UI_ABORT=1 PATH="$tmp/ui:$PATH" "$B/tmux-agents" --view "$hidden" "$client" all all </dev/null
 check 'return from viewer keeps both dimensions' grep -q '^--prompt=all · all windows> $' "$SCOPE_UI_ARGS"
-check 'return from viewer selects the same agent' grep -q 'load:pos(' "$SCOPE_UI_ARGS"
+check 'return from viewer selects the same agent' grep -q 'load:transform:' "$SCOPE_UI_ARGS"
 # Real fzf smoke test: the emitted prompt must survive transform/accept.
 if command -v fzf >/dev/null 2>&1; then
+  tmux switch-client -c "$client" -t %0
   cat >"$tmp/picker" <<'STUB'
 #!/bin/sh
 export PATH="$SCOPE_UI_DIR:$PATH"
-"$SCOPE_BIN/tmux-agents" --client "$SCOPE_CLIENT" >"$SCOPE_RESULT" 2>&1
+"$SCOPE_BIN/tmux-agents" --client "$SCOPE_CLIENT" ${SCOPE_INITIAL_SELECT:+--select "$SCOPE_INITIAL_SELECT"} >"$SCOPE_RESULT" 2>&1
 printf '%s' "$?" >"$SCOPE_DONE"
 STUB
   chmod +x "$tmp/picker"
   rm -f "$SCOPE_UI_LOG"
   ui="$(tmux new-window -d -t work -P -F '#{pane_id}' \
+    -e "SCOPE_LIST_GATE=$tmp/list-ready" -e "SCOPE_INITIAL_SELECT=hidden-a" \
     -e "SCOPE_UI_DIR=$tmp/ui" -e "SCOPE_REAL_PICKER=1" -e "SCOPE_REAL_FZF=$(command -v fzf)" \
     -e "SCOPE_REAL_TMUX=$SCOPE_REAL_TMUX" -e "SCOPE_UI_LOG=$SCOPE_UI_LOG" \
     -e "XDG_STATE_HOME=$XDG_STATE_HOME" -e "SCOPE_BIN=$B" -e "SCOPE_CLIENT=$client" \
@@ -197,6 +203,21 @@ STUB
     done
     return 1
   }
+  check 'prompt draws before delayed list exists' wait_prompt 'all · this window>'
+  check 'rows have not arrived while prompt is visible' test ! -f "$tmp/list-ready"
+  touch "$tmp/list-ready"
+  check 'initial reload provides rows' wait_prompt 'hidden-a.*working.*main-a'
+  # Load transform is asynchronous; wait for it before accepting the selection.
+  sleep 0.3
+  tmux send-keys -t "$ui" Enter
+  for i in {1..100}; do [ ! -f "$tmp/picker-done" ] || break; sleep 0.1; done
+  check 'initial select opens requested hidden agent after reload' grep -q -- "--view $hidden $client window all" "$SCOPE_UI_LOG"
+  rm -f "$SCOPE_UI_LOG" "$tmp/picker-done"
+  ui="$(tmux new-window -d -t work -P -F '#{pane_id}' \
+    -e "SCOPE_UI_DIR=$tmp/ui" -e "SCOPE_REAL_PICKER=1" -e "SCOPE_REAL_FZF=$(command -v fzf)" \
+    -e "SCOPE_REAL_TMUX=$SCOPE_REAL_TMUX" -e "SCOPE_UI_LOG=$SCOPE_UI_LOG" \
+    -e "XDG_STATE_HOME=$XDG_STATE_HOME" -e "SCOPE_BIN=$B" -e "SCOPE_CLIENT=$client" \
+    -e "SCOPE_RESULT=$tmp/picker-result" -e "SCOPE_DONE=$tmp/picker-done" "$tmp/picker")"
   check 'real picker opens local' wait_prompt 'all · this window>'
   tmux send-keys -t "$ui" C-t
   check 'real ctrl-t switches scope' wait_prompt 'all · all windows>'
