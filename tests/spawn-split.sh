@@ -32,6 +32,8 @@ spawn() { TMUX_PANE=%0 "$B/tmux-spawn" "$@" </dev/null; }
 reject() { if spawn "$@" >"$tmp/error" 2>&1; then return 1; else return 0; fi; }
 peers() { TMUX_PANE="$1" "$B/tmux-peers" --from "$2"; }
 tmux set -p -t %0 @agent main
+. "$B/lib.sh"
+ensure_agent_ids "$tmp/empty-queue"
 tmux set -w -t %0 remain-on-exit off
 tmux set -w -t %0 automatic-rename on
 # Initialize the normal agent border labels before checking spawn options.

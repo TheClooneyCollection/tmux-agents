@@ -40,6 +40,8 @@ peers_of() { TMUX_PANE="$1" "$B/tmux-peers" 2>/dev/null | awk 'NR > 2 { print $1
 
 # main (%0, depth 0) and secondary (%1, its depth-1 sub agent), connected.
 tmux set -p -t %0 @agent main
+. "$B/lib.sh"
+ensure_agent_ids "$tmp/empty-queue"
 CLAUDECODE=1 TMUX_PANE=%0 "$B/tmux-spawn" --exact --name secondary "assist" </dev/null >/dev/null
 coord="$(pane_of secondary)"
 for i in {1..100}; do

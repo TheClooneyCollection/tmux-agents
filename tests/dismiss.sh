@@ -21,6 +21,8 @@ cleanup() { tmux -L "$sock" kill-server 2>/dev/null || true; rm -rf "$tmp"; }
 trap cleanup EXIT
 tmux set -g default-shell /bin/sh
 tmux set -p -t %0 @agent main
+. "$B/lib.sh"
+ensure_agent_ids "$tmp/empty-queue"
 fail=0
 count=0
 check() { local label="$1"; shift; count=$((count + 1)); if "$@"; then echo "ok    $label"; else echo "FAIL  $label"; fail=1; fi; }

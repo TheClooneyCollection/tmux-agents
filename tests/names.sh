@@ -40,6 +40,8 @@ tmux set-option -g default-shell /bin/sh
 # be called blog.example.io-1 is gone.
 tmux new-window -d -t work:1 -n blog.example.io "exec /bin/sh '$state_dir/bin/codex'"
 tmux set -p -t %0 @agent me; tmux set -p -t %1 @agent claude-blog.example.io-1
+. "$B/lib.sh"
+ensure_agent_ids "$state_dir/empty-queue"
 TMUX_PANE=%0 "$B/tmux-connect" --from me claude-blog.example.io-1 >/dev/null
 
 fail=0

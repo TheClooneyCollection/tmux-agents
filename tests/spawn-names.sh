@@ -23,6 +23,8 @@ export TMUX="$S,1,0" TMUX_PANE=%0
 # No personal shell startup files may run in spawned test panes.
 tmux set -g default-shell /bin/sh
 tmux set -p -t %0 @agent main
+. "$B/lib.sh"
+ensure_agent_ids "$tmp/empty-queue"
 fail=0 count=0
 check() { local label="$1"; shift; count=$((count + 1)); if "$@"; then echo "ok    $label"; else echo "FAIL  $label"; fail=1; fi; }
 pane_of() { tmux list-panes -a -F '#{pane_id} #{@agent}' | awk -v n="$1" '$2 == n {print $1}'; }

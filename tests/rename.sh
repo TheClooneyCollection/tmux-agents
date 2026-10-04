@@ -34,6 +34,7 @@ tmux new-window -d "$state_dir/stubs/codex"
 tmux new-window -d "$state_dir/stubs/claude"
 tmux new-window -d "$state_dir/stubs/codex"
 . "$B/lib.sh"
+ensure_agent_ids "$state_dir/empty-queue"
 check() { "$@" || { echo "FAIL: $*"; exit 1; }; echo "ok: $*"; }
 reject() { if "$@" > "$state_dir/rejected" 2>&1; then echo "unexpected success: $*"; return 1; fi; }
 captured() { local content; content="$(tmux capture-pane -p -J -S -300 -t "$1")"; case "$content" in *"$2"*) return 0 ;; *) return 1 ;; esac; }

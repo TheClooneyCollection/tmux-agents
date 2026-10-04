@@ -46,6 +46,7 @@ expect_spawn() {
   check "$expected has the $kind stub" ready "$spawned" "$kind"
 }
 . "$B/lib.sh"
+ensure_agent_ids "$tmp/empty-queue"
 expect_spawn shared claude claude --exact --name shared
 first_pane="$spawned" first_id="$(pane_agent_id "$spawned")"
 first_sid="$(record_get "$first_id" id)"
