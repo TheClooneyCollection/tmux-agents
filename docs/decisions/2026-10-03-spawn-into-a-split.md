@@ -6,8 +6,10 @@
 
 ```
 tmux-spawn claude --from main --split main --right --name secondary ...
-tmux-spawn codex-2nd --from main --for secondary --split secondary --below --name worker ...
+tmux-spawn codex-work --from main --for secondary --split secondary --below --name worker ...
 ```
+
+(`codex-work` stands for a Codex profile from `@tmux_agents_codex_homes`; plain `codex` works too.)
 
 Everything else is unchanged: it is still a sub agent (in the agent list and the chip, with its owner, depth and session record), `tmux-dismiss` closes its pane, and its transcript stays after it exits, set on the pane only so the rest of the window isn't affected.
 

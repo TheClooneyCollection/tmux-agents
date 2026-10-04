@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Docs:** examples use a generic Codex profile name (`codex-work`, from `@tmux_agents_codex_homes`) instead of the maintainer's own.
 - **Docs:** AGENTS.md's release routine ends with updating your installed copy as your local setup describes; the maintainer's dotfiles no longer vendor this repo as a subtree.
 
 ## v1.9.0 (2026-10-04)

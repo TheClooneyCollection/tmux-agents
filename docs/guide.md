@@ -99,8 +99,10 @@ claude-<dir>-auth-review:  ...works, then tmux-ask --reply back to the caller
   For a chain with main left, secondary top right and worker bottom right (set `main` to the existing main agent's full name):
   ```sh
   tmux-spawn claude --from "$main" --split "$main" --right --name secondary "coordinate the work"
-  # Set secondary to the full name printed above before running this:
-  tmux-spawn codex-2nd --from "$main" --for "$secondary" --split "$secondary" --below --name worker "implement the task"
+  # Set secondary to the full name printed above before running this.
+  # codex-work is an example profile from @tmux_agents_codex_homes (a second
+  # Codex account); use codex for your default account.
+  tmux-spawn codex-work --from "$main" --for "$secondary" --split "$secondary" --below --name worker "implement the task"
   ```
 
   `--right`, `--below` and `--size` require `--split`. A closed split always reopens in a hidden window with `--resume`; move that pane into your layout if wanted.
