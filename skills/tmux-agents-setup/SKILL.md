@@ -34,7 +34,7 @@ If it is already there, update it with `git pull --ff-only` in that directory in
 
 Run `./install.sh --dry-run` from the checkout, summarize what it will link and copy, then run `./install.sh`.
 
-- `skipped ...: exists and isn't a link` means the user has their own file there. Show it and ask before re-running with `--force`, which replaces it.
+- `skipped ...: exists and isn't a link` means the user has their own file there. Show it and ask before re-running with `--force`, which replaces it. If it's a skill folder that `npx skills add` copied there (it matches the one in the checkout), say so: replacing it with the link keeps the skills current with `git pull`.
 - If they use more than one Codex account, ask for the homes, and run it with `TMUX_AGENTS_CODEX_HOMES="name=$HOME/.codex-name ..."` so every account gets the skill and rules.
 
 ## 4. Configure
