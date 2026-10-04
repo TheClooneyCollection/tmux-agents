@@ -6,6 +6,7 @@ Each file: the context, the decision, why, and what was rejected. Name new ones 
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-04 | [The agent list is built from one snapshot, within a process budget](2026-10-04-list-build-budget.md) |
 | 2026-10-04 | [tmux-ask never drops a message](2026-10-04-never-drop-a-message.md) |
 | 2026-10-04 | [A message whose receiver is gone goes back to its sender](2026-10-04-bounce-when-the-receiver-is-gone.md) |
 | 2026-10-04 | [Messages for a closed sub agent are delivered when it's reopened](2026-10-04-deliver-on-reopen.md) |
