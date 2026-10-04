@@ -15,7 +15,7 @@
 
 **Why.** It removes a class of bugs instead of patching one: names can't collide with history, renaming can't leave stale references, and a closed agent can always be reopened exactly.
 
-**Ids are for agents, not the user** (the user's answer). `prefix + a` never shows an id, not in the closed section or its preview. Agents get them from commands:
+**Ids are for agents, not the user** (the user's answer). `prefix + a` never shows an id in its rows; rows with repeated names are told apart by closed time, parent and project. The preview panel of a selected closed agent may show its id (the user's clarification). Agents get ids from commands:
 - `tmux-peers --ids` adds an id column.
 - `tmux-spawn --list-closed` lists the closed agents that can be reopened: id, name, closed time, parent, project.
 - `tmux-spawn --resume <name>` with several closed agents of that name refuses and lists them the same way, so the caller picks with `--resume-id <id>` (the user's answer; guessing could reopen the wrong conversation).
