@@ -29,6 +29,17 @@ alive() { tmux list-panes -a -F '#{pane_id}' | grep -qx -- "$1"; }
 gone() { ! alive "$1"; }
 reject() { if "$B/tmux-dismiss" "$@" >"$tmp/error" 2>&1; then return 1; else return 0; fi; }
 spawn() { TMUX_PANE=%0 "$B/tmux-spawn" claude --from main "$@" </dev/null >/dev/null; }
+ready() {
+  local i
+  for i in {1..100}; do
+    # Requests/notices may scroll the startup marker off the visible screen.
+    if tmux capture-pane -p -S - -t "$1" | grep -q "FAKE claude"; then
+      return 0
+    fi
+    sleep .05
+  done
+  return 1
+}
 tree() {
   spawn --exact --name secondary assist
   secondary="$(pane_of secondary)"
@@ -36,6 +47,10 @@ tree() {
   worker="$(pane_of worker)"
   TMUX_AGENTS_DEPTH=1 "$B/tmux-spawn" claude --from worker --exact --name child assist </dev/null >/dev/null
   child="$(pane_of child)"
+  secondary_id="$(tmux show -pqv -t "$secondary" @agent_id)"
+  worker_id="$(tmux show -pqv -t "$worker" @agent_id)"
+  child_id="$(tmux show -pqv -t "$child" @agent_id)"
+  ready "$secondary" && ready "$worker" && ready "$child" || { echo "ABORT: stubs not ready"; exit 1; }
 }
 records="$XDG_STATE_HOME/tmux-agents/$(basename "$S")/sessions"
 tree
@@ -57,15 +72,16 @@ tmux set -p -t "$worker" @parent "$secondary"
 printf 'dismissed child (%s)\ndismissed worker (%s)\ndismissed secondary (%s)\n' "$child" "$worker" "$secondary" >"$tmp/expected"
 check 'whole subtree printed deepest first' cmp -s "$tmp/expected" "$tmp/closed"
 for name in secondary worker child; do
+  case "$name" in secondary) aid="$secondary_id" ;; worker) aid="$worker_id" ;; child) aid="$child_id" ;; esac
   check "$name is closed" test -z "$(pane_of "$name")"
-  check "$name retains session id" grep -Eq '^id=.+' "$records/$name"
-  check "$name retains closed timestamp" grep -Eq '^closed=[0-9]+$' "$records/$name"
+  check "$name retains session id" grep -Eq '^id=.+' "$records/$aid"
+  check "$name retains closed timestamp" grep -Eq '^closed=[0-9]+$' "$records/$aid"
 done
 check 'unrelated agent stays alive' alive "$stranger"
 "$B/tmux-spawn" --from main --resume child </dev/null >"$tmp/resume"
 child="$(pane_of child)"
 check 'closed grandchild can resume' alive "$child"
-check 'resume removes closed timestamp' test "$(grep -c '^closed=' "$records/child" || true)" = 0
+check 'resume removes closed timestamp' test "$(grep -c '^closed=' "$records/$child_id" || true)" = 0
 "$B/tmux-dismiss" --from main child >/dev/null
 tree
 "$B/tmux-dismiss" --from main worker >"$tmp/closed"

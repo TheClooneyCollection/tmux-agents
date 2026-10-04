@@ -61,9 +61,9 @@ check 'shared window options are untouched' test "$(tmux show-options -w -t %0)"
 check 'secondary has pane-local remain-on-exit' test "$(tmux show-options -pqv -t "$secondary" remain-on-exit)" = on
 check 'worker has pane-local remain-on-exit' test "$(tmux show-options -pqv -t "$worker" remain-on-exit)" = on
 check 'no hidden session or window was created' test "$(tmux list-windows -a -F '#{window_id}')" = "$main_win"
-record="$XDG_STATE_HOME/tmux-agents/$(basename "$S")/sessions/worker"
+record="$XDG_STATE_HOME/tmux-agents/$(basename "$S")/sessions/$(info "$worker" @agent_id)"
 check 'record keeps caller depth 1' grep -qx 'depth=1' "$record"
-check 'record keeps secondary as owner' grep -qx 'parent=secondary' "$record"
+check 'record keeps secondary as owner' grep -qx "parent=$(info "$secondary" @agent_id)" "$record"
 # Wait for the stub's startup output without depending on a fixed startup delay.
 for i in {1..50}; do
   tmux capture-pane -p -J -t "$worker" -S -100 >"$tmp/screen"

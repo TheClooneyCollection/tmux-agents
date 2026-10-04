@@ -11,7 +11,8 @@ usage() {
 usage: tmux-spawn [claude|codex|PROFILE] [--from ME] [--name NAME] [--exact] [task...]
        tmux-spawn [claude|codex|PROFILE] --for OWNER [--from ME] [--name NAME] [--exact] [brief...]
        tmux-spawn [claude|codex|PROFILE] --split PANE [--right | --below] [--size N%] [task...]
-       tmux-spawn --resume NAME [--from ME | --parent NAME]
+       tmux-spawn --resume NAME | --resume-id ID [--from ME | --parent NAME]
+       tmux-spawn --list-closed
 
 By default, starts a sub agent in its own window of the project's hidden session
 (agents-<project>), names it, connects it to this pane, and hands it
@@ -36,7 +37,9 @@ Codex approvals_reviewer=auto_review).
   --size N%     new pane share, 1% to 99% (default 50%)
   --resume NAME reopen a closed sub agent with its conversation, in the
                 same project in a hidden window, connected to you (or to --parent);
-                keeps its recorded name; cannot combine with --name or --exact
+                ambiguous names require --resume-id; live clashes add -2, -3...
+  --resume-id ID reopen one exact closed agent identity
+  --list-closed  list resumable identities, names, closed times, parents and projects
 
 Each sub agent's session is recorded (see sessions_dir in lib.sh), so a
 closed one can be reopened. Codex records it when its first turn ends.
@@ -132,7 +135,7 @@ if [ "${1:-}" = "--run" ]; then
   if [ -n "$prompt" ]; then exec "${cmd[@]}" "$prompt"; else exec "${cmd[@]}"; fi
 fi
 
-agent="" name="" task="" FROM_PANE="" resume="" parent_name="" for_name=""
+agent="" name="" task="" FROM_PANE="" resume="" resume_id="" list_closed=0 parent_name="" for_name=""
 exact=0 name_given=0
 split_target="" split_pane="" split_direction="" split_size="50%" split_options=0
 case "${1:-}" in
@@ -148,7 +151,9 @@ while [ $# -gt 0 ]; do
       name="$2"; name_given=1; shift 2 ;;
     --exact) exact=1; shift ;;
     --from) FROM_PANE="${2:-}"; shift 2 ;;
-    --resume) resume="${2:-}"; shift 2 ;;
+    --resume) [ -n "${2:-}" ] || die "--resume needs a name"; resume="$2"; shift 2 ;;
+    --resume-id) [ -n "${2:-}" ] || die "--resume-id needs an id"; resume_id="$2"; shift 2 ;;
+    --list-closed) list_closed=1; shift ;;
     --parent) parent_name="${2:-}"; shift 2 ;;
     --for) for_name="${2:-}"; shift 2 ;;
     --split)
@@ -165,15 +170,17 @@ while [ $# -gt 0 ]; do
     *) task="$*"; break ;;
   esac
 done
-[ -z "$resume" ] || { [ "$name_given" -eq 0 ] && [ "$exact" -eq 0 ]; } || die "--resume keeps its recorded name; --name and --exact are only for new sub agents"
+[ -z "$resume" ] || [ -z "$resume_id" ] || die "choose --resume or --resume-id"
+[ -z "$resume$resume_id" ] || { [ "$name_given" -eq 0 ] && [ "$exact" -eq 0 ]; } || die "--resume keeps its recorded name; --name and --exact are only for new sub agents"
 [ "$exact" -eq 0 ] || [ "$name_given" -eq 1 ] || die "--exact requires --name"
 [ "$split_options" -eq 0 ] || [ -n "$split_target" ] || die "--right, --below and --size require --split"
-[ -z "$resume" ] || [ -z "$split_target" ] || die "--resume reopens hidden; --split is only for new sub agents"
+[ -z "$resume$resume_id" ] || [ -z "$split_target" ] || die "--resume reopens hidden; --split is only for new sub agents"
 size_re='^([1-9]|[1-9][0-9])%$'
 [[ $split_size =~ $size_re ]] || die "--size must be a percentage from 1% to 99%"
-[ -n "$resume" ] || [ -n "$task" ] || [ -t 0 ] || task="$(cat)"
+[ "$list_closed" -eq 1 ] || [ -n "$resume$resume_id" ] || [ -n "$task" ] || [ -t 0 ] || task="$(cat)"
 
 require_tmux
+ensure_agent_ids
 
 # Show a sub agent's pane, connected to its parent ($2, may be empty), and
 # keep its transcript on screen after the agent exits.
@@ -214,37 +221,83 @@ open_split() {
   tmux split-window -d "$direction" -l "$split_size" -t "$1" -c "$2" "${env_args[@]}" -P -F '#{pane_id}' "$3"
 }
 
-# Reopen a closed sub agent from its session record.
-if [ -n "$resume" ]; then
-  [ -f "$(sessions_dir)/$resume" ] || die "no record of a sub agent named '$resume'"
-  [ -z "$(find_pane "$resume")" ] || die "'$resume' is still open; message it with tmux-ask"
-  kind="$(record_get "$resume" kind)" sid="$(record_get "$resume" id)"
-  dir="$(record_get "$resume" dir)" rdepth="$(record_get "$resume" depth)"
+# Closed records are selected by identity, never by a live namesake.
+closed_record() {
+  [ -f "$(sessions_dir)/$1" ] && [ -z "$(find_pane_by_id "$1")" ]
+}
+closed_row() {
+  local aid="$1" parent_id parent_label current_label
+  parent_id="$(record_get "$aid" parent)"
+  parent_label="$(record_get "$aid" parent_name)"
+  if [ -n "$parent_id" ]; then
+    current_label="$(agent_name_by_id "$parent_id")"
+    [ -z "$current_label" ] || parent_label="$current_label"
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\n' "$aid" "$(record_get "$aid" name)" \
+    "$(record_get "$aid" closed)" "$parent_label" "$(record_get "$aid" dir)"
+}
+if [ "$list_closed" -eq 1 ]; then
+  printf 'id\tname\tclosed\tparent\tproject\n'
+  for f in "$(sessions_dir)"/*; do
+    aid="${f##*/}"
+    valid_agent_id "$aid" || continue
+    closed_record "$aid" || continue
+    [ -n "$(record_get "$aid" id)" ] || continue
+    closed_row "$aid"
+  done
+  exit 0
+fi
+if [ -n "$resume$resume_id" ]; then
+  if [ -n "$resume" ]; then
+    matches=""
+    for aid in $(record_ids_by_name "$resume"); do
+      closed_record "$aid" || continue
+      matches="${matches:+$matches }$aid"
+    done
+    [ -n "$matches" ] || die "no closed record of a sub agent named '$resume'"
+    case "$matches" in *' '*)
+      printf "Several closed agents are named '%s'; choose --resume-id:\n" "$resume" >&2
+      for aid in $matches; do closed_row "$aid" >&2; done
+      exit 1 ;;
+    esac
+    resume_id="$matches"
+  fi
+  valid_agent_id "$resume_id" || die "invalid agent id '$resume_id'"
+  closed_record "$resume_id" || die "'$resume_id' has no closed record or is still open"
+  resume="$(record_get "$resume_id" name)"
+  kind="$(record_get "$resume_id" kind)" sid="$(record_get "$resume_id" id)"
+  dir="$(record_get "$resume_id" dir)" rdepth="$(record_get "$resume_id" depth)"
   [ -n "$sid" ] || die "can't reopen '$resume': its session id was never recorded (Codex records it when its first turn ends)"
   [ -d "$dir" ] || die "can't reopen '$resume': its directory $dir is gone"
-  # Its parent: whoever asks (an agent), or --parent (the agent list).
-  parent=""
-  if [ -n "$parent_name" ]; then
-    parent="$(find_pane "$parent_name")"
-  elif [ -n "$FROM_PANE" ] || [ -n "${TMUX_PANE:-}" ]; then
-    parent="$(self_pane)"
+  # Validate an explicitly supplied caller even when restoring a live parent.
+  caller=""
+  [ -z "$FROM_PANE" ] || caller="$(self_pane)"
+  parent="" saved_parent="$(record_get "$resume_id" parent)"
+  if [ -n "$saved_parent" ]; then parent="$(find_pane_by_id "$saved_parent")"; fi
+  if [ -z "$parent" ]; then
+    if [ -n "$parent_name" ]; then
+      parent="$(find_pane "$parent_name")"
+    elif [ -n "$FROM_PANE" ] || [ -n "${TMUX_PANE:-}" ]; then
+      parent="$(self_pane)"
+    fi
   fi
+  resume="$(unique_name "$resume")"
   pane="$(open_window "$(agents_session_for "$dir")" "$dir" "$resume" \
     "'$here/tmux-spawn' --run '$kind' '' '$sid' resume" "${rdepth:-1}")"
+  ensure_agent_id "$pane" "$resume_id" >/dev/null
   adopt "$pane" "$parent" "$resume"
   [ "$kind" = claude ] || tmux set-option -p -t "$pane" @codex_thread "$sid"
-  # Idle until it gets a request: done, not needs you.
   tmux set-option -p -t "$pane" @state done
-  record_set "$resume" closed ""
+  record_set "$resume_id" name "$resume"
+  record_set "$resume_id" closed ""
   if [ -n "$parent" ]; then
-    remove_word "$parent" @closed "$resume"
-    record_set "$resume" parent "$(pane_name "$parent")"
+    remove_word "$parent" @closed "$resume_id"
+    record_set "$resume_id" parent "$(ensure_agent_id "$parent")"
+    record_set "$resume_id" parent_name "$(pane_name "$parent")"
     printf 'reopened %s (%s) with its conversation, connected to %s; send it the next task with tmux-ask.\n' "$resume" "$pane" "$(pane_name "$parent")"
   else
     printf 'reopened %s (%s) with its conversation; its parent is gone, so it is not connected to anyone.\n' "$resume" "$pane"
   fi
-  # Retry after adoption and state initialization: a preserved request marks
-  # the receiver working, and must not be overwritten by the idle state above.
   "$here/tmux-ask" --retry --to "$resume"
   exit 0
 fi
@@ -325,19 +378,23 @@ if [ "$agent" = claude ]; then
   sid="$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)"
   sid="$(printf '%s' "$sid" | tr '[:upper:]' '[:lower:]')"
 fi
-rm -f "$(sessions_dir)/$name"
-record_set "$name" kind "$agent"
-record_set "$name" id "$sid"
-record_set "$name" dir "$cwd"
-record_set "$name" parent "$owner_name"
-record_set "$name" depth "$((depth + 1))"
+agent_id="$(new_agent_id)"
+record_set "$agent_id" name "$name"
+record_set "$agent_id" kind "$agent"
+record_set "$agent_id" id "$sid"
+record_set "$agent_id" dir "$cwd"
+record_set "$agent_id" parent "$(ensure_agent_id "$owner")"
+record_set "$agent_id" parent_name "$owner_name"
+record_set "$agent_id" depth "$((depth + 1))"
 
 if [ -n "$split_pane" ]; then
   pane="$(open_split "$split_pane" "$cwd" "'$here/tmux-spawn' --run '$agent' '$file' '$sid'" "$((depth + 1))")"
+  ensure_agent_id "$pane" "$agent_id" >/dev/null
   adopt "$pane" "$owner" "$name" split
   location="in a visible split of $split_pane"
 else
   pane="$(open_window "$session" "$cwd" "$name" "'$here/tmux-spawn' --run '$agent' '$file' '$sid'" "$((depth + 1))")"
+  ensure_agent_id "$pane" "$agent_id" >/dev/null
   adopt "$pane" "$owner" "$name"
   location="hidden in session \"$session\""
 fi

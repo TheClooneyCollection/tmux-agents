@@ -27,6 +27,7 @@ else
   [ -n "$target" ] || { usage; exit 1; }
 fi
 require_tmux
+ensure_agent_ids
 closer=""
 [ -z "$FROM_PANE" ] || closer="$(self_pane)"
 

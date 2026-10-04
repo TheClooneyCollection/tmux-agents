@@ -81,13 +81,19 @@ check test "$(format_given_name codex "$HOME" main 0)" = 'codex-~-main'
 check test "$(format_given_name codex "$HOME" codex-~-main 0)" = 'codex-~-main'
 check test "$(format_given_name bash "$HOME" main 0)" = '~-main'
 # Persisted and live references, whole-word lists, current/legacy/other queues.
-record_set parent id parent-session
-record_set kid parent parent
-record_set closed-child parent parent
-record_set reserved id reserved-session
-check reject "$B/tmux-rename" parent reserved --exact
-tmux set -p -t %2 @awaiting 'parent parent-tail'
-tmux set -p -t %2 @closed 'parent-tail parent'
+parent_id="$(pane_agent_id %0)" kid_id="$(pane_agent_id %1)"
+closed_id="$(new_agent_id)" reserved_id="$(new_agent_id)"
+record_set "$parent_id" name parent
+record_set "$parent_id" id parent-session
+record_set "$kid_id" parent "$parent_id"
+record_set "$closed_id" name closed-child
+record_set "$closed_id" parent "$parent_id"
+record_set "$reserved_id" name reserved
+record_set "$reserved_id" id reserved-session
+check "$B/tmux-rename" parent reserved --exact
+check "$B/tmux-rename" reserved parent --exact
+tmux set -p -t %2 @awaiting "$parent_id parent-tail"
+tmux set -p -t %2 @closed "parent-tail $parent_id"
 tmux set -p -t %0 @state done
 tmux set -p -t %2 @state idle
 tmux copy-mode -t %0
@@ -104,19 +110,19 @@ cp "$body" "$state_dir/body-before"
 check "$B/tmux-rename" --from parent parent renamed --exact
 check test "$(pane_name %0)" = renamed
 check test ! -e "$(sessions_dir)/parent"
-check test "$(record_get renamed id)" = parent-session
-check test "$(record_get kid parent)" = renamed
-check test "$(record_get closed-child parent)" = renamed
+check test "$(record_get "$parent_id" id)" = parent-session
+check test "$(record_get "$kid_id" parent)" = "$parent_id"
+check test "$(record_get "$closed_id" parent)" = "$parent_id"
 check test "$(tmux show -pqv -t %1 @parent)" = %0
-check test "$(tmux show -pqv -t %2 @awaiting)" = 'renamed parent-tail'
-check test "$(tmux show -pqv -t %2 @closed)" = 'parent-tail renamed'
+check test "$(tmux show -pqv -t %2 @awaiting)" = "$parent_id parent-tail"
+check test "$(tmux show -pqv -t %2 @closed)" = "parent-tail $parent_id"
 check test "$(tmux show -pqv -t %2 @peer_names)" = renamed
-check grep -qx to_name=renamed "${body%.msg}.meta"
+check grep -qx "to_id=$parent_id" "${body%.msg}.meta"
 check cmp "$body" "$state_dir/body-before"
-check grep -qx from_name=renamed "$legacy.meta"
-check grep -qx to_name=renamed "$legacy.meta"
+check grep -qx from_name=parent "$legacy.meta"
+check grep -qx to_name=parent "$legacy.meta"
 check grep -qx from_name=parent "$other/foreign.meta"
-check grep -qx from_name=renamed "$Q/1-retained-1.meta"
+check grep -qx from_name=parent "$Q/1-retained-1.meta"
 check grep -qx retained-body "$Q/1-retained-1.undelivered"
 check test "$(tmux show -pqv -t %2 @state)" = idle
 check reject "$B/tmux-ask" --from kid parent old-name

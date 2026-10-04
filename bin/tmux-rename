@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rename an agent and every persisted reference to its name.
+# Rename an agent and its display label, preserving stable identity.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 FROM_PANE="" target="" new="" exact=0
@@ -7,14 +7,14 @@ usage() {
   cat <<'EOF'
 usage: tmux-rename [--from ME] <agent> <new> [--exact]
 
-Give a live agent a new name and update its saved references and peer labels.
+Give a live agent a new name and update its saved label and peer labels.
 With --from, rename yourself or a descendant. Without it, the user may rename
 any agent. The renamed agent and its peers receive notices; use the new name
 in later commands, including --from. There is no alias for the old name.
 
 Short names are sanitised, then get the command-directory prefix; a matching prefix is kept.
 --exact uses the name verbatim and requires letters, digits, . _ ~ or -;
-existing pane names and saved session names are refused.
+existing live pane names are refused; closed names may be reused.
 
 Setting: option @tmux_agents_name_format, env TMUX_AGENTS_NAME_FORMAT
 (exact or prefixed; default prefixed). --exact overrides either setting.
@@ -31,6 +31,7 @@ while [ "$#" -gt 0 ]; do
 done
 [ -n "$target" ] && [ -n "$new" ] || { usage >&2; exit 1; }
 require_tmux
+ensure_agent_ids
 pane="$(resolve_pane "$target")"
 if [ -n "$FROM_PANE" ]; then
   caller="$(resolve_pane "$FROM_PANE")"

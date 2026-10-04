@@ -42,11 +42,19 @@ peers_of() { TMUX_PANE="$1" "$B/tmux-peers" 2>/dev/null | awk 'NR > 2 { print $1
 tmux set -p -t %0 @agent main
 CLAUDECODE=1 TMUX_PANE=%0 "$B/tmux-spawn" --exact --name secondary "assist" </dev/null >/dev/null
 coord="$(pane_of secondary)"
-sleep 0.5
+for i in {1..100}; do
+  tmux capture-pane -p -t "$coord" | grep -q "FAKE claude" && break
+  sleep .05
+done
+tmux capture-pane -p -t "$coord" | grep -q "FAKE claude" || { bad "secondary stub not ready"; exit 1; }
 
 out="$(TMUX_PANE=%0 "$B/tmux-spawn" codex --for secondary --exact --name worker "build the parser" </dev/null)" || bad "spawn --for failed: $out"
-sleep 0.8
 w="$(pane_of worker)"
+for i in {1..100}; do
+  tmux capture-pane -p -t "$w" | grep -q "FAKE codex" && break
+  sleep .05
+done
+tmux capture-pane -p -t "$w" | grep -q "FAKE codex" || { bad "worker stub not ready"; exit 1; }
 [ -n "$w" ] && ok "worker spawned ($w)" || { bad "no worker pane"; exit 1; }
 [ "$(tmux show -pqv -t "$w" @state)" = idle ] && ok "worker starts idle" || bad "worker did not start idle"
 listing="$(FZF_PROMPT='agents · all windows> ' "$B/tmux-agents" --list | tr '\0' '\n')"
@@ -82,7 +90,7 @@ cs="$(tmux capture-pane -p -J -t "$coord" -S -100)"
 case "$cs" in *"[request from main to secondary"*"I spawned worker"*) ok "the secondary was told, by main" ;; *) bad "the secondary wasn't told" ;; esac
 case "$cs" in *"build the parser"*) ok "with main's brief" ;; *) bad "the brief didn't reach the secondary" ;; esac
 
-[ "$(grep '^depth=' "$XDG_STATE_HOME"/tmux-agents/*/sessions/worker | cut -d= -f2)" = 1 ] && ok "its depth counts from main (1)" || bad "recorded depth is not 1"
+[ "$(grep '^depth=' "$XDG_STATE_HOME"/tmux-agents/*/sessions/"$(tmux show -pqv -t "$w" @agent_id)" | cut -d= -f2)" = 1 ] && ok "its depth counts from main (1)" || bad "recorded depth is not 1"
 
 TMUX_PANE=%0 "$B/tmux-spawn" codex --for secondary --exact --name ancestor-close "cleanup check" </dev/null >/dev/null
 TMUX_PANE=%0 "$B/tmux-dismiss" --from main ancestor-close >/dev/null 2>&1 && ok "main can close its descendant" || bad "main could not close its descendant"

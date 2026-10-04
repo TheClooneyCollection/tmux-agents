@@ -77,37 +77,47 @@ check "session:window.pane works"              ok    env TMUX_PANE=%0 "$B/tmux-p
 check "a window number works (connect)"        ok    env TMUX_PANE=%0 "$B/tmux-connect" 1 --as me
 
 # Keep messages parked while exercising both directions of queued metadata.
-# Real pane ids stay stable; only references that store names should change.
+# Pane and agent IDs stay stable while display labels change.
 mkdir -p "$state_dir/prefixed-project"
 observer="$(tmux split-window -d -h -t %0 -c "$state_dir/prefixed-project" -P -F '#{pane_id}' "exec /bin/sh '$state_dir/bin/codex'")"
 tmux set -p -t "$observer" @agent codex-prefixed-project-review
 check "prefixed stub is ready" ok wait_for ready "$observer"
-tmux set -p -t "$observer" @closed 'before me after'
+. "$B/lib.sh"
+me_id="$(ensure_agent_id %0)"
+peer_id="$(ensure_agent_id %1)"
+child_id="$(new_agent_id)"
+closed_id="$(new_agent_id)"
+tmux set -p -t "$observer" @closed "before $me_id after"
 tmux copy-mode -t %0
 tmux copy-mode -t %1
 records="$state_dir/tmux-agents/$sock/sessions"
 mkdir -p "$records" "$queue"
-printf 'kind=claude\nid=connect-session\nparent=owner\n' >"$records/me"
-printf 'kind=codex\nparent=me\n' >"$records/child"
-printf 'kind=codex\nparent=me\nclosed=123\n' >"$records/closed-child"
+record_set "$me_id" name me
+record_set "$me_id" kind claude
+record_set "$me_id" id connect-session
+record_set "$child_id" parent "$me_id"
+record_set "$closed_id" parent "$me_id"
+record_set "$closed_id" closed 123
 tmux set -p -t %1 @parent %0
-tmux set -p -t %1 @awaiting 'before me after'
-tmux set -p -t %1 @closed 'before me after'
+tmux set -p -t %1 @awaiting "before $me_id after"
+tmux set -p -t %1 @closed "before $me_id after"
 printf 'connect-queued-fixture\n' >"$queue/connect-fixture.msg"
 printf 'from_pane=%%1\nfrom_name=claude-blog.example.io-1\nto_pane=%%0\nto_name=me\nkind=request\nqueued_at=1\n' >"$queue/connect-fixture.meta"
+printf 'from_id=%s\nto_id=%s\n' "$peer_id" "$me_id" >>"$queue/connect-fixture.meta"
 printf 'connect-undelivered-fixture\n' >"$queue/connect-saved.undelivered"
 printf 'from_pane=%%0\nfrom_name=me\nto_pane=%%1\nto_name=claude-blog.example.io-1\nkind=reply\nqueued_at=2\n' >"$queue/connect-saved.meta"
+printf 'from_id=%s\nto_id=%s\n' "$me_id" "$peer_id" >>"$queue/connect-saved.meta"
 check "--as migrates an existing exact name" ok env TMUX_PANE=%0 "$B/tmux-connect" --from me --as renamed claude-blog.example.io-1
 check "--as retains exact name semantics" ok test "$(tmux show -pqv -t %0 @agent)" = renamed
 check "old session record is removed" ok test ! -e "$records/me"
-check "renamed record keeps session id" ok grep -qx 'id=connect-session' "$records/renamed"
-check "live child's saved parent follows rename" ok grep -qx 'parent=renamed' "$records/child"
-check "closed child's saved parent follows rename" ok grep -qx 'parent=renamed' "$records/closed-child"
-check "awaiting references follow rename" ok test "$(tmux show -pqv -t %1 @awaiting)" = 'before renamed after'
-check "other panes' closed references follow rename" ok test "$(tmux show -pqv -t "$observer" @closed)" = 'before renamed after'
+check "renamed record keeps session id" ok grep -qx 'id=connect-session' "$records/$me_id"
+check "live child's saved parent retains identity" ok grep -qx "parent=$me_id" "$records/$child_id"
+check "closed child's saved parent retains identity" ok grep -qx "parent=$me_id" "$records/$closed_id"
+check "awaiting references retain identity" ok test "$(tmux show -pqv -t %1 @awaiting)" = "before $me_id after"
+check "other panes' closed references retain identity" ok test "$(tmux show -pqv -t "$observer" @closed)" = "before $me_id after"
 check "reconnected live peer is removed from closed references" ok test "$(tmux show -pqv -t %1 @closed)" = 'before after'
-check "queued destination follows rename" ok grep -qx 'to_name=renamed' "$queue/connect-fixture.meta"
-check "undelivered sender follows rename" ok grep -qx 'from_name=renamed' "$queue/connect-saved.meta"
+check "queued destination retains identity" ok grep -qx "to_id=$me_id" "$queue/connect-fixture.meta"
+check "undelivered sender retains identity" ok grep -qx "from_id=$me_id" "$queue/connect-saved.meta"
 check "queued message body is retained" ok grep -qx connect-queued-fixture "$queue/connect-fixture.msg"
 check "undelivered body is retained" ok grep -qx connect-undelivered-fixture "$queue/connect-saved.undelivered"
 check "self peer link survives" ok test "$(tmux show -pqv -t %0 @peers)" = %1
