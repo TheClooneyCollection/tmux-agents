@@ -48,6 +48,12 @@ The easy way: ask Claude Code or Codex to do it.
 
 It checks what you have, runs the installer, shows you each config change before making it, and then walks you through a quick start. Later, say "tmux-agents quick start" to any agent to take the tour again.
 
+Or add the skills with the [skills CLI](https://skills.sh), then tell your agent "set up tmux-agents":
+
+```sh
+npx skills add TheClooneyCollection/tmux-agents
+```
+
 ### By hand
 
 Needs tmux 3.2+ and bash. `fzf` is optional (nicer pickers and the live agent list).
@@ -61,7 +67,7 @@ cd tmux-agents
 `install.sh`:
 
 - links the `tmux-*` commands into `~/.local/bin` (`BIN_DIR` to change)
-- links the `tmux-agents`, `tmux-agents-setup` and `tmux-agents-perf` skills into `~/.claude/skills/` and your Codex home
+- links the `tmux-agents`, `tmux-agents-setup`, `tmux-agents-perf` and `agent-chain` skills into `~/.claude/skills/` and your Codex home
 - copies the Codex rules (Codex skips symlinked `.rules` files)
 - never overwrites a real file without `--force`
 
@@ -132,6 +138,7 @@ set -g @tmux_agents_name_format exact
 2. Tell Claude: "use tmux-agents to connect to the codex pane and have it review this diff". The request lands in Codex's pane, and the reply comes back to Claude.
 3. Tell Claude: "spawn a sub agent to add tests for the parser". It runs in a hidden window, and a line above your status bar shows how it's doing.
 4. Press `prefix + a` to watch it. Enter opens it in a popup, `prefix + d` goes back.
+5. Tell Claude: "start the chain". It becomes the main agent you talk to, with a secondary that coordinates and a Codex worker that implements, side by side in your window (the `agent-chain` skill).
 
 Or let your agent show you: say "tmux-agents quick start".
 
