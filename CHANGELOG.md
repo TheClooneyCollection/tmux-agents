@@ -1,11 +1,10 @@
 # Changelog
 
-## Unreleased
+## v1.8.0 (2026-10-04)
 
 - **Configuration in tmux.** User settings are `@tmux_agents_*` options, read in one cached snapshot per command. Existing environment overrides still win; defaults and the Codex homes global-environment fallback remain available.
-
 - **Rename agents.** `tmux-rename` updates the pane, saved records, waiting lists, queued message identities and peer labels, and notifies the agent and its peers. Agents may rename themselves or descendants; `tmux-connect --as` uses the same migration for named panes.
-- **Consistent given names.** `tmux-spawn --name` and `tmux-rename` add the agent kind and directory prefix by default, keeping an existing matching prefix. Use `--exact` for a verbatim name, or set `@tmux_agents_name_format` to `exact` in tmux.conf; `TMUX_AGENTS_NAME_FORMAT` overrides that preference for a call.
+- **Consistent given names.** `tmux-spawn --name` and `tmux-rename` sanitise short names and add the agent kind and directory prefix by default, keeping an existing matching prefix. Use `--exact` for a verbatim name, or set `@tmux_agents_name_format` to `exact` in tmux.conf; `TMUX_AGENTS_NAME_FORMAT` overrides that preference for a call.
 
 ## v1.7.3 (2026-10-04)
 
