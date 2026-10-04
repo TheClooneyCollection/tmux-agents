@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.7.1 (2026-10-04)
 
 - **Tests:** resume delivery checks track each original message's metadata separately from bounce notices, avoiding false failures while notices are still queued.
 
