@@ -20,6 +20,7 @@ tmux -L "$sock" has-session 2>/dev/null || { echo 'ABORT: test server not up'; e
 S="$(tmux -L "$sock" display-message -p '#{socket_path}')"
 case "$S" in ''|*/default) echo "ABORT: unsafe socket '$S'"; exit 1 ;; esac
 export TMUX="$S,1,0" TMUX_PANE=%0
+tmux set -g default-shell /bin/sh
 now="$(date +%s)"
 tmux set -p -t %0 @agent main
 for ((i=1; i<=49; i++)); do
@@ -86,7 +87,7 @@ chmod +x "$tmp/ui/fzf"
 # Shims exec the real binaries and never intercept socket selection/cleanup.
 mkdir "$tmp/count"
 export BENCH_CALLS="$tmp/calls" BENCH_NOW="$now"
-for tool in tmux awk git basename sed date stat dirname tr column sort cut cat rm head wc mktemp fzf; do
+for tool in tmux perl awk git basename sed date stat dirname tr column sort cut cat rm head wc mktemp fzf; do
   if [ "$tool" = fzf ]; then real="$tmp/ui/fzf"; else real="$(command -v "$tool")"; fi
   {
     printf '#!/bin/bash\n'
