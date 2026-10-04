@@ -6,7 +6,10 @@ description: Talk to other AI agents (Codex, Claude, etc.) running in connected 
 # tmux-agents
 
 You may be running in a tmux pane that the user has connected to other agent panes.
+
 Messages travel as pasted prompts: you send with `tmux-ask`, and answers arrive later as a new message in your own pane.
+
+If `command -v tmux-ask` finds nothing, tmux-agents isn't installed yet: tell the user, and offer to set it up with the `tmux-agents-setup` skill.
 
 ## Your name
 
@@ -121,7 +124,7 @@ Replies use `[reply from X to Y ...]` and `[end of reply from X to Y]` the same 
 - Keep messages focused. Send one clear request, not a stream of small ones.
 - If `tmux-peers` says you have no connections, tell the user to connect the panes with `tmux-connect` or `prefix + A`.
 
-## Sandbox
+## Codex sandbox
 
-The Codex sandbox blocks the tmux socket. tmux-agents' rules file (`~/.codex/rules/tmux-agents.rules`) allows the commands agents use, so they should run without a prompt.
+Only for Codex. The Codex sandbox blocks the tmux socket. tmux-agents' rules file (`~/.codex/rules/tmux-agents.rules`) allows the commands agents use, so they should run without a prompt.
 If one still fails with `error connecting to /private/tmp/tmux-501/... (Operation not permitted)`, rerun it with escalated permissions (outside the sandbox) and a short justification such as "send message to peer agent via tmux".
