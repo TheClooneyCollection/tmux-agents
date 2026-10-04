@@ -47,6 +47,7 @@ link "$here/bin/lib.sh" "$bin_dir/lib.sh"
 link "$here/skills/tmux-agents" "$HOME/.claude/skills/tmux-agents"
 link "$here/skills/tmux-agents-setup" "$HOME/.claude/skills/tmux-agents-setup"
 link "$here/skills/tmux-agents-perf" "$HOME/.claude/skills/tmux-agents-perf"
+link "$here/skills/agent-chain" "$HOME/.claude/skills/agent-chain"
 
 codex_homes="${CODEX_HOME:-$HOME/.codex}"
 for e in ${TMUX_AGENTS_CODEX_HOMES:-}; do codex_homes="$codex_homes ${e#*=}"; done
@@ -55,6 +56,7 @@ for h in $codex_homes; do
   link "$here/skills/tmux-agents" "$h/skills/tmux-agents"
   link "$here/skills/tmux-agents-setup" "$h/skills/tmux-agents-setup"
   link "$here/skills/tmux-agents-perf" "$h/skills/tmux-agents-perf"
+  link "$here/skills/agent-chain" "$h/skills/agent-chain"
   copy "$here/integrations/codex/tmux-agents.rules" "$h/rules/tmux-agents.rules"
 done
 
