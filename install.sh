@@ -11,6 +11,7 @@ set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
 bin_dir="${BIN_DIR:-$HOME/.local/bin}"
+. "$here/bin/lib.sh"
 dry=0 force=0
 for a in "$@"; do
   case "$a" in
@@ -27,6 +28,14 @@ run() { if [ "$dry" -eq 1 ]; then echo "would: $*"; else "$@"; fi; }
 link() {
   if [ -L "$2" ] || [ ! -e "$2" ] || [ "$force" -eq 1 ]; then
     run mkdir -p "$(dirname "$2")"
+    if [ ! -L "$2" ] && [ -e "$2" ]; then
+      local backup="$2.bak.$(date +%Y%m%d%H%M%S)"
+      if [ -e "$backup" ] || [ -L "$backup" ]; then
+        echo "refusing to overwrite backup: $backup" >&2
+        return 1
+      fi
+      run mv "$2" "$backup"
+    fi
     run ln -sfn "$1" "$2"
     echo "linked $2"
   else
@@ -37,6 +46,8 @@ link() {
 # Copy $1 to $2 (Codex skips symlinked .rules files).
 copy() {
   run mkdir -p "$(dirname "$2")"
+  # Never follow an old rules symlink: Codex requires a real file.
+  if [ -L "$2" ]; then run rm "$2"; fi
   run cp "$1" "$2"
   echo "copied $2"
 }
@@ -49,14 +60,26 @@ link "$here/skills/tmux-agents-setup" "$HOME/.claude/skills/tmux-agents-setup"
 link "$here/skills/tmux-agents-perf" "$HOME/.claude/skills/tmux-agents-perf"
 link "$here/skills/agent-chain" "$HOME/.claude/skills/agent-chain"
 
-codex_homes="${CODEX_HOME:-$HOME/.codex}"
-for e in ${TMUX_AGENTS_CODEX_HOMES:-}; do codex_homes="$codex_homes ${e#*=}"; done
-for h in $codex_homes; do
+# Always cover the standard home as well as an explicitly selected account.
+resolve_codex_homes codex_map
+codex_homes=("${CODEX_HOME:-$HOME/.codex}" "$HOME/.codex")
+for e in $codex_map; do codex_homes+=("${e#*=}"); done
+seen_homes=()
+for h in "${codex_homes[@]}"; do
+  # Ignore trailing slashes when deduplicating account paths.
+  while [ "$h" != / ] && [ "${h%/}" != "$h" ]; do h="${h%/}"; done
+  duplicate=0
+  for seen in "${seen_homes[@]+"${seen_homes[@]}"}"; do
+    [ "$h" != "$seen" ] || duplicate=1
+  done
+  [ "$duplicate" -eq 0 ] || continue
+  seen_homes+=("$h")
   [ -d "$h" ] || { echo "skipped $h: no such Codex home" >&2; continue; }
-  link "$here/skills/tmux-agents" "$h/skills/tmux-agents"
-  link "$here/skills/tmux-agents-setup" "$h/skills/tmux-agents-setup"
-  link "$here/skills/tmux-agents-perf" "$h/skills/tmux-agents-perf"
-  link "$here/skills/agent-chain" "$h/skills/agent-chain"
+  echo "Codex home: $h"
+  for skill in "$here"/skills/*; do
+    [ -f "$skill/SKILL.md" ] || continue
+    link "$skill" "$h/skills/$(basename "$skill")"
+  done
   copy "$here/integrations/codex/tmux-agents.rules" "$h/rules/tmux-agents.rules"
 done
 
