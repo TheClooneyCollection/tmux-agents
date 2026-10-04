@@ -6,6 +6,7 @@ Each file: the context, the decision, why, and what was rejected. Name new ones 
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-04 | [Agents have hidden ids; names are labels](2026-10-04-agents-have-ids.md) |
 | 2026-10-04 | [User settings are tmux options](2026-10-04-settings-are-tmux-options.md) |
 | 2026-10-04 | [Given names follow the naming format, with an opt-out](2026-10-04-names-follow-the-format.md) |
 | 2026-10-04 | [Renaming an agent](2026-10-04-rename-an-agent.md) |
