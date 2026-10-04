@@ -6,6 +6,7 @@ Each file: the context, the decision, why, and what was rejected. Name new ones 
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-04 | [Given names follow the naming format, with an opt-out](2026-10-04-names-follow-the-format.md) |
 | 2026-10-04 | [Renaming an agent](2026-10-04-rename-an-agent.md) |
 | 2026-10-04 | [The agent list is built from one snapshot, within a process budget](2026-10-04-list-build-budget.md) |
 | 2026-10-04 | [tmux-ask never drops a message](2026-10-04-never-drop-a-message.md) |
