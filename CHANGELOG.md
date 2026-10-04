@@ -1,9 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.7.0 (2026-10-04)
 
-- **Faster agent lists.** List rebuilds share pane and session-record snapshots and resolve each project directory once, speeding up opening the picker and switching window scope.
-
+- **Faster agent lists.** List rebuilds share pane and session-record snapshots and resolve each project directory once, speeding up opening the picker and switching window scope. Live rebuilds measured 4.5s to 0.10s for this window and 4.9s to 0.09s for all windows, with identical output. A process-budget test guards against regressions.
 - **Durable messages.** Queued messages keep waiting while the receiver lives, with an amber message-waiting indicator after a long delay. Missing receivers leave saved messages and notify their senders.
 - **Inspect and recover delivery.** `tmux-ask --pending` lists current and legacy messages; `--retry [--to NAME]` retries available receivers. Reopening an agent delivers its saved messages oldest first.
 
