@@ -811,3 +811,17 @@ settings_get() {
     option_get "$1" "$3" "$4"
   fi
 }
+
+# Resolve profile=CODEX_HOME mappings exactly as tmux-spawn does. A direct
+# call preserves settings_get's option snapshot; no running tmux is required.
+resolve_codex_homes() {
+  local _codex_homes_value _codex_homes_global
+  settings_get _codex_homes_value TMUX_AGENTS_CODEX_HOMES @tmux_agents_codex_homes ""
+  if [ -z "$_codex_homes_value" ] && [ -n "${TMUX:-}" ]; then
+    _codex_homes_global="$(tmux show-environment -g TMUX_AGENTS_CODEX_HOMES 2>/dev/null || true)"
+    case "$_codex_homes_global" in
+      TMUX_AGENTS_CODEX_HOMES=?*) _codex_homes_value="${_codex_homes_global#*=}" ;;
+    esac
+  fi
+  printf -v "$1" '%s' "$_codex_homes_value"
+}
