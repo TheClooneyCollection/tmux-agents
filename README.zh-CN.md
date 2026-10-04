@@ -48,10 +48,10 @@ agent 之间可以互相派任务、同步进度。它们的 pane 会一直保�
 
 它会检查你的环境、运行安装脚本，每处配置改动都先给你看，然后带你走一遍 quick start。之后对任何 agent 说 "tmux-agents quick start"，就能再走一遍。
 
-也可以用 [skills CLI](https://skills.sh) 添加这些 skill，然后对你的 agent 说 "set up tmux-agents"：
+用户级 skill 安装可以使用下面的 [skills CLI](https://skills.sh)，也可以运行手动安装步骤中的 `./install.sh`。使用 CLI 后，对你的 agent 说 "set up tmux-agents"，继续安装命令并配置 tmux：
 
 ```sh
-npx skills add TheClooneyCollection/tmux-agents
+npx skills add TheClooneyCollection/tmux-agents -g
 ```
 
 ### 手动安装
@@ -69,7 +69,7 @@ cd tmux-agents
 - 把 `tmux-*` 命令链接到 `~/.local/bin`（用 `BIN_DIR` 修改）
 - 把 `tmux-agents`、`tmux-agents-setup`、`tmux-agents-perf` 和 `agent-chain` 四个 skill 链接到 `~/.claude/skills/` 和你的 Codex home
 - 复制 Codex rules（Codex 会忽略符号链接的 `.rules` 文件）
-- 不加 `--force` 时，绝不覆盖已有的真实文件
+- 保留链接目标处的真实文件和目录；加 `--force` 时，先备份为 `DEST.bak.YYYYmmddHHMMSS`，再建立链接
 
 然后把这些加到你自己的配置里（`install.sh` 会用你的实际路径打印出来）：
 
@@ -90,7 +90,7 @@ cd tmux-agents
 
 </details>
 
-更新用 `git pull` 就行，链接会自动指向新脚本。如果 rules 有变化，再跑一次 `./install.sh`。
+在实际安装的 checkout 中更新：分支安装使用 `git pull --ff-only`；detached/tag 安装使用 `git fetch --tags`，再用 `git checkout <new-tag>` 切换到你选择的 tag。然后在该目录重新运行 `./install.sh`，更新 rules 并重建 skill 链接，包括指向旧 skill 目录的链接。
 
 有多个 Codex 账号？见[使用指南](docs/guide.md#more-than-one-codex-account)（英文）。
 
