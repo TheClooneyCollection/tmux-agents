@@ -46,6 +46,7 @@ link "$here/bin/lib.sh" "$bin_dir/lib.sh"
 
 link "$here/skills/claude/tmux-agents" "$HOME/.claude/skills/tmux-agents"
 link "$here/skills/tmux-agents-setup" "$HOME/.claude/skills/tmux-agents-setup"
+link "$here/skills/tmux-agents-perf" "$HOME/.claude/skills/tmux-agents-perf"
 
 codex_homes="${CODEX_HOME:-$HOME/.codex}"
 for e in ${TMUX_AGENTS_CODEX_HOMES:-}; do codex_homes="$codex_homes ${e#*=}"; done
@@ -53,6 +54,7 @@ for h in $codex_homes; do
   [ -d "$h" ] || { echo "skipped $h: no such Codex home" >&2; continue; }
   link "$here/skills/codex/tmux-agents" "$h/skills/tmux-agents"
   link "$here/skills/tmux-agents-setup" "$h/skills/tmux-agents-setup"
+  link "$here/skills/tmux-agents-perf" "$h/skills/tmux-agents-perf"
   copy "$here/integrations/codex/tmux-agents.rules" "$h/rules/tmux-agents.rules"
 done
 

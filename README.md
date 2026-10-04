@@ -61,7 +61,7 @@ cd tmux-agents
 `install.sh`:
 
 - links the `tmux-*` commands into `~/.local/bin` (`BIN_DIR` to change)
-- links the `tmux-agents` and `tmux-agents-setup` skills into `~/.claude/skills/` and your Codex home
+- links the `tmux-agents`, `tmux-agents-setup` and `tmux-agents-perf` skills into `~/.claude/skills/` and your Codex home
 - copies the Codex rules (Codex skips symlinked `.rules` files)
 - never overwrites a real file without `--force`
 
@@ -87,6 +87,17 @@ Then add these to your own config (`install.sh` prints them with your paths):
 Update with `git pull`: the links pick up the new scripts. Re-run `./install.sh` if the rules changed.
 
 Using more than one Codex account? See [the guide](docs/guide.md#more-than-one-codex-account).
+
+### If popups feel slow
+
+tmux-agents is fast (a list build takes about 0.1s), but tmux runs every popup and every new agent's window through your `default-shell`, which reads its config first. Check:
+
+```sh
+tmux show -gv default-shell
+time fish -c true        # use your shell; compare with --no-config / --norc / -f
+```
+
+Hundreds of milliseconds there are paid on every `prefix + a`. See [docs/performance.md](docs/performance.md) for the fix, or ask your agent to "find out why tmux-agents is slow" (the `tmux-agents-perf` skill).
 
 ## Quick start
 

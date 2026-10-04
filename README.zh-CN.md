@@ -61,7 +61,7 @@ cd tmux-agents
 `install.sh` 会：
 
 - 把 `tmux-*` 命令链接到 `~/.local/bin`（用 `BIN_DIR` 修改）
-- 把 `tmux-agents` 和 `tmux-agents-setup` 两个 skill 链接到 `~/.claude/skills/` 和你的 Codex home
+- 把 `tmux-agents`、`tmux-agents-setup` 和 `tmux-agents-perf` 三个 skill 链接到 `~/.claude/skills/` 和你的 Codex home
 - 复制 Codex rules（Codex 会忽略符号链接的 `.rules` 文件）
 - 不加 `--force` 时，绝不覆盖已有的真实文件
 
@@ -87,6 +87,17 @@ cd tmux-agents
 更新用 `git pull` 就行，链接会自动指向新脚本。如果 rules 有变化，再跑一次 `./install.sh`。
 
 有多个 Codex 账号？见[使用指南](docs/guide.md#more-than-one-codex-account)（英文）。
+
+### 如果 popup 打开很慢
+
+tmux-agents 本身很快（构建一次列表约 0.1 秒），但 tmux 会通过你的 `default-shell` 来运行每个 popup 和每个新 agent 的窗口，而这个 shell 会先读取它的配置。检查一下：
+
+```sh
+tmux show -gv default-shell
+time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f 的结果对比
+```
+
+如果这里要几百毫秒，每次按 `prefix + a` 都要多等这么久。解决方法见 [docs/performance.md](docs/performance.md)，或者让你的 agent "查一下 tmux-agents 为什么慢"（`tmux-agents-perf` skill）。
 
 ## 快速上手
 

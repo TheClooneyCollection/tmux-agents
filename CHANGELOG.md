@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Docs:** `docs/performance.md` records what made tmux-agents slow and how your shell's startup affects popups and spawns; the README gets an "If popups feel slow" check; a new `tmux-agents-perf` skill walks an agent through finding where a delay comes from.
 - **Show the picker immediately.** The agent list starts fzf before building rows, then loads them asynchronously while preserving the selected agent. Startup avoids a redundant tmux check and defers the preview loop until rows arrive.
 - **Popup startup guidance.** Document how slow non-interactive shell configuration can delay tmux popups, and extend the list budget to measure time and tool calls before fzf starts.
 
