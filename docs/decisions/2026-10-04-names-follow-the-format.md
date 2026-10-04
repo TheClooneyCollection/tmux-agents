@@ -6,8 +6,10 @@
 
 Users who want a name used exactly:
 - `--exact` on `tmux-spawn` and `tmux-rename` uses the given name verbatim, once.
-- `TMUX_AGENTS_NAME_FORMAT=exact` (default `prefixed`), in the environment or tmux's global environment like `TMUX_AGENTS_CODEX_HOMES`, makes that the default.
+- A standing preference is a tmux option, set in `tmux.conf`: `set -g @tmux_agents_name_format exact` (default `prefixed`). The environment variable `TMUX_AGENTS_NAME_FORMAT` overrides it for a one-off. Order: environment, tmux option, default.
 
 **Why `--exact`.** It says what you get. `--auto-name` would read as the opposite of what it does, since prefixing is already the default. One flag and one setting cover a one-off and a standing preference.
 
 Everything that matches names keeps working: names are still unique words; `codex@project` and `codex`/`claude` matching look at a name's `codex-`/`claude-` start, which prefixed names have; agents use the names `tmux-spawn` prints.
+
+**Why a tmux option.** It's where tmux-agents' other user settings already live (`@tmux_agents_chip_fps`), the user already edits `tmux.conf` to install it, it can be changed live with `tmux set -g` without restarting agents, and reading it costs one `tmux show` (or nothing, inside a snapshot). A separate config file would need a parser, a location and a reload story for no gain. The existing environment-only knobs (`TMUX_AGENTS_MAX_DEPTH`, `TMUX_AGENTS_RESUME_DAYS`, `TMUX_ASK_*`, ...) can move to the same scheme later.
