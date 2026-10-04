@@ -9,13 +9,15 @@
 - **Session records** are files named by id: `sessions/<agent id>`, with `name=` (the label at closing) and the existing keys. `id=` keeps meaning the Claude/Codex conversation id. `parent=` holds the parent's agent id, with `parent_name=` for display.
 - **Other references** use ids: `@awaiting` and `@closed` hold agent ids (shown as names); queued messages' `.meta` gets `from_id`/`to_id` next to the names; redelivery on reopen matches `to_id`. Live links (`@peers`, `@parent`) stay pane ids, which are already unique on a server.
 - **Renaming** changes the label (`@agent`, and `name=` in its record if it has one) and sends the same notices; nothing else needs rewriting.
-- **Reopening.** `tmux-spawn --resume-id <id>` reopens that exact agent. `tmux-spawn --resume <name>` reopens the one closed agent with that name; if several closed agents have it, it refuses and lists them (id, when closed, parent, project) so the caller picks with `--resume-id` (see open question 1). If a live agent holds the name, a reopened agent with the same name gets `-2`, `-3` for as long as both are live. The agent list's closed section keys entries by id (so Enter always reopens the right one) and, when closed agents share a name, shows a short id and the closed time on the second line.
+- **Reopening.** `tmux-spawn --resume-id <id>` reopens that exact agent. `tmux-spawn --resume <name>` reopens the one closed agent with that name; if several closed agents have it, it refuses and lists them (id, when closed, parent, project) so the caller picks with `--resume-id` (see open question 1). If a live agent holds the name, a reopened agent with the same name gets `-2`, `-3` for as long as both are live. The agent list's closed section keys entries by id internally (so Enter always reopens the right one); when closed agents share a name, its second line tells them apart by closed time, parent and project.
 - **Migration** runs once per tmux server, on the first command that needs it, under the identity lock, and is idempotent (marker file `sessions/.ids-v1`): every live named pane without `@agent_id` gets one; every name-keyed record gets an id and is rewritten as `sessions/<id>` with `name=<old file name>`; `parent=<name>` becomes the id of the live pane or record with that name (unique, since names were unique when records were keyed by them), keeping `parent_name=`; `@awaiting`/`@closed` names and `.meta` names become ids the same way. Nothing is deleted until its replacement is written; conversation ids (`id=`) are copied as they are, so every resumable conversation stays resumable and parent links survive. Unresolvable names (a parent that's gone with no record) keep `parent_name=` only, as today's records effectively do.
 - **Budget.** The list build reads `@agent_id` in its existing pane snapshot and the records in its existing single read; no extra processes per agent.
 
 **Why.** It removes a class of bugs instead of patching one: names can't collide with history, renaming can't leave stale references, and a closed agent can always be reopened exactly.
 
-**Open questions for the user** (defaults in brackets):
-1. `--resume <name>` when several closed agents share the name: refuse and list them, or reopen the most recently closed? [refuse and list: guessing could reopen the wrong conversation; the list makes it one more step]
-2. Show ids anywhere by default? [only where needed to tell agents apart: the closed section when names repeat, the closed preview, and `--resume` errors]
-3. Version: minor, v1.9.0? [yes]
+**Ids are for agents, not the user** (the user's answer). `prefix + a` never shows an id, not in the closed section or its preview. Agents get them from commands:
+- `tmux-peers --ids` adds an id column.
+- `tmux-spawn --list-closed` lists the closed agents that can be reopened: id, name, closed time, parent, project.
+- `tmux-spawn --resume <name>` with several closed agents of that name refuses and lists them the same way, so the caller picks with `--resume-id <id>` (the user's answer; guessing could reopen the wrong conversation).
+
+Released as minor, v1.9.0.
