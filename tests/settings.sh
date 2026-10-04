@@ -7,7 +7,8 @@ sock="tmux-settings-$$"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/tmux-settings.XXXXXX")"
 unset TMUX TMUX_PANE TMUX_AGENTS_LIST_CLIENT
 export XDG_STATE_HOME="$tmp/state"
-cleanup() { tmux -L "$sock" kill-server 2>/dev/null || true; rm -rf "$tmp"; }
+. "$here/tests/helpers/cleanup.sh"
+cleanup() { cleanup_test_server || return; rm -rf "$tmp"; }
 trap cleanup EXIT
 tmux -L "$sock" -f /dev/null new-session -d -s work -c "$tmp" /bin/cat
 tmux -L "$sock" set -g default-shell /bin/sh

@@ -9,9 +9,10 @@ unset TMUX TMUX_PANE CLAUDECODE TMUX_AGENTS_PINNED
 export XDG_STATE_HOME="$state_dir" TMUX_ASK_ENTER_DELAY=0 TMUX_ASK_QUEUE_SECS=1 TMUX_ASK_COPY_IDLE_SECS=0
 Q="/tmp/tmux-agents-$(id -u)/queue/$sock"
 legacy="/tmp/tmux-agents-$(id -u)/queue/100-$$-99.undelivered"
+. "$here/tests/helpers/cleanup.sh"
 cleanup() {
-  tmux -L "$sock" kill-server 2>/dev/null || true
-  rm -rf "$state_dir" "$Q"
+  cleanup_test_server || return
+  rm -rf "$state_dir"
   rm -f "$legacy"
 }
 trap cleanup EXIT

@@ -5,7 +5,8 @@ here="$(cd "$(dirname "$0")/.." && pwd)"
 B="$here/bin"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/tmux-list-ids.XXXXXX")"
 sock="tmux-list-ids-$$"
-cleanup() { tmux -L "$sock" kill-server 2>/dev/null || true; rm -rf "$tmp"; }
+. "$here/tests/helpers/cleanup.sh"
+cleanup() { cleanup_test_server || return; rm -rf "$tmp"; }
 trap cleanup EXIT
 unset TMUX TMUX_PANE CLAUDECODE CODEX_HOME TMUX_AGENTS_KIND TMUX_AGENTS_DEPTH TMUX_AGENTS_LIST_CLIENT
 export XDG_STATE_HOME="$tmp/state" TMUX_SPAWN_BIN="$tmp/stubs" TMUX_ASK_ENTER_DELAY=0

@@ -8,7 +8,8 @@ sock="live-names-$$"
 unset TMUX TMUX_PANE CLAUDECODE TMUX_AGENTS_PINNED
 export XDG_STATE_HOME="$state/state" TMUX_ASK_ENTER_DELAY=0 TMUX_ASK_IDLE_SECS=0
 queue="/tmp/tmux-agents-$(id -u)/queue/$sock"
-cleanup() { tmux -L "$sock" kill-server 2>/dev/null || true; rm -rf "$state" "$queue"; }
+. "$here/tests/helpers/cleanup.sh"
+cleanup() { cleanup_test_server || return; rm -rf "$state"; }
 trap cleanup EXIT
 mkdir -p "$state/project"
 tmux -L "$sock" -f /dev/null new-session -d -s work -x 140 -y 40 'exec cat'

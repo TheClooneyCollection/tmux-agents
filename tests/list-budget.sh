@@ -10,7 +10,8 @@ tmp="$(mktemp -d "${TMPDIR:-/tmp}/tmux-list-budget.XXXXXX")"
 tmp="$(cd "$tmp" && pwd -P)"
 unset TMUX TMUX_PANE TMUX_AGENTS_LIST_CLIENT
 export XDG_STATE_HOME="$tmp/state"
-cleanup() { tmux -L "$sock" kill-server 2>/dev/null || true; rm -rf "$tmp"; }
+. "$here/tests/helpers/cleanup.sh"
+cleanup() { cleanup_test_server || return; rm -rf "$tmp"; }
 trap cleanup EXIT
 mkdir -p "$tmp/project-one" "$tmp/project-two" "$tmp/plain"
 git init -q "$tmp/project-one"

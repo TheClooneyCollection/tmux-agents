@@ -6,7 +6,7 @@ Notes for AI agents working on tmux-agents.
 
 - **Never touch the user's tmux server.** Test on your own socket: `tmux -L <testname>`.
 - Before pointing `TMUX=` at a test socket, check the server is up (`tmux -L <testname> has-session`) and the socket path is non-empty and not `*/default`. A failed test server plus an empty `TMUX` falls back to the user's server.
-- Clean up with `tmux -L <testname> kill-server` only. Never run a bare `tmux kill-server`.
+- Clean up with `tmux -L <testname> kill-server` only. Never run a bare `tmux kill-server`. Suites use `tests/helpers/cleanup.sh` to stop their delivery workers and remove only their own queue directory before deleting temporary state; never remove `default/` or shared flat-root messages.
 - Test servers use `set -g default-shell /bin/sh`, so the user's shell config doesn't run in test panes.
 - Stub both agents: point `TMUX_SPAWN_BIN` at a directory with `claude` and `codex` scripts that print a marker and `exec cat`, and check the marker before going on. In `tmux-spawn`, the agent type comes before the options.
 - Run every suite before a release; each file's header says what it covers:

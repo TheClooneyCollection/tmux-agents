@@ -5,7 +5,8 @@ here="$(cd "$(dirname "$0")/.." && pwd)"
 B="$here/bin"
 sock="tmux-agents-lifecycle-$$"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/tmux-agents-spawn-names.XXXXXX")"
-cleanup() { tmux -L "$sock" kill-server 2>/dev/null || true; rm -rf "$tmp"; }
+. "$here/tests/helpers/cleanup.sh"
+cleanup() { cleanup_test_server || return; rm -rf "$tmp"; }
 trap cleanup EXIT
 mkdir -p "$tmp/bin" "$tmp/project"
 for a in claude codex; do

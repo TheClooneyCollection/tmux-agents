@@ -11,9 +11,10 @@ export XDG_STATE_HOME="$state_dir" TMUX_ASK_ENTER_DELAY=0 TMUX_ASK_COPY_IDLE_SEC
 Q="/tmp/tmux-agents-$(id -u)/queue/$sock"
 legacy="${Q%/*}/rename-test-$$"
 other="${Q%/*}/other-rename-test-$$"
+. "$here/tests/helpers/cleanup.sh"
 cleanup() {
-  tmux -L "$sock" kill-server 2>/dev/null || true
-  rm -rf "$state_dir" "$Q" "$other"
+  cleanup_test_server || return
+  rm -rf "$state_dir" "$other"
   rm -f "$legacy.meta" "$legacy.undelivered"
 }
 trap cleanup EXIT

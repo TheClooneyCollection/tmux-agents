@@ -7,7 +7,8 @@ sock="tmux-msg-waiting-ui-$$"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/tmux-msg-waiting-ui.XXXXXX")"
 unset TMUX TMUX_PANE TMUX_AGENTS_LIST_CLIENT
 export XDG_STATE_HOME="$tmp/state"
-cleanup() { tmux -L "$sock" kill-server 2>/dev/null || true; rm -rf "$tmp"; }
+. "$here/tests/helpers/cleanup.sh"
+cleanup() { cleanup_test_server || return; rm -rf "$tmp"; }
 trap cleanup EXIT
 tmux -L "$sock" -f /dev/null new-session -d -s work -c "$tmp" cat
 tmux -L "$sock" has-session 2>/dev/null || { echo 'ABORT: test server not up'; exit 1; }

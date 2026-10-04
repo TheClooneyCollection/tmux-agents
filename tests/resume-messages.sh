@@ -6,9 +6,10 @@ B="$here/bin"
 sock="tmux-agents-resume-test-$$"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/tmux-agents-resume.XXXXXX")"
 queue="/tmp/tmux-agents-$(id -u)/queue/$sock"
+. "$here/tests/helpers/cleanup.sh"
 cleanup() {
-  tmux -L "$sock" kill-server 2>/dev/null || true
-  rm -rf "$tmp" "$queue"
+  cleanup_test_server || return
+  rm -rf "$tmp"
 }
 trap cleanup EXIT
 mkdir -p "$tmp/bin"

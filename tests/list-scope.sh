@@ -12,7 +12,8 @@ tmux -L "$sock" has-session 2>/dev/null || { echo 'ABORT: test server not up'; e
 S="$(tmux -L "$sock" display-message -p '#{socket_path}')"
 case "$S" in ''|*/default) echo "ABORT: unsafe socket '$S'"; tmux -L "$sock" kill-server; exit 1 ;; esac
 export TMUX="$S,1,0"
-cleanup() { tmux -L "$sock" kill-server 2>/dev/null || true; rm -rf "$tmp"; }
+. "$here/tests/helpers/cleanup.sh"
+cleanup() { cleanup_test_server || return; rm -rf "$tmp"; }
 trap cleanup EXIT
 tmux set -g default-shell /bin/sh
 fail=0
