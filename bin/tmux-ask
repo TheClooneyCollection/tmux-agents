@@ -9,8 +9,8 @@ here="$(cd "$(dirname "$0")" && pwd)"
 # would go to tmux instead of the program.
 deliver() {
   local buf="tmux-ask-$$-${1#%}"
-  printf '%s' "$2" | tmux load-buffer -b "$buf" -
-  tmux paste-buffer -p -d -b "$buf" -t "$1"
+  printf '%s' "$2" | tmux load-buffer -b "$buf" - || return 1
+  tmux paste-buffer -p -d -b "$buf" -t "$1" || return 1
   sleep "${TMUX_ASK_ENTER_DELAY:-0.5}"
   tmux send-keys -t "$1" Enter
 }
@@ -20,57 +20,277 @@ deliver() {
 # them too. Per server because pane ids repeat across servers: a message
 # queued for %1 on one must never go to %1 on another. Names start with a
 # timestamp, so sorting gives the send order.
-QUEUE_DIR="/tmp/tmux-agents-$(id -u)/queue/$(basename "${TMUX%%,*}")"
+queue_socket="${TMUX:-default}"
+QUEUE_DIR="/tmp/tmux-agents-$(id -u)/queue/$(basename "${queue_socket%%,*}")"
 
-# Claim $1 for delivery by renaming it; only one of the background
-# deliverer and the hook can win, so nothing is sent twice.
-claim() {
-  mv "$1" "$1.sending" 2>/dev/null
+# Metadata is data, never shell code. Legacy bodies supply missing identities.
+queue_info() {
+  local body="$1" meta header key value
+  meta="${body%.msg.sending}"; meta="${meta%.*}.meta"
+  case "$body" in *.msg.sending) meta="${body%.msg.sending}.meta" ;; esac
+  from_pane="" from_name="" to_pane="" to_name="" kind="" queued_at=""
+  if [ -f "$meta" ]; then
+    while IFS='=' read -r key value; do
+      case "$key" in
+        from_pane|from_name|to_pane|to_name|kind|queued_at) printf -v "$key" '%s' "$value" ;;
+      esac
+    done < "$meta"
+  fi
+  header="$(head -n 1 "$body" 2>/dev/null || true)"
+  [ -n "$from_name" ] || from_name="$(printf '%s\n' "$header" | sed -n 's/^\[.* from \([^ ]*\) to .* via tmux-ask].*/\1/p')"
+  [ -n "$to_name" ] || to_name="$(printf '%s\n' "$header" | sed -n 's/^\[.* to \([^ ]*\) via tmux-ask].*/\1/p')"
+  [ -n "$kind" ] || kind="$(printf '%s\n' "$header" | sed -n 's/^\[\([^ ]*\) from .*/\1/p')"
+  [ -n "$queued_at" ] || { queued_at="$(basename "$body")"; queued_at="${queued_at%%-*}"; }
 }
 
-# pane-mode-changed hook: when pane $2 leaves copy mode (mouse or keys),
-# the user has stopped scrolling, so send its queued messages right away
-# without waiting out the typing window.
-if [ "${1:-}" = "--kick" ]; then
-  peer="$2"
-  [ "$(tmux display-message -p -t "$peer" '#{pane_in_mode}' 2>/dev/null)" = 0 ] || exit 0
-  for f in $(find "$QUEUE_DIR" -name "*-${peer#%}.msg" 2>/dev/null | sort); do
-    claim "$f" || continue
-    deliver "$peer" "$(cat "$f.sending")"
-    rm -f "$f.sending"
+write_meta() {
+  printf 'from_pane=%s\nfrom_name=%s\nto_pane=%s\nto_name=%s\nkind=%s\nqueued_at=%s\n' \
+    "$from_pane" "$from_name" "$to_pane" "$to_name" "$kind" "$queued_at" > "$1"
+}
+
+queue_files() {
+  find "$1" -type f \( -name '*.msg' -o -name '*.sending' -o -name '*.undelivered' \) 2>/dev/null | sort -t/ -k1 || true
+}
+
+# Serialize delivery and marker changes per receiver. All writers publish
+# atomically; an interrupted delivery retains its body (at least once).
+active_file=""
+cleanup() {
+  if [ -n "$active_file" ] && [ -f "${active_file%.msg}.sending" ]; then
+    mv "${active_file%.msg}.sending" "$active_file" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# Kernel advisory locks cannot be stranded by SIGKILL. The owner PID is
+# recorded for diagnosis; the inherited descriptor, not PID reuse or an
+# unlink/check race, proves ownership. Never unlink these lock files.
+with_lock() {
+  local path="$1"; shift
+  mkdir -p "$(dirname "$path")"
+  perl -MFcntl=:flock -MIO::Handle -e '
+    $^F = 255;
+    my $path = shift @ARGV;
+    open(my $lock, ">>", $path) or die "$path: $!";
+    flock($lock, LOCK_EX | LOCK_NB) or exit 75;
+    truncate($lock, 0) or die "truncate: $!";
+    seek($lock, 0, 0); print $lock "$$\n";
+    $lock->flush();
+    exec @ARGV; die "exec: $!";
+  ' "$path" "$@"
+}
+
+# Called under the pane lock. Keep the oldest escalated message visible
+# until the last such message has gone, including multiple queued sends.
+refresh_waiting() {
+  local p="$1" f stamp oldest="" now previous
+  now="$(date +%s)"
+  for f in "$QUEUE_DIR"/*-"${p#%}".msg "$QUEUE_DIR"/*-"${p#%}".sending; do
+    [ -f "$f" ] || continue
+    stamp="$(basename "$f")"; stamp="${stamp%%-*}"
+    case "$stamp" in ''|*[!0-9]*) continue ;; esac
+    if [ "$((now - stamp))" -ge "${TMUX_ASK_QUEUE_SECS:-1800}" ]; then
+      [ -n "$oldest" ] && [ "$oldest" -le "$stamp" ] || oldest="$stamp"
+    fi
   done
+  if [ -n "$oldest" ]; then
+    previous="$(tmux show-options -pqv -t "$p" @msg_waiting_since 2>/dev/null || true)"
+    tmux set-option -p -t "$p" @msg_waiting_since "$oldest" 2>/dev/null || true
+    if [ -z "$previous" ]; then
+      "$here/tmux-agents" --chip-layout on >/dev/null 2>&1 || true
+    fi
+  else
+    tmux set-option -pu -t "$p" @msg_waiting_since 2>/dev/null || true
+  fi
+}
+
+start_deliverer() {
+  local envs="" v val
+  for v in TMUX_ASK_IDLE_SECS TMUX_ASK_QUEUE_SECS TMUX_ASK_COPY_IDLE_SECS TMUX_ASK_ENTER_DELAY; do
+    eval "val=\${$v:-}"
+    case "$val" in ''|*[!0-9.]*) continue ;; esac
+    envs="$envs$v='$val' "
+  done
+  tmux run-shell -b "$envs'$here/tmux-ask' --deliver '$1' '$2'"
+}
+
+# Publish metadata before the body, so readers never see a partial message.
+# Keep the documented epoch-pid-pane filename, including batch retries.
+publish() {
+  local body="$1" stamp
+  mkdir -p "$QUEUE_DIR"
+  while :; do
+    stamp="$(date +%s)"
+    file="$QUEUE_DIR/$stamp-$(printf '%06d' $$)-${to_pane#%}.msg"
+    [ -e "${file%.msg}.meta" ] || break
+    sleep 1
+  done
+  write_meta "${file%.msg}.meta" || return 1
+  printf '%s' "$body" > "$file.tmp" || return 1
+  mv "$file.tmp" "$file" || return 1
+}
+
+bounce() {
+  local source="$1" kept sender text reopen
+  kept="${source%.msg}.undelivered"
+  queue_info "$source"
+  mv "$source" "$kept" || return 1
+  sender=""
+  if [ -n "$from_pane" ] && pane_alive "$from_pane" && [ "$(pane_name "$from_pane")" = "$from_name" ]; then
+    sender="$from_pane"
+  elif [ -z "$from_pane" ] && [ -n "$from_name" ]; then
+    sender="$(find_pane "$from_name")"
+  fi
+  text="your ${kind:-message} to ${to_name:-$to_pane} wasn't delivered: ${to_name:-$to_pane} is gone. The text is kept at $kept."
+  reopen=""
+  if valid_name "$to_name"; then reopen="$(record_get "$to_name" id)"; fi
+  [ -z "$reopen" ] || text="$text It will be delivered if $to_name is reopened; you needn't resend it."
+  if [ -n "$sender" ] && [ "$from_name" != tmux-ask ]; then
+    # A bounce is an ordinary durable notice, with no request-state effects.
+    to_pane="$sender" to_name="$from_name" from_pane="" from_name=tmux-ask kind=notice queued_at="$(date +%s)"
+    publish "$(notice_body tmux-ask "$text" "$to_name")" || { printf 'bounce could not be queued; original retained at %s\n' "$kept" >&2; return 1; }
+    start_deliverer "$to_pane" "$file" || printf 'notice retained at %s\n' "$file" >&2
+  else
+    for c in $(tmux list-clients -F '#{client_name}'); do
+      tmux display-message -c "$c" -d 10000 "tmux-ask: $text" || true
+    done
+  fi
+}
+
+# Return 0 when handled, 1 while blocked. --kick skips only typing delay.
+try_delivery() {
+  with_lock "$QUEUE_DIR/.pane-${1#%}.lock" "$here/tmux-ask" --attempt "$@"
+}
+
+try_delivery_locked() {
+  local peer="$1" source="$2" kick="${3:-0}" older sending restored
+  # Holding the kernel lock proves no active paste owns these .sending files.
+  for sending in "$QUEUE_DIR"/*-"${peer#%}".sending "$QUEUE_DIR"/*-"${peer#%}".msg.sending; do
+    [ -f "$sending" ] || continue
+    restored="${sending%.sending}"; restored="${restored%.msg}.msg"
+    [ ! -e "$restored" ] || continue
+    mv "$sending" "$restored" || return 1
+  done
+  [ -f "$source" ] || return 0
+  if ! pane_alive "$peer"; then
+    if ! bounce "$source"; then return 1; fi
+    return 0
+  fi
+  older="$(find "$QUEUE_DIR" -type f \( -name "*-${peer#%}.msg" -o -name "*-${peer#%}.sending" \) | sort | awk -v f="$source" '$0 < f { print; exit }')"
+  if [ -n "$older" ] || { [ "$kick" = 0 ] && user_busy "$peer"; } ||
+      [ "$(tmux display-message -p -t "$peer" '#{pane_in_mode}')" = 1 ]; then
+    refresh_waiting "$peer"
+    return 1
+  fi
+  sending="${source%.msg}.sending"
+  active_file="$source"
+  if ! mv "$source" "$sending"; then return 1; fi
+  if deliver "$peer" "$(cat "$sending")"; then
+    rm -f "$sending" "${source%.msg}.meta"
+    active_file=""
+    refresh_waiting "$peer"
+    return 0
+  fi
+  # A failed paste/Enter is never considered delivered.
+  cleanup
+  active_file=""
+  return 1
+}
+
+if [ "${1:-}" = --pending ]; then
+  printf 'time\tsender\treceiver\tstate\tpath\n'
+  while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    queue_info "$f"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$queued_at" "${from_name:-unknown}" "${to_name:-unknown}" "${f##*.}" "$f"
+  done < <(queue_files "$(dirname "$QUEUE_DIR")")
   exit 0
 fi
 
-# Background delivery of a queued message (started via run-shell): wait
-# until the user stops typing or scrolling in the pane and older messages
-# for it went out, then deliver. A pane left in copy mode with no keys for
-# TMUX_ASK_COPY_IDLE_SECS (default 300; 0 = never) was probably forgotten:
-# take it out of copy mode, which delivers through the --kick hook and the
-# next check here. After TMUX_ASK_QUEUE_SECS (default 1800),
-# or if the pane is gone, keep the message as .undelivered and tell every
-# client. Exits quietly if the hook already sent it.
-if [ "${1:-}" = "--deliver" ]; then
-  peer="$2" file="$3" waited=0 copy_idle=0
-  name="$(pane_name "$peer" 2>/dev/null || true)"
-  give_up() {
-    local kept="${file%.msg}.undelivered"
-    mv -f "$file" "$kept" 2>/dev/null || exit 0
-    for c in $(tmux list-clients -F '#{client_name}'); do
-      tmux display-message -c "$c" -d 10000 "tmux-ask: $1; message kept in $kept"
-    done
-    exit 1
-  }
-  while :; do
-    [ -f "$file" ] || exit 0
-    pane_alive "$peer" || give_up "${name:-$peer} is gone, message not delivered"
-    older="$(find "$(dirname "$file")" -name "*-${peer#%}.msg" 2>/dev/null | sort | awk -v f="$file" '$0 < f' | head -n 1)"
-    if [ -z "$older" ] && ! user_busy "$peer"; then
-      claim "$file" || exit 0
-      deliver "$peer" "$(cat "$file.sending")"
-      rm -f "$file.sending"
-      exit 0
+if [ "${1:-}" = --attempt ]; then
+  shift
+  try_delivery_locked "$@"
+  exit $?
+fi
+
+if [ "${1:-}" = --retry ]; then
+  shift
+  require_tmux
+  if with_lock "$(dirname "$QUEUE_DIR")/.retry.lock" "$here/tmux-ask" --retry-locked "$@"; then
+    exit 0
+  else
+    rc=$?
+    [ "$rc" = 75 ] || exit "$rc"
+    printf 'retry already running; retained messages can be retried later\n'
+    exit 0
+  fi
+fi
+
+if [ "${1:-}" = --retry-locked ]; then
+  shift
+  filter=""
+  if [ "${1:-}" = --to ] && [ -n "${2:-}" ]; then filter="$2"; shift 2; fi
+  [ $# = 0 ] || die 'usage: tmux-ask --retry [--to NAME]'
+  require_tmux
+  # Also restart persisted queued work whose worker failed to launch or died.
+  for source in "$QUEUE_DIR"/*.msg "$QUEUE_DIR"/*.sending; do
+    [ -f "$source" ] || continue
+    queue_info "$source"
+    [ -z "$filter" ] || [ "$to_name" = "$filter" ] || continue
+    receiver="$to_pane"
+    if [ -z "$receiver" ]; then receiver="${source%.sending}"; receiver="${receiver%.msg}"; receiver="%${receiver##*-}"; fi
+    source="${source%.sending}"; source="${source%.msg}.msg"
+    if ! try_delivery "$receiver" "$source"; then start_deliverer "$receiver" "$source" || true; fi
+  done
+  # Never place another server's messages into a same-named agent here.
+  while IFS= read -r source; do
+    [ -f "$source" ] || continue
+    queue_info "$source"
+    [ -z "$filter" ] || [ "$to_name" = "$filter" ] || continue
+    receiver="$(find_pane "$to_name")"
+    if [ -z "$to_name" ] || [ -z "$receiver" ]; then
+      printf 'unplaced: %s (receiver %s is absent)\n' "$source" "${to_name:-unknown}"
+      continue
     fi
+    # The batch lock serializes oldest-first retries, including legacy files.
+    # Keep the source durable until its replacement is published.
+    [ -f "$source" ] || continue
+    to_pane="$receiver"
+    publish "$(cat "$source")"
+    rm -f "$source" "${source%.undelivered}.meta"
+    # Reapply receiver state without attributing this retry to its caller.
+    if [ "$kind" = request ]; then
+      tmux set-option -p -t "$receiver" @state working
+      tmux set-option -pu -t "$receiver" @waiting_on 2>/dev/null || true
+      tmux set-option -pu -t "$receiver" @attention_since 2>/dev/null || true
+    elif [ "$kind" = reply ]; then
+      remove_word "$receiver" @awaiting "$from_name"
+    fi
+    if try_delivery "$receiver" "$file"; then
+      printf 'retried: %s\n' "$source"
+    else
+      start_deliverer "$receiver" "$file" || true
+      printf 'queued retry: %s -> %s\n' "$source" "$file"
+    fi
+  done < <({ find "$(dirname "$QUEUE_DIR")" -maxdepth 1 -name '*.undelivered' -type f 2>/dev/null; find "$QUEUE_DIR" -maxdepth 1 -name '*.undelivered' -type f 2>/dev/null; } | awk '{ n=$0; sub(/^.*\//,"",n); print n "\t" $0 }' | sort | cut -f2-)
+  exit 0
+fi
+
+if [ "${1:-}" = --kick ]; then
+  peer="$2"
+  while IFS= read -r f; do
+    f="${f%.sending}"; f="${f%.msg}.msg"
+    try_delivery "$peer" "$f" 1 || true
+  done < <(find "$QUEUE_DIR" -type f \( -name "*-${peer#%}.msg" -o -name "*-${peer#%}.sending" -o -name "*-${peer#%}.msg.sending" \) 2>/dev/null | sort)
+  exit 0
+fi
+
+if [ "${1:-}" = --deliver ]; then
+  peer="$2" source="$3" copy_idle=0
+  while [ -f "$source" ] || [ -f "${source%.msg}.sending" ]; do
+    try_delivery "$peer" "$source" && exit 0
     if [ "$(tmux display-message -p -t "$peer" '#{pane_in_mode}' 2>/dev/null)" = 1 ] && ! user_typing "$peer"; then
       copy_idle=$((copy_idle + 2))
     else
@@ -80,13 +300,13 @@ if [ "${1:-}" = "--deliver" ]; then
     if [ "$limit" -gt 0 ] 2>/dev/null && [ "$copy_idle" -ge "$limit" ]; then
       tmux send-keys -t "$peer" -X cancel 2>/dev/null || true
       for c in $(tmux list-clients -F '#{client_name}'); do
-        tmux display-message -c "$c" -d 5000 "tmux-ask: ${name:-$peer} was left in copy mode for ${copy_idle}s; closed it to deliver a message"
+        tmux display-message -c "$c" -d 5000 "tmux-ask: $peer was left in copy mode for ${copy_idle}s; closed it to deliver a message" || true
       done
       copy_idle=0
     fi
-    [ "$waited" -lt "${TMUX_ASK_QUEUE_SECS:-1800}" ] || give_up "gave up delivering to ${name:-$peer} after ${waited}s of typing there"
-    sleep 2; waited=$((waited + 2))
+    sleep 2
   done
+  exit 0
 fi
 
 usage() {
@@ -101,6 +321,9 @@ marked as needing no response, which stops endless back-and-forth.
   tmux-ask --reply claude <<'MSG'
   multi-line reply
   MSG
+
+--pending: list queued and undelivered messages, including legacy files
+--retry [--to NAME]: retry undelivered messages by receiver name
 
 --from ME: your own name (needed where $TMUX_PANE is wrong, e.g. Codex)
 --notice:  a message that needs no answer (tmux-connect sends one when
@@ -117,7 +340,7 @@ left in copy mode with no keys for TMUX_ASK_COPY_IDLE_SECS is taken out
 of it, so the message goes through.
 
 env: TMUX_ASK_IDLE_SECS    seconds without keys before a pane counts as free (default 8)
-     TMUX_ASK_QUEUE_SECS   how long a queued message waits at most (default 1800)
+     TMUX_ASK_QUEUE_SECS   escalate a still-queued message after this long (default 1800)
      TMUX_ASK_COPY_IDLE_SECS  leave a forgotten copy mode after this long
                               with no keys (default 300; 0 = never)
      TMUX_ASK_ENTER_DELAY  seconds between paste and Enter (default 0.5)
@@ -186,23 +409,16 @@ else
   body="$(request_body "$me" "$msg" "$(pane_name "$peer")" "$([ "$any" -eq 1 ] && echo --any)")"
 fi
 
-# Don't paste into a pane the user is typing in; queue it instead.
+# Persist even immediate sends, so a failed paste cannot lose the body.
+kind=request
+[ "$reply" -eq 0 ] || kind=reply
+[ "$notice" -eq 0 ] || kind=notice
+from_pane="$self" from_name="$me" to_pane="$peer" to_name="$(pane_name "$peer")" queued_at="$(date +%s)"
+publish "$body"
 queued=0
-if user_busy "$peer"; then
-  mkdir -p "$QUEUE_DIR"
-  file="$QUEUE_DIR/$(date +%s)-$(printf '%06d' $$)-${peer#%}.msg"
-  printf '%s' "$body" > "$file"
-  # run-shell gets the tmux server's environment, not ours: pass on the
-  # settings the delivery loop reads (numbers, so plain quoting is safe).
-  envs=""
-  for v in TMUX_ASK_IDLE_SECS TMUX_ASK_QUEUE_SECS TMUX_ASK_COPY_IDLE_SECS TMUX_ASK_ENTER_DELAY; do
-    eval "val=\${$v:-}"
-    [ -z "$val" ] || envs="$envs$v='$val' "
-  done
-  tmux run-shell -b "$envs'$here/tmux-ask' --deliver '$peer' '$file'"
+if ! try_delivery "$peer" "$file"; then
+  start_deliverer "$peer" "$file" || printf 'delivery worker could not start; message retained at %s\n' "$file" >&2
   queued=1
-else
-  deliver "$peer" "$body"
 fi
 
 # Track sub agent state: replying to your parent means done; a new request
