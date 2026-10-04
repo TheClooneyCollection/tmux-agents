@@ -20,11 +20,15 @@ tmux -L "$sock" has-session || { echo 'ABORT: no test server'; exit 1; }
 S="$(tmux -L "$sock" display -p '#{socket_path}')"
 case "$S" in ''|*/default) echo 'ABORT: unsafe socket'; exit 1 ;; esac
 export TMUX="$S,1,0"
+tmux set-option -g default-shell /bin/sh
 tmux new-window -d cat
 tmux set -p -t %0 @agent sender
 tmux set -p -t %1 @agent receiver
 tmux set -p -t %0 @peers %1
 tmux set -p -t %1 @peers %0
+. "$B/lib.sh"
+ensure_agent_ids "$state_dir/empty-queue"
+receiver_id="$(pane_agent_id %1)"
 count=0
 check() { if "$@"; then count=$((count + 1)); echo "ok $count: $*"; else echo "FAIL: $*"; exit 1; fi; }
 wait_for() { local n; for n in $(seq 1 60); do "$@" && return 0; sleep .1; done; return 1; }
@@ -32,6 +36,7 @@ chip_on() { [ "$(tmux show -gv status)" = 2 ]; }
 marked() { [ -n "$(tmux show -pqv -t %1 @msg_waiting_since)" ]; }
 cleared() { [ -z "$(tmux show -pqv -t %1 @msg_waiting_since)" ]; }
 no_queued() { [ -z "$(find "$Q" -name '*.msg' -o -name '*.sending')" ]; }
+not_captured() { ! captured "$@"; }
 captured() { tmux capture-pane -p -S - -t "$1" | grep -q "$2"; }
 # Suppress only automatic loop startup so tests can own/stop worker PIDs.
 mkdir "$state_dir/manual-bin"
@@ -86,27 +91,40 @@ check captured %1 durable-two
 tmux copy-mode -t %1
 ask lost-but-kept
 mkdir -p "$state_dir/tmux-agents/$sock/sessions"
-printf 'id=test-session\n' > "$state_dir/tmux-agents/$sock/sessions/receiver"
+record_set "$receiver_id" name receiver
+record_set "$receiver_id" id test-session
 tmux kill-pane -t %1
+tmux set -p -t %0 @agent renamed-sender
 lost="$(find "$Q" -name '*.msg' | head -n 1)"
 "$B/tmux-ask" --deliver %1 "$lost" </dev/null
-check wait_for captured %0 'notice from tmux-ask to sender'
+check wait_for captured %0 'notice from tmux-ask to renamed-sender'
 check captured %0 'will be delivered if receiver is reopened'
 check test "$(find "$Q" -name '*.undelivered' | wc -l | tr -d ' ')" = 1
 "$B/tmux-ask" --retry --to receiver </dev/null > "$state_dir/retry"
 check grep -q unplaced "$state_dir/retry"
 check test "$(find "$Q" -name '*.undelivered' | wc -l | tr -d ' ')" = 1
-# Legacy flat queue headers work without metadata.
+# Unattributed legacy headers stay visible but cannot prove identity.
 printf '[reply from old-sender to receiver via tmux-ask]\nlegacy-body\n' > "$legacy"
 "$B/tmux-ask" --pending </dev/null > "$state_dir/pending"
 check grep -q '100.*old-sender.*receiver.*undelivered' "$state_dir/pending"
 tmux new-window -d cat
 tmux set -p -t %2 @agent receiver
+ensure_agent_id %2 >/dev/null
 "$B/tmux-ask" --retry --to receiver </dev/null > "$state_dir/retry"
-check captured %2 legacy-body
+check not_captured %2 lost-but-kept
+check not_captured %2 legacy-body
+check test -f "$legacy"
+check test "$(find "$Q" -name '*.undelivered' | wc -l | tr -d ' ')" = 1
+# Restoring the original ID, with a different label, makes redelivery safe.
+tmux set -p -t %2 @agent restored-receiver
+tmux set -p -t %2 @agent_id "$receiver_id"
+"$B/tmux-ask" --retry --to restored-receiver </dev/null > "$state_dir/retry"
 check captured %2 lost-but-kept
-check test ! -f "$legacy"
+check test -f "$legacy"
+rm -f "$legacy"
+tmux set -p -t %2 @agent receiver
 check test "$(find "$Q" -name '*.undelivered' | wc -l | tr -d ' ')" = 0
+tmux set -p -t %0 @agent sender
 # A killed lock owner leaves .sending recoverable, without stealing an
 # active owner's file. Advisory locks keep their diagnostic PID file.
 tmux set -p -t %0 @peers %2
@@ -138,6 +156,38 @@ tmux send-keys -t %2 -X cancel
 "$B/tmux-ask" --retry --to receiver </dev/null
 check no_queued
 check captured %2 restart-worker-body
+# A reentrant attempt already holding SH must not upgrade if cleanup
+# removes the migration marker. Bound this regression and kill its group.
+marker="$(sessions_dir)/.ids-v1"
+mv "$marker" "$marker.saved"
+check agent_identity_lock shared perl -e '
+  my $pid = fork(); die "fork: $!" unless defined $pid;
+  if (!$pid) { setpgrp(0, 0); exec @ARGV; die "exec: $!"; }
+  $SIG{ALRM} = sub { kill 9, -$pid; waitpid($pid, 0); exit 1; };
+  alarm 5; waitpid($pid, 0); alarm 0; exit($? >> 8);
+' env TMUX_ASK_IDENTITY_LOCKED=1 "$B/tmux-ask" --attempt %2 "$Q/absent.msg"
+mv "$marker.saved" "$marker"
+# Remove the marker inside an ordinary sender's shared-lock invocation,
+# before it launches its synchronous --attempt child. The child must carry
+# the flag along with the inherited descriptor, not try migration again.
+mkdir "$state_dir/cleanup-bin"
+cat > "$state_dir/cleanup-bin/tmux" <<WRAP
+#!/usr/bin/env bash
+if [ "\${TMUX_ASK_IDENTITY_LOCKED:-}" = 1 ] && [ -f '$marker' ]; then
+  mv '$marker' '$marker.saved'
+fi
+exec '$real_tmux' "\$@"
+WRAP
+chmod +x "$state_dir/cleanup-bin/tmux"
+check perl -e '
+  my $pid = fork(); die "fork: $!" unless defined $pid;
+  if (!$pid) { setpgrp(0, 0); exec @ARGV; die "exec: $!"; }
+  $SIG{ALRM} = sub { kill 9, -$pid; waitpid($pid, 0); exit 1; };
+  alarm 5; waitpid($pid, 0); alarm 0; exit($? >> 8);
+' env PATH="$state_dir/cleanup-bin:$PATH" "$B/tmux-ask" --from sender --notice receiver inherited-lock-body
+check test -f "$marker.saved"
+check captured %2 inherited-lock-body
+mv "$marker.saved" "$marker"
 # Both endpoints gone: keep the body; client toast branch is captured by a
 # wrapper around the real isolated-server tmux, without attaching a real UI.
 tmux new-window -d cat

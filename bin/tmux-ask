@@ -4,17 +4,42 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 . "$here/lib.sh"
 
-# Identity migration must not race metadata publication/deletion. Workers
-# acquire this only for one attempt, so idle delivery loops never block rename.
+# Migration and first naming take exclusive locks, before any shared lock.
+if [ "${TMUX_ASK_IDENTITY_LOCKED:-}" != 1 ]; then
+  case "${1:-}" in -h|--help) ;; *) ensure_agent_ids ;; esac
+fi
 case "${1:-}" in
-  --deliver|--retry|--kick|--pending) ;;
+  --deliver|--retry|--kick|--pending|-h|--help) ;;
   *) if [ "${TMUX_ASK_IDENTITY_LOCKED:-}" != 1 ]; then
+       case "${1:-}" in
+         --*) case "$1" in --attempt|--retry-locked|--system-notice) internal=1 ;; *) internal=0 ;; esac ;;
+         *) internal=0 ;;
+       esac
+       if [ "$internal" = 0 ]; then
+         FROM_PANE=""
+         args=("$@") initial_target=""
+         for ((i=0; i<${#args[@]}; i++)); do
+           case "${args[$i]}" in
+             --from) i=$((i+1)); FROM_PANE="${args[$i]:-}" ;;
+             --reply|--notice|--any) ;;
+             --) break ;;
+             *) if [ -z "$initial_target" ]; then initial_target="${args[$i]}"; else break; fi ;;
+           esac
+         done
+         require_tmux
+         initial_self="$(self_pane)"
+         if [ -z "$(pane_name "$initial_self")" ]; then
+           trusted_pane || die "this pane has no name; run tmux-connect first, or pass --from <your name>"
+           auto_name "$initial_self" >/dev/null
+         fi
+         ensure_agent_id "$initial_self" >/dev/null
+       fi
        agent_identity_lock shared env TMUX_ASK_IDENTITY_LOCKED=1 "$here/tmux-ask" "$@"
        exit $?
      fi ;;
 esac
-# Background workers must acquire their own locks rather than inherit a flag.
-unset TMUX_ASK_IDENTITY_LOCKED
+# Synchronous children inherit both the lock descriptor and its flag.
+# start_deliverer explicitly clears the flag for server-launched workers.
 
 settings_get ask_enter_delay TMUX_ASK_ENTER_DELAY @tmux_agents_ask_enter_delay 0.5
 settings_get ask_queue_secs TMUX_ASK_QUEUE_SECS @tmux_agents_ask_queue_secs 1800
@@ -45,11 +70,11 @@ queue_info() {
   local body="$1" meta header key value
   meta="${body%.msg.sending}"; meta="${meta%.*}.meta"
   case "$body" in *.msg.sending) meta="${body%.msg.sending}.meta" ;; esac
-  from_pane="" from_name="" to_pane="" to_name="" kind="" queued_at=""
+  from_id="" to_id="" from_pane="" from_name="" to_pane="" to_name="" kind="" queued_at=""
   if [ -f "$meta" ]; then
     while IFS='=' read -r key value; do
       case "$key" in
-        from_pane|from_name|to_pane|to_name|kind|queued_at) printf -v "$key" '%s' "$value" ;;
+        from_id|to_id|from_pane|from_name|to_pane|to_name|kind|queued_at) printf -v "$key" '%s' "$value" ;;
       esac
     done < "$meta"
   fi
@@ -61,8 +86,8 @@ queue_info() {
 }
 
 write_meta() {
-  printf 'from_pane=%s\nfrom_name=%s\nto_pane=%s\nto_name=%s\nkind=%s\nqueued_at=%s\n' \
-    "$from_pane" "$from_name" "$to_pane" "$to_name" "$kind" "$queued_at" > "$1"
+  printf 'from_id=%s\nto_id=%s\nfrom_pane=%s\nfrom_name=%s\nto_pane=%s\nto_name=%s\nkind=%s\nqueued_at=%s\n' \
+    "$from_id" "$to_id" "$from_pane" "$from_name" "$to_pane" "$to_name" "$kind" "$queued_at" > "$1"
 }
 
 queue_files() {
@@ -130,7 +155,7 @@ start_deliverer() {
     case "$val" in ''|*[!0-9.]*) continue ;; esac
     envs="$envs$v='$val' "
   done
-  tmux run-shell -b "$envs'$here/tmux-ask' --deliver '$1' '$2'"
+  tmux run-shell -b "${envs}env -u TMUX_ASK_IDENTITY_LOCKED '$here/tmux-ask' --deliver '$1' '$2'"
 }
 
 # Publish metadata before the body, so readers never see a partial message.
@@ -155,18 +180,14 @@ bounce() {
   queue_info "$source"
   mv "$source" "$kept" || return 1
   sender=""
-  if [ -n "$from_pane" ] && pane_alive "$from_pane" && [ "$(pane_name "$from_pane")" = "$from_name" ]; then
-    sender="$from_pane"
-  elif [ -z "$from_pane" ] && [ -n "$from_name" ]; then
-    sender="$(find_pane "$from_name")"
-  fi
+  if [ -n "$from_id" ]; then sender="$(find_pane_by_id "$from_id")"; fi
   text="your ${kind:-message} to ${to_name:-$to_pane} wasn't delivered: ${to_name:-$to_pane} is gone. The text is kept at $kept."
   reopen=""
-  if valid_name "$to_name"; then reopen="$(record_get "$to_name" id)"; fi
+  if valid_agent_id "$to_id"; then reopen="$(record_get "$to_id" id)"; fi
   [ -z "$reopen" ] || text="$text It will be delivered if $to_name is reopened; you needn't resend it."
   if [ -n "$sender" ] && [ "$from_name" != tmux-ask ]; then
     # A bounce is an ordinary durable notice, with no request-state effects.
-    to_pane="$sender" to_name="$from_name" from_pane="" from_name=tmux-ask kind=notice queued_at="$(date +%s)"
+    to_id="$from_id" from_id="" to_pane="$sender" to_name="$(pane_name "$sender")" from_pane="" from_name=tmux-ask kind=notice queued_at="$(date +%s)"
     publish "$(notice_body tmux-ask "$text" "$to_name")" || { printf 'bounce could not be queued; original retained at %s\n' "$kept" >&2; return 1; }
     start_deliverer "$to_pane" "$file" || printf 'notice retained at %s\n' "$file" >&2
   else
@@ -191,7 +212,8 @@ try_delivery_locked() {
     mv "$sending" "$restored" || return 1
   done
   [ -f "$source" ] || return 0
-  if ! pane_alive "$peer"; then
+  queue_info "$source"
+  if [ -z "$to_id" ] || ! pane_alive "$peer" || [ "$(pane_agent_id "$peer")" != "$to_id" ]; then
     if ! bounce "$source"; then return 1; fi
     return 0
   fi
@@ -221,6 +243,7 @@ if [ "${1:-}" = --system-notice ]; then
   [ "$#" = 3 ] || die 'invalid system notice'
   require_tmux
   to_pane="$(resolve_pane "$2")" to_name="$(pane_name "$2")"
+  to_id="$(pane_agent_id "$to_pane")" from_id=""
   from_pane="" from_name=tmux-rename kind=notice queued_at="$(date +%s)"
   publish "$(notice_body tmux-rename "$3" "$to_name")"
   if ! try_delivery "$to_pane" "$file"; then
@@ -264,11 +287,20 @@ if [ "${1:-}" = --retry-locked ]; then
   if [ "${1:-}" = --to ] && [ -n "${2:-}" ]; then filter="$2"; shift 2; fi
   [ $# = 0 ] || die 'usage: tmux-ask --retry [--to NAME]'
   require_tmux
+  filter_id=""
+  if [ -n "$filter" ]; then
+    filter_pane="$(find_pane "$filter")"
+    if [ -z "$filter_pane" ]; then
+      printf 'unplaced: receiver %s is absent\n' "$filter"
+      exit 0
+    fi
+    filter_id="$(pane_agent_id "$filter_pane")"
+  fi
   # Also restart persisted queued work whose worker failed to launch or died.
   for source in "$QUEUE_DIR"/*.msg "$QUEUE_DIR"/*.sending; do
     [ -f "$source" ] || continue
     queue_info "$source"
-    [ -z "$filter" ] || [ "$to_name" = "$filter" ] || continue
+    [ -z "$filter" ] || { [ -n "$filter_id" ] && [ "$to_id" = "$filter_id" ]; } || continue
     receiver="$to_pane"
     if [ -z "$receiver" ]; then receiver="${source%.sending}"; receiver="${receiver%.msg}"; receiver="%${receiver##*-}"; fi
     source="${source%.sending}"; source="${source%.msg}.msg"
@@ -278,9 +310,14 @@ if [ "${1:-}" = --retry-locked ]; then
   while IFS= read -r source; do
     [ -f "$source" ] || continue
     queue_info "$source"
-    [ -z "$filter" ] || [ "$to_name" = "$filter" ] || continue
-    receiver="$(find_pane "$to_name")"
-    if [ -z "$to_name" ] || [ -z "$receiver" ]; then
+    [ -z "$filter" ] || { [ -n "$filter_id" ] && [ "$to_id" = "$filter_id" ]; } || continue
+    receiver=""
+    [ -z "$to_id" ] || receiver="$(find_pane_by_id "$to_id")"
+    if [ -z "$to_id" ]; then
+      printf 'unplaced: %s (legacy receiver identity cannot be established safely)\n' "$source"
+      continue
+    fi
+    if [ -z "$receiver" ]; then
       printf 'unplaced: %s (receiver %s is absent)\n' "$source" "${to_name:-unknown}"
       continue
     fi
@@ -296,7 +333,7 @@ if [ "${1:-}" = --retry-locked ]; then
       tmux set-option -pu -t "$receiver" @waiting_on 2>/dev/null || true
       tmux set-option -pu -t "$receiver" @attention_since 2>/dev/null || true
     elif [ "$kind" = reply ]; then
-      remove_word "$receiver" @awaiting "$from_name"
+      remove_word "$receiver" @awaiting "$from_id"
     fi
     if try_delivery "$receiver" "$file"; then
       printf 'retried: %s\n' "$source"
@@ -445,6 +482,7 @@ fi
 kind=request
 [ "$reply" -eq 0 ] || kind=reply
 [ "$notice" -eq 0 ] || kind=notice
+from_id="$(pane_agent_id "$self")" to_id="$(pane_agent_id "$peer")"
 from_pane="$self" from_name="$me" to_pane="$peer" to_name="$(pane_name "$peer")" queued_at="$(date +%s)"
 publish "$body"
 queued=0
@@ -465,12 +503,12 @@ if [ "$notice" -eq 1 ]; then
   fi
 elif [ "$reply" -eq 1 ]; then
   [ "$(tmux display-message -p -t "$self" '#{@parent}')" != "$peer" ] || tmux set-option -p -t "$self" @state done
-  remove_word "$peer" @awaiting "$me"
+  remove_word "$peer" @awaiting "$from_id"
 else
   tmux set-option -p -t "$peer" @state working
   tmux set-option -pu -t "$peer" @waiting_on 2>/dev/null || true
   tmux set-option -pu -t "$peer" @attention_since 2>/dev/null || true
-  add_word "$self" @awaiting "$(pane_name "$peer")"
+  add_word "$self" @awaiting "$to_id"
 fi
 
 kind=request

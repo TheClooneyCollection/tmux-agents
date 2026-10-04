@@ -33,6 +33,8 @@ export TMUX="$S,1,0" TMUX_PANE=%0
 # Avoid personal startup files changing the isolated environment.
 tmux set-option -g default-shell /bin/sh
 tmux set-option -p -t %0 @agent main
+. "$B/lib.sh"
+ensure_agent_ids "$tmp/empty-queue"
 fail=0 count=0
 check() {
   local label="$1"; shift
@@ -75,6 +77,7 @@ notices_queued() { [ "$(find "$queue" -name '*-0.msg' -type f | wc -l | tr -d ' 
 received() { cmp -s "$tmp/expected" "$RESUME_MESSAGES_LOG"; }
 spawn claude --exact --name receiver >"$tmp/spawn"
 old="$(pane_of receiver)"
+receiver_id="$(pane_agent_id "$old")"
 check 'stub receiver is ready' wait_for ready "$old"
 if [ "$fail" -ne 0 ]; then
   cat "$tmp/spawn"
@@ -110,24 +113,32 @@ check 'three bounce notices remain queued for the busy sender' wait_for notices_
 check 'bounce metadata coexists with all original metadata' test "$(file_count '*.meta')" = 6
 check 'bounce retains all message metadata' original_metadata_intact
 check 'nothing was delivered before resume' test ! -s "$RESUME_MESSAGES_LOG"
-# Retry must find the new pane by the recorded receiver name, not its old id.
+# Reusing a closed label must never steal its queued conversation.
+spawn claude --exact --name receiver >"$tmp/replacement"
+replacement="$(pane_of receiver)"
+check 'replacement stub is ready' wait_for ready "$replacement"
+check 'replacement has a different identity' test "$(pane_agent_id "$replacement")" != "$receiver_id"
+"$B/tmux-ask" --retry --to receiver >"$tmp/wrong-retry"
+check 'same-name replacement receives no old messages' test ! -s "$RESUME_MESSAGES_LOG"
+check 'same-name retry preserves all originals' original_metadata_intact
+# Resume keeps the original ID even when its label needs a suffix.
 spawn --resume receiver >"$tmp/resume"
-new="$(pane_of receiver)"
+new="$(pane_of receiver-2)"
 check 'resume creates a different pane' test "$new" != "$old"
-check 'resume restores receiver name' test "$(info "$new" @agent)" = receiver
+check 'resume assigns an available label' test "$(info "$new" @agent)" = receiver-2
 check 'resume restores ownership before retry' test "$(info "$new" @parent)" = %0
 check 'resume delivers original messages exactly once, oldest first' wait_for received
 check 'retried request leaves resumed receiver working' test "$(info "$new" @state)" = working
-check 'sender still awaits the resumed receiver' test "$(info %0 @awaiting)" = receiver
+check 'sender still awaits the resumed receiver' test "$(info %0 @awaiting)" = "$receiver_id"
 check 'successful retry removes saved messages' test "$(receiver_file_count undelivered)" = 0
 check 'successful retry leaves no queued messages' test "$(receiver_file_count msg)" = 0
 check 'successful retry removes metadata' test "$(receiver_file_count meta)" = 0
 check 'retry leaves unrelated bounce notices queued' notices_queued
-"$B/tmux-ask" --retry --to receiver >"$tmp/retry-again"
+"$B/tmux-ask" --retry --to receiver-2 >"$tmp/retry-again"
 check 'explicit retry does not duplicate delivered messages' received
-"$B/tmux-dismiss" --from main receiver >"$tmp/dismiss-again"
-spawn --resume receiver >"$tmp/resume-again"
-new="$(pane_of receiver)"
+"$B/tmux-dismiss" --from main receiver-2 >"$tmp/dismiss-again"
+spawn --resume receiver-2 >"$tmp/resume-again"
+new="$(pane_of receiver-2)"
 check 'resume without pending messages stays done' test "$(info "$new" @state)" = done
 check 'second resume does not replay delivered messages' received
 printf '%s checks; failures=%s\n' "$count" "$fail"

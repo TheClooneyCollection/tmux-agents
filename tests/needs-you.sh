@@ -25,6 +25,10 @@ export TMUX="$S,1,0"
 cleanup() { tmux -L "$sock" kill-server 2>/dev/null; rm -rf "$state_dir"; }
 trap cleanup EXIT
 
+tmux set-option -g default-shell /bin/sh
+. "$B/lib.sh"
+ensure_agent_ids "$state_dir/empty-queue"
+
 # boss (%0) and its sub agent kid (%1), connected like tmux-spawn does.
 tmux split-window cat
 TMUX_PANE=%0 "$B/tmux-connect" %1 --as boss <<< kid >/dev/null
@@ -186,6 +190,29 @@ tmux set -p -t %1 @state done
 ask %0 kid "no reply needed, don't restart"
 turn_start "[request from boss to kid via tmux-ask] no reply needed"; turn_end
 expect "a request (not a notice) answered only locally" needs_you
+
+# A rename changes displayed waiting labels, never the stored obligation.
+reset
+kid_id="$(pane_agent_id %1)"
+record_set "$kid_id" name kid
+record_set "$kid_id" id main-thread
+ask %0 kid "identity request"
+"$B/tmux-rename" --from boss kid renamed-kid --exact >/dev/null
+"$B/tmux-agent-report" --pane %0 --turn-end </dev/null
+[ "$(st %0 @awaiting)" = "$kid_id" ] || { echo 'FAIL awaiting ID changed on rename'; fail=1; }
+case "$(st %0 @activity)" in *renamed-kid*) echo 'ok    waiting activity resolves current label' ;; *) echo 'FAIL waiting activity uses stale label'; fail=1 ;; esac
+ask %1 --reply boss "identity reply"
+[ -z "$(st %0 @awaiting)" ] || { echo 'FAIL renamed reply left an obligation'; fail=1; }
+notify main-thread "done" "[request from boss to kid via tmux-ask] old header"
+[ "$(record_get "$kid_id" id)" = main-thread ] || { echo 'FAIL notify did not retain identity record'; fail=1; }
+# A late notify from a closed conversation cannot bind a reused label.
+tmux new-window -d cat
+new_pane="$(tmux list-panes -a -F '#{pane_id}' | tail -n 1)"
+tmux set -p -t "$new_pane" @agent kid
+ensure_agent_id "$new_pane" >/dev/null
+tmux kill-pane -t %1
+notify main-thread "late completion" "[request from boss to kid via tmux-ask] old header"
+[ -z "$(st "$new_pane" @codex_thread)" ] || { echo 'FAIL late notify bound to reused label'; fail=1; }
 
 [ "$fail" -eq 0 ] && echo "all passed" || echo "some failed"
 exit "$fail"
