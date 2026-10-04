@@ -12,8 +12,8 @@ With --from, rename yourself or a descendant. Without it, the user may rename
 any agent. The renamed agent and its peers receive notices; use the new name
 in later commands, including --from. There is no alias for the old name.
 
-Short names get the command-directory prefix; a matching prefix is kept.
---exact uses the name verbatim. Names must use letters, digits, . _ ~ or -;
+Short names are sanitised, then get the command-directory prefix; a matching prefix is kept.
+--exact uses the name verbatim and requires letters, digits, . _ ~ or -;
 existing pane names and saved session names are refused.
 
 Setting: option @tmux_agents_name_format, env TMUX_AGENTS_NAME_FORMAT

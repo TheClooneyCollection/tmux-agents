@@ -540,12 +540,14 @@ rename_agent() {
 # over the local environment, the tmux option, and the prefixed default.
 format_given_name() {
   local kind="$1" dir="$2" given="$3" exact="$4" format prefix
-  valid_name "$given" || die "invalid name '$given' (use letters, digits, . _ ~ and -)"
-  if [ "$exact" = 1 ]; then printf '%s\n' "$given"; return 0; fi
-  settings_get format TMUX_AGENTS_NAME_FORMAT @tmux_agents_name_format prefixed
+  if [ "$exact" = 1 ]; then format=exact
+  else settings_get format TMUX_AGENTS_NAME_FORMAT @tmux_agents_name_format prefixed; fi
   case "${format:-prefixed}" in
-    exact) printf '%s\n' "$given" ;;
+    exact)
+      valid_name "$given" || die "invalid name '$given' (use letters, digits, . _ ~ and -)"
+      printf '%s\n' "$given" ;;
     prefixed)
+      given="$(sanitize_name "$given")" || return 1
       prefix="$(name_for "$kind" "$dir")" || return 1
       prefix="${prefix%-*}-"
       case "$given" in "$prefix"*) printf '%s\n' "$given" ;; *) printf '%s%s\n' "$prefix" "$given" ;; esac ;;

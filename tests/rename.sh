@@ -59,7 +59,10 @@ check test "$(pane_name %3)" = grandchild
 prefix="$(suggest_name %1)"; prefix="${prefix%-*}-"
 check "$B/tmux-rename" --from kid kid short
 check test "$(pane_name %1)" = "${prefix}short"
-check "$B/tmux-rename" "${prefix}short" "${prefix}full"
+check "$B/tmux-rename" "${prefix}short" "Auth Review"
+check test "$(pane_name %1)" = "${prefix}Auth-Review"
+check reject "$B/tmux-rename" "${prefix}Auth-Review" "Auth Review" --exact
+check "$B/tmux-rename" "${prefix}Auth-Review" "${prefix}full"
 check test "$(pane_name %1)" = "${prefix}full"
 tmux set -g @tmux_agents_name_format exact
 check "$B/tmux-rename" "${prefix}full" option-exact

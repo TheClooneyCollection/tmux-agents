@@ -54,6 +54,8 @@ TMUX_AGENTS_KIND=extra expect_spawn codex-project-inherited codex --name inherit
 expect_spawn codex-project-existing codex codex --name codex-project-existing
 expect_spawn codex-project-build-2 codex codex --name build
 expect_spawn codex-project-build-3 codex codex --name build
+expect_spawn codex-project-Auth-Review codex codex --name "Auth Review"
+check "exact refuses spaces rather than sanitising" reject codex --name "Auth Review" --exact
 expect_spawn raw codex codex --name raw --exact
 expect_spawn raw-2 codex codex --exact --name raw
 # Both option values, environment overrides and the unset-option default.
