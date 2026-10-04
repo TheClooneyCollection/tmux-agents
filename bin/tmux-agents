@@ -99,12 +99,37 @@ list_agents() {
     LIST_PREFIX="$AGENTS_PREFIX" LIST_NOW="$now" LIST_WINDOW="$window" LIST_SCOPE="$scope" LIST_MODE="$mode" awk -f "$here/tmux-agents-list.awk"
 }
 
+# Check only when enabling the layout, never on the list/chip refresh paths.
+warn_broken_skill_links() {
+  local homes entry dir link seen candidate duplicate
+  local dirs=("$HOME/.claude/skills" "$HOME/.codex/skills" "${CODEX_HOME:-$HOME/.codex}/skills")
+  resolve_codex_homes homes
+  for entry in $homes; do
+    case "$entry" in *=?*) dirs+=("${entry#*=}/skills") ;; esac
+  done
+  seen=()
+  for dir in "${dirs[@]}"; do
+    duplicate=0
+    for candidate in "${seen[@]+"${seen[@]}"}"; do
+      [ "$candidate" != "$dir" ] || duplicate=1
+    done
+    [ "$duplicate" = 0 ] || continue
+    seen+=("$dir")
+    for link in "$dir"/tmux-agents* "$dir"/agent-chain; do
+      if [ -L "$link" ] && [ ! -e "$link" ]; then
+        printf 'tmux-agents: warning: broken skill symlink: %s; rerun install.sh from the installation checkout to repair it.\n' "$link" >&2
+      fi
+    done
+  done
+}
+
 # Two-line status bar while sub agents exist: the chip line on top, the
 # user's own status line below. "on" saves their line in
 # @tmux_agents_main_format; "off" puts it back.
 chip_layout() {
   local cur main fps
   if [ "$1" = on ]; then
+    warn_broken_skill_links
     cur="$(tmux show-options -gv 'status-format[0]')"
     case "$cur" in *"tmux-agents --chip"*|*"@chip"*) ;; *) tmux set-option -g @tmux_agents_main_format "$cur" ;; esac
     main="$(tmux show-options -gqv @tmux_agents_main_format)"
