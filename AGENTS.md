@@ -21,9 +21,10 @@ Notes for AI agents working on tmux-agents.
   | Touching | Run |
   | --- | --- |
   | `tmux-agent-report`, `tmux-ask`, the skills' messaging rules | `needs-you.sh`, `ask-queue.sh`, `resume-messages.sh` |
-  | `tmux-agents` (list, chip, picker) | `list-budget.sh`, `list-scope.sh`, `msg-waiting-ui.sh` |
+  | `tmux-agents` (list, chip, picker) | `list-budget.sh`, `list-scope.sh`, `msg-waiting-ui.sh`, `skill-links.sh` |
   | `tmux-spawn` | `spawn-for.sh`, `spawn-split.sh`, `spawn-names.sh`, `resume-messages.sh` |
-  | user settings or configuration lookup | `settings.sh`, `spawn-names.sh`, `list-budget.sh` |
+  | user settings or configuration lookup | `settings.sh`, `spawn-names.sh`, `list-budget.sh`, `install.sh`, `skill-links.sh` |
+  | skills or installer | `skills.sh`, `install.sh`, `skill-links.sh` |
   | `tmux-dismiss` | `dismiss.sh` |
   | agent IDs, record migration or identity lookup | `agent-ids.sh`, `lifecycle-ids.sh`, `list-ids.sh`, `live-names.sh` plus the message suites |
   | naming, rename or target lookup (`lib.sh`, `tmux-rename`, `tmux-connect`) | `rename.sh`, `names.sh`, `live-names.sh`, `spawn-names.sh`, `ask-queue.sh`, `resume-messages.sh` |
