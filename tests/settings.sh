@@ -83,11 +83,14 @@ tmux set -gu @tmux_agents_blink_secs
 check 'chip retains default blink threshold' contains "$tmp/chip" ',blink'
 records="$XDG_STATE_HOME/tmux-agents/${S##*/}/sessions"
 mkdir -p "$records"
-record() { printf 'kind=codex\nid=saved-id\ndir=%s\nparent=main\nclosed=%s\n' "$tmp" "$(( $(date +%s)-172800 ))" >"$records/saved"; }
+. "$B/lib.sh"
+ensure_agent_ids "$tmp/queue"
+main_id="$(pane_agent_id %0)"
+record() { printf 'agent_id=a000000000001\nname=saved\nkind=codex\nid=saved-id\ndir=%s\nparent=%s\nclosed=%s\n' "$tmp" "$main_id" "$(( $(date +%s)-172800 ))" >"$records/a000000000001"; }
 record
 tmux set -g @tmux_agents_resume_days 1
 "$B/tmux-agents" --list >"$tmp/list"
-check 'list applies option retention' test ! -e "$records/saved"
+check 'list applies option retention' test ! -e "$records/a000000000001"
 record
 TMUX_AGENTS_RESUME_DAYS=3 "$B/tmux-agents" --list >"$tmp/list"
 check 'list retention env override' contains "$tmp/list" 'saved'

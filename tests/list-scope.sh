@@ -18,7 +18,8 @@ tmux set -g default-shell /bin/sh
 fail=0
 check() { local label="$1"; shift; if "$@"; then echo "ok    $label"; else echo "FAIL  $label"; fail=1; fi; }
 agent() { tmux set -p -t "$1" @agent "$2"; [ -z "${3:-}" ] || tmux set -p -t "$1" @parent "$3"; }
-has() { grep -q "^$2 " "$1"; }
+fixture_id() { printf 'a%012x' "$(printf %s "$1" | cksum | awk '{print $1}')"; }
+has() { local key="$2"; case "$key" in closed:*) key="closed:$(fixture_id "${key#closed:}")" ;; esac; grep -q "^$key " "$1"; }
 lacks() { ! has "$@"; }
 agent %0 main-a
 split="$(tmux split-window -d -h -t %0 -P -F '#{pane_id}' cat)"; agent "$split" split-a %0
@@ -45,6 +46,8 @@ done
 [ -n "$client" ] || { echo 'FAIL no test client'; exit 1; }
 export TMUX_AGENTS_LIST_CLIENT="$client" TMUX_PANE="$other"
 list() { FZF_PROMPT="$1" "$B/tmux-agents" --list | tr '\0' '\n' >"$2"; }
+. "$B/lib.sh"
+ensure_agent_ids "$tmp/queue"
 list 'agents · this window> ' "$tmp/local"
 for p in "$split" "$hidden" "$grand"; do check "local includes descendant $p" has "$tmp/local" "$p"; done
 for p in %0 "$main_b" "$other"; do check "sub view excludes $p" lacks "$tmp/local" "$p"; done
@@ -86,13 +89,19 @@ list 'all · all windows> ' "$tmp/named-all"
 check 'named all-window view includes other main' has "$tmp/named-all" "$main_b"
 # Records refer to a live direct parent, possibly itself a hidden descendant.
 records="$XDG_STATE_HOME/tmux-agents/$(basename "$S")/sessions"; mkdir -p "$records"
-record() { printf 'kind=claude\nid=test-id\ndir=%s\nparent=%s\ndepth=1\nclosed=%s\n' "$tmp" "$2" "$now" >"$records/$1"; }
+record() {
+  local aid parent_id pane
+  aid="$(fixture_id "$1")"; pane="$(find_pane "$2")"
+  if [ -n "$pane" ]; then parent_id="$(pane_agent_id "$pane")"
+  elif [ -n "$2" ]; then parent_id="$(fixture_id "$2")"; else parent_id=""; fi
+  printf 'agent_id=%s\nname=%s\nkind=claude\nid=test-id\ndir=%s\nparent=%s\nparent_name=%s\ndepth=1\nclosed=%s\n' "$aid" "$1" "$tmp" "$parent_id" "$2" "$now" >"$records/$aid"
+}
 record closed-a main-a; record closed-grand hidden-a; record closed-b main-b; record orphan gone
 record closed-parent main-a; record closed-child closed-parent
 record cycle-a cycle-b; record cycle-b cycle-a
 record broken-child missing-record; record empty-parent ''
 record no-session main-a
-sed '/^id=/d' "$records/no-session" >"$tmp/no-session"; mv "$tmp/no-session" "$records/no-session"
+sed '/^id=/d' "$records/$(fixture_id no-session)" >"$tmp/no-session"; mv "$tmp/no-session" "$records/$(fixture_id no-session)"
 list 'agents · this window> ' "$tmp/closed"
 check 'local closed parent is included' has "$tmp/closed" closed:closed-a
 check 'hidden local parent includes closed child' has "$tmp/closed" closed:closed-grand

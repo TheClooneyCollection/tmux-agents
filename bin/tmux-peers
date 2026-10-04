@@ -3,15 +3,21 @@
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
-FROM_PANE=""
-[ "${1:-}" = "--from" ] && { FROM_PANE="${2:-}"; shift 2; }
-case "${1:-}" in
-  -h|--help) echo "usage: tmux-peers [--from ME] [--refresh]"; exit 0 ;;
-  # Rebuild pane border labels; run by the tmux hooks when a pane closes.
-  --refresh) require_tmux; refresh_labels; exit 0 ;;
-esac
+FROM_PANE="" ids=0 refresh=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --from) FROM_PANE="${2:-}"; shift 2 ;;
+    --ids) ids=1; shift ;;
+    --refresh) refresh=1; shift ;;
+    -h|--help) echo "usage: tmux-peers [--from ME] [--ids] [--refresh]"; exit 0 ;;
+    *) die "unknown option: $1" ;;
+  esac
+done
+# Hook refresh keeps its existing identity-independent path.
+if [ "$refresh" = 1 ]; then require_tmux; refresh_labels; exit 0; fi
 
 require_tmux
+ensure_agent_ids
 self="$(self_pane)"
 name="$(pane_name "$self")"
 
@@ -25,12 +31,22 @@ if [ -z "$name" ]; then
   fi
 fi
 
-echo "you: $name ($self)"
+if [ "$ids" = 1 ]; then echo "you: $name ($self) ID $(pane_agent_id "$self")"
+else echo "you: $name ($self)"; fi
 if [ -z "$FROM_PANE" ] && [ -z "${TMUX_AGENTS_PINNED:-}" ] && [ -z "${CLAUDECODE:-}" ]; then
   echo "warning: this comes from \$TMUX_PANE, which isn't pinned. Inside Codex it may be another agent's pane; don't assume this is you."
 fi
 closed="$(closed_names "$self")"
-[ -z "$closed" ] || echo "closed by user: $(printf '%s' "$closed" | sed 's/ /, /g') (reopen only if the user asks: tmux-spawn --resume NAME)"
+if [ -n "$closed" ]; then
+  labels=""
+  for aid in $closed; do
+    label="$(agent_name_by_id "$aid")"
+    [ -n "$label" ] || label='unknown agent'
+    [ "$ids" != 1 ] || label="$label [$aid]"
+    labels="${labels:+$labels, }$label"
+  done
+  echo "closed by user: $labels (reopen only if the user asks: tmux-spawn --resume NAME)"
+fi
 peers="$(get_peers "$self")"
 if [ -z "$peers" ]; then
   echo "peers: none"
@@ -38,8 +54,10 @@ if [ -z "$peers" ]; then
 fi
 
 {
+  [ "$ids" != 1 ] || printf 'ID\t'
   printf 'NAME\tPANE\tCOMMAND\tWHERE\n'
   for peer in $peers; do
+    [ "$ids" != 1 ] || printf '%s\t' "$(pane_agent_id "$peer")"
     printf '%s\t%s\t%s\t%s\n' "$(pane_name "$peer")" "$peer" "$(pane_command "$peer")" "$(pane_location "$peer")"
   done
 } | column -t -s "$(printf '\t')"

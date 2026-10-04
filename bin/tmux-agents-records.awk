@@ -13,10 +13,10 @@ END {
     for (file in files) {
         at = value[file, "closed"]
         if (at == "") at = mtime[file]
-        name = file; sub(/^.*\//, "", name)
+        aid = file; sub(/^.*\//, "", aid)
         if (now - at > keep) { print "X\t" file; continue }
         # Keep id-less records in the graph: their descendants may be reopenable.
-        printf "R\t%s\t%s\t%s\t%s\t%s\n", name, value[file,"id"], at, value[file,"parent"], value[file,"dir"]
+        printf "R\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", aid, value[file,"id"], at, value[file,"parent"], value[file,"dir"], value[file,"name"], value[file,"parent_name"]
     }
     # Empty records can still expire, but never have a reopenable id.
     for (file in mtime)

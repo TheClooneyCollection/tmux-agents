@@ -14,6 +14,7 @@ tmux -L "$sock" has-session 2>/dev/null || { echo 'ABORT: test server not up'; e
 S="$(tmux -L "$sock" display-message -p '#{socket_path}')"
 case "$S" in ''|*/default) echo "ABORT: unsafe socket '$S'"; exit 1 ;; esac
 export TMUX="$S,1,0" TMUX_PANE=%0
+tmux set -g default-shell /bin/sh
 fail=0 count=0
 check() { local label="$1"; shift; count=$((count+1)); if "$@"; then echo "ok    $label"; else echo "FAIL  $label"; fail=$((fail+1)); fi; }
 has() { grep -q "^$2 " "$1"; }
@@ -29,6 +30,8 @@ receiver="$(tmux new-window -d -t work -c "$tmp" -P -F '#{pane_id}' cat)"; agent
 unnamed="$(tmux new-window -d -t work -c "$tmp" -P -F '#{pane_id}' cat)"
 need="$(tmux new-session -d -s agents-remote -c "$tmp" -P -F '#{pane_id}' cat)"; agent "$need" needs %0
 perm="$(tmux new-window -d -t agents-remote -c "$tmp" -P -F '#{pane_id}' cat)"; agent "$perm" permission %0
+. "$B/lib.sh"
+ensure_agent_ids "$tmp/queue"
 now="$(date +%s)"
 tmux set -p -t "$receiver" @msg_waiting_since "$((now-300))"
 tmux set -p -t "$receiver" @activity receiving
@@ -125,17 +128,18 @@ check 'no subagents or markers means empty chip' test ! -s "$tmp/chip"
 # Batched record loading preserves mtime fallback, pruning and id-less ancestry.
 records="$XDG_STATE_HOME/tmux-agents/${S##*/}/sessions"
 mkdir -p "$records"
-printf 'id=fallback\ndir=%s\nparent=main\n' "$tmp" >"$records/fallback"
-printf 'id=expired\nclosed=%s\n' "$((now-8*86400))" >"$records/expired"
-printf 'parent=main\nclosed=%s\n' "$now" >"$records/bridge"
-printf 'id=child\nparent=bridge\ndir=%s\nclosed=%s\n' "$tmp" "$now" >"$records/child"
-printf 'id=live\nparent=main\ndir=%s\nclosed=%s\n' "$tmp" "$now" >"$records/main"
+main_id="$(pane_agent_id %0)"
+printf 'agent_id=a000000000001\nname=fallback\nid=fallback\ndir=%s\nparent=%s\n' "$tmp" "$main_id" >"$records/a000000000001"
+printf 'agent_id=a000000000002\nname=expired\nid=expired\nclosed=%s\n' "$((now-8*86400))" >"$records/a000000000002"
+printf 'agent_id=a000000000003\nname=bridge\nparent=%s\nclosed=%s\n' "$main_id" "$now" >"$records/a000000000003"
+printf 'agent_id=a000000000004\nname=child\nid=child\nparent=a000000000003\ndir=%s\nclosed=%s\n' "$tmp" "$now" >"$records/a000000000004"
+printf 'agent_id=%s\nname=main\nid=live\nparent=%s\ndir=%s\nclosed=%s\n' "$main_id" "$main_id" "$tmp" "$now" >"$records/$main_id"
 list 'agents · this window> '
-check 'record without closed timestamp uses mtime' has "$tmp/list" closed:fallback
-check 'closed child can traverse id-less record' has "$tmp/list" closed:child
-check 'id-less record is not itself selectable' lacks "$tmp/list" closed:bridge
-check 'live pane record is excluded' lacks "$tmp/list" closed:main
-check 'expired record is omitted' lacks "$tmp/list" closed:expired
-check 'expired record is removed' test ! -f "$records/expired"
+check 'record without closed timestamp uses mtime' has "$tmp/list" closed:a000000000001
+check 'closed child can traverse id-less record' has "$tmp/list" closed:a000000000004
+check 'id-less record is not itself selectable' lacks "$tmp/list" closed:a000000000003
+check 'live pane record is excluded' lacks "$tmp/list" "closed:$main_id"
+check 'expired record is omitted' lacks "$tmp/list" closed:a000000000002
+check 'expired record is removed' test ! -f "$records/a000000000002"
 echo "$((count-fail))/$count passed"
 [ "$fail" -eq 0 ]

@@ -7,10 +7,10 @@ $1 == "P" {
     name[p]=$3; dead[p]=$4; perm[p]=$5; state[p]=$6; parent[p]=$7
     session[p]=$8; activity[p]=$9; path[p]=$10; location[p]=$11
     attention[p]=$12; waiting[p]=$13; window[p]=$14
-    if ($3 != "-") byname[$3]=p
+    if ($15 != "-") byid[$15]=p
     next
 }
-$1 == "R" { record[$2]=1; rid[$2]=$3; closed[$2]=$4; owner[$2]=$5; dir[$2]=$6; next }
+$1 == "R" { record[$2]=1; rid[$2]=$3; closed[$2]=$4; owner[$2]=$5; dir[$2]=$6; label[$2]=$7; parentlabel[$2]=$8; next }
 $1 == "D" { project[$2]=$3; next }
 # Walk to the first visible live ancestor, with the original pane as fallback.
 function visible(p, original, visited) {
@@ -25,10 +25,16 @@ function visible(p, original, visited) {
 function record_window(n, visited) {
     while (n != "" && !index(visited, "|" n "|")) {
         visited=visited "|" n "|"
-        if (n in byname) return window[visible(byname[n])]
+        if (n in byid) return window[visible(byid[n])]
         n=owner[n]
     }
     return ""
+}
+function owner_label(n, p) {
+    p=owner[n]
+    if (p in byid) return name[byid[p]]
+    if (label[p]!="") return label[p]
+    return parentlabel[n]!="" ? parentlabel[n] : "-"
 }
 function add(rank, section, id, label, status, ownername, report) {
     nr++; ranks[nr]=rank; sections[nr]=section; ids[nr]=id; labels[nr]=label
@@ -88,7 +94,7 @@ END {
         add(rank,section,p,name[p]=="-" ? p : name[p],status,ownername,report)
     }
     # Shell glob order used to be the stable tie-break for closed records.
-    for (n in record) if (rid[n]!="" && !(n in byname) && (scope=="all" || (target!="" && record_window(owner[n])==target))) {
+    for (n in record) if (rid[n]!="" && !(n in byid) && (scope=="all" || (target!="" && record_window(owner[n])==target))) {
         j=++nc
         while (j>1 && "x" names[j-1]>"x" n) { names[j]=names[j-1]; j-- }
         names[j]=n
@@ -98,7 +104,7 @@ END {
         if (age<3600) age=int(age/60) "m"
         else if (age<86400) age=int(age/3600) "h"
         else age=int(age/86400) "d"
-        add(20000000000-closed[n],"closed (" nc ") · enter reopens","closed:" n,n,"↺ closed",owner[n]=="" ? "-" : owner[n],project[dir[n]] " · closed " age " ago")
+        add(20000000000-closed[n],"closed (" nc ") · enter reopens","closed:" n,label[n],"↺ closed",owner_label(n),project[dir[n]] " · closed " age " ago")
     }
     # Small in-memory stable sort replaces sort/cut/column processes.
     for (i=1;i<=nr;i++) {

@@ -51,9 +51,10 @@ list_agents() {
   local now records="" raw="" mtimes="" dir sock f tag rest path root project paths="" projects=""
   local -a files=() expired=()
   local tab=$'\t' nl=$'\n' resume_days
+  ensure_agent_ids
   settings_get AGENTS_PREFIX TMUX_AGENTS_PREFIX @tmux_agents_session_prefix agents
   settings_get resume_days TMUX_AGENTS_RESUME_DAYS @tmux_agents_resume_days 7
-  snapshot="$(tmux list-panes -a -F 'P	#{pane_id}	#{?@agent,#{@agent},-}	#{pane_dead}	#{?@perm_since,#{@perm_since},-}	#{?@state,#{@state},-}	#{?@parent,#{@parent},-}	#{session_name}	#{?@activity,#{@activity},-}	#{pane_current_path}	#{session_name}:#{window_index}	#{?@attention_since,#{@attention_since},-}	#{?@msg_waiting_since,#{@msg_waiting_since},-}	#{window_id}')"
+  snapshot="$(tmux list-panes -a -F 'P	#{pane_id}	#{?@agent,#{@agent},-}	#{pane_dead}	#{?@perm_since,#{@perm_since},-}	#{?@state,#{@state},-}	#{?@parent,#{@parent},-}	#{session_name}	#{?@activity,#{@activity},-}	#{pane_current_path}	#{session_name}:#{window_index}	#{?@attention_since,#{@attention_since},-}	#{?@msg_waiting_since,#{@msg_waiting_since},-}	#{window_id}	#{?@agent_id,#{@agent_id},-}')"
   if [ -n "$client" ]; then
     clients="$(tmux list-clients -F '#{client_name}	#{window_id}')"
     while IFS="$tab" read -r c w; do [ "$c" != "$client" ] || { window="$w"; break; }; done <<<"$clients"
@@ -331,17 +332,22 @@ case "${1:-}" in
   # Preview of a closed sub agent: what reopening it would bring back.
   --closed-info)
     n="${2#closed:}"
-    printf '\033[1m%s\033[0m  closed, can be reopened\n\n' "$n"
+    ensure_agent_ids
+    valid_agent_id "$n" || die "invalid agent id: $n"
+    parent="$(agent_name_by_id "$(record_get "$n" parent)")"
+    [ -n "$parent" ] || parent="$(record_get "$n" parent_name)"
+    printf '\033[1m%s\033[0m  closed, can be reopened\n\n' "$(record_get "$n" name)"
+    printf '  ID       %s\n' "$n"
     printf '  agent    %s\n  dir      %s\n  parent   %s\n  session  %s\n\n' \
-      "$(record_get "$n" kind)" "$(record_get "$n" dir)" "$(record_get "$n" parent)" "$(record_get "$n" id)"
-    printf 'enter: reopen it with its conversation, connected to %s\nctrl-o: reopen and jump there · ctrl-x: forget it\n' "$(record_get "$n" parent)"
+      "$(record_get "$n" kind)" "$(record_get "$n" dir)" "$parent" "$(record_get "$n" id)"
+    printf 'enter: reopen it with its conversation, connected to %s\nctrl-o: reopen and jump there · ctrl-x: forget it\n' "$parent"
     exit 0
     ;;
   # ctrl-x: close a live agent, or forget a closed one.
   --dismiss)
     require_tmux
     case "${2:-}" in
-      closed:*) rm -f "$(sessions_dir)/${2#closed:}" ;;
+      closed:*) n="${2#closed:}"; valid_agent_id "$n" || die "invalid agent id: $n"; rm -f "$(sessions_dir)/$n" ;;
       *) "$here/tmux-dismiss" "$(pane_name "$2")" ;;
     esac
     exit 0
@@ -458,12 +464,11 @@ pane="$(printf '%s\n' "$out" | sed -n 3p | awk '{ print $1 }')"
 case "$pane" in
   closed:*)
     name="${pane#closed:}"
-    parent="$(record_get "$name" parent)"
-    if ! msg="$("$here/tmux-spawn" --resume "$name" ${parent:+--parent "$parent"} 2>&1)"; then
+    if ! msg="$("$here/tmux-spawn" --resume-id "$name" 2>&1)"; then
       tmux display-message -c "$client" -d 6000 "$msg"
       exit 1
     fi
-    pane="$(find_pane "$name")"
+    pane="$(find_pane_by_id "$name")"
     [ -n "$pane" ] || exit 1
     ;;
 esac

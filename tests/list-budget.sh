@@ -44,6 +44,8 @@ for ((i=1; i<=100; i++)); do
   parent=main; [ "$i" -le 50 ] || parent="closed-$((i-50))"
   printf 'kind=codex\nid=bench-%s\ndir=%s\nparent=%s\nclosed=%s\n' "$i" "$dir" "$parent" "$((now-i))" >"$records/closed-$i"
 done
+. "$here/bin/lib.sh"
+ensure_agent_ids "$tmp/queue"
 # A control client establishes a real --client window, without a user server.
 mkfifo "$tmp/input"
 exec 9<>"$tmp/input"
