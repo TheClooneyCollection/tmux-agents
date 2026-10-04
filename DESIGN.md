@@ -24,7 +24,7 @@ Sub agents are ordinary agents started by `tmux-spawn`, in hidden windows of an 
 | --- | --- |
 | `lib.sh` | Shared helpers, sourced by the others: pane lookup, naming, peers, labels. Not executable, so it never shows up as a command even though `bin/` is on `PATH`. |
 | `tmux-connect` | Picker, naming form, linking, popup mode, and agent mode (`--from`). |
-| `tmux-rename` | Renames an agent and migrates persisted name references, then notifies it and its peers. |
+| `tmux-rename` | Changes an agent's label while preserving its ID, then notifies it and its peers. |
 | `tmux-disconnect` | Removes links. |
 | `tmux-peers` | Lists connections. `--refresh` rebuilds labels (used by hooks). |
 | `tmux-ask` | Sends a message (request, reply or notice), or queues it while the user is busy in that pane; never drops it (bounces to the sender if the receiver is gone). `--pending` / `--retry` for the backlog. |

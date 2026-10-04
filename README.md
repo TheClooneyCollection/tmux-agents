@@ -158,13 +158,15 @@ Agents run these for you; each takes `--help`.
 | Command | |
 | --- | --- |
 | `tmux-connect` | Name this pane and link it to another |
-| `tmux-rename` | Rename an agent and update its records, queued message identities and peer labels |
+| `tmux-rename` | Change an agent's label while keeping its identity, history and links |
 | `tmux-ask` | Send a message to a connected agent |
 | `tmux-spawn` | Start a sub agent hidden, or in a visible split with `--split` |
 | `tmux-agents` | The agent list (`prefix + a`) |
 | `tmux-peers`, `tmux-peek` | Show connections; read another pane |
 | `tmux-dismiss`, `tmux-disconnect` | Close a sub agent; unlink panes |
 | `tmux-agent-report` | Report progress for the status line |
+
+Live commands still use names; IDs are only needed to select an ambiguous saved conversation. Names are labels: reusing a closed agent's name keeps both histories. The list distinguishes same-named closed agents by time, parent and project; IDs stay out of its rows but can appear in the closed preview. For scripts and agents, `tmux-peers --ids` and `tmux-spawn --list-closed` expose IDs; `--resume-id ID` reopens one exact conversation when `--resume NAME` is ambiguous.
 
 How messages flow, sub agent details, settings and how it works: [the guide](docs/guide.md).
 

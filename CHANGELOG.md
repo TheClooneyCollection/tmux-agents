@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Stable agent identities.** Names are labels; hidden IDs identify records, parentage, waiting lists and queued message destinations. Reusing a closed agent's name preserves its conversation and children, and renaming only changes its label.
+- **Choose the conversation to reopen.** `tmux-spawn --list-closed` lists saved agents; `--resume-id` selects one exactly. An ambiguous `--resume NAME` lists candidates instead of guessing. Reopened agents keep their IDs and get a name suffix when needed. `tmux-peers --ids` exposes IDs to agents; the picker hides them in rows and distinguishes same-named history by time, parent and project.
+- **Automatic migration.** Existing records and message metadata migrate once under the identity lock, preserving conversation IDs and writing replacements before removing old records.
+
 ## v1.8.0 (2026-10-04)
 
 - **Configuration in tmux.** User settings are `@tmux_agents_*` options, read in one cached snapshot per command. Existing environment overrides still win; defaults and the Codex homes global-environment fallback remain available.

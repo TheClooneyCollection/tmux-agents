@@ -158,13 +158,15 @@ set -g @tmux_agents_name_format exact
 | 命令 | |
 | --- | --- |
 | `tmux-connect` | 给当前 pane 命名并连接到另一个 pane |
-| `tmux-rename` | 给 agent 改名，同时更新记录、排队消息的身份和 peer 标签 |
+| `tmux-rename` | 修改 agent 标签，保留身份、历史和连接 |
 | `tmux-ask` | 给已连接的 agent 发消息 |
 | `tmux-spawn` | 在隐藏窗口或 `--split` 指定的可见分屏中启动子 agent |
 | `tmux-agents` | agent 列表（`prefix + a`） |
 | `tmux-peers`、`tmux-peek` | 查看连接关系；读取另一个 pane 的内容 |
 | `tmux-dismiss`、`tmux-disconnect` | 关闭子 agent；断开 pane 之间的连接 |
 | `tmux-agent-report` | 报告进度，显示在状态行上 |
+
+操作存活 agent 的命令仍然使用名字；只有选择同名历史对话时才需要 ID。名字只是标签：复用已关闭 agent 的名字不会覆盖任何一方的历史。列表用关闭时间、父 agent 和项目区分同名记录；行内不显示 ID，已关闭记录的预览可以显示。脚本和 agent 可用 `tmux-peers --ids`、`tmux-spawn --list-closed` 查看 ID；`--resume NAME` 有歧义时，用 `--resume-id ID` 精确重开指定对话。
 
 消息如何传递、子 agent 的细节、设置项和实现原理：见[使用指南](docs/guide.md)（英文）。
 

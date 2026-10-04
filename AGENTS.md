@@ -25,7 +25,8 @@ Notes for AI agents working on tmux-agents.
   | `tmux-spawn` | `spawn-for.sh`, `spawn-split.sh`, `spawn-names.sh`, `resume-messages.sh` |
   | user settings or configuration lookup | `settings.sh`, `spawn-names.sh`, `list-budget.sh` |
   | `tmux-dismiss` | `dismiss.sh` |
-  | naming, rename or target lookup (`lib.sh`, `tmux-rename`, `tmux-connect`) | `rename.sh`, `names.sh`, `spawn-names.sh`, `ask-queue.sh`, `resume-messages.sh` |
+  | agent IDs, record migration or identity lookup | `agent-ids.sh`, `lifecycle-ids.sh`, `list-ids.sh`, `live-names.sh` plus the message suites |
+  | naming, rename or target lookup (`lib.sh`, `tmux-rename`, `tmux-connect`) | `rename.sh`, `names.sh`, `live-names.sh`, `spawn-names.sh`, `ask-queue.sh`, `resume-messages.sh` |
 
 - Every fix gets a test that fails without it; every new workflow gets a case in its suite.
 - **A flaky test blocks the release** until its cause is known. Rerun a suspect suite about ten times with background CPU load, and fix the cause, never with a sleep. Async tests wait for explicit conditions and assert on a message's identity (its body and `.meta`), not on how many files a directory holds.
