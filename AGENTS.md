@@ -54,4 +54,4 @@ Notes for AI agents working on tmux-agents.
 - Release: turn CHANGELOG.md's "Unreleased" into the version (semver: minor for new options or changed behaviour, patch for fixes and docs), run every suite, commit and push, then `gh release create vX.Y.Z --target main` as a separate step. Before tagging, check new messages, HEAD and existing tags; a hold on the release must be lifted explicitly.
 - Reply as soon as the release is out; send follow-ups (syncs, announcements) as notices.
 - Never move or delete a published tag. If something missed a release, ship a follow-up patch.
-- The maintainer vendors this repo into their dotfiles as a subtree; sync both ways by default, as described in the dotfiles' AGENTS.md. When a task says not to release or sync, don't, and say in your reply what's left unsynced.
+- After releasing, update your installed copy as your local setup describes (maintainers: see your dotfiles' instructions). Develop only in this repo, never in an installed copy. When a task says not to release or update, don't, and say in your reply what's left.

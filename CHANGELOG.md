@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Docs:** AGENTS.md's release routine ends with updating your installed copy as your local setup describes; the maintainer's dotfiles no longer vendor this repo as a subtree.
+
 ## v1.9.0 (2026-10-04)
 
 - **Stable agent identities.** Names are labels; hidden IDs identify records, parentage, waiting lists and queued message destinations. Reusing a closed agent's name preserves its conversation and children, and renaming only changes its label.
