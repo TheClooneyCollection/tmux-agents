@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.7.2 (2026-10-04)
 
 - **Docs:** the two READMEs are back in sync (the status line lists `○` idle and `✉` message waiting; the duplicate "Slow popup startup" section is folded into "If popups feel slow"), and AGENTS.md requires README.zh-CN.md to change with README.md in the same commit.
 
