@@ -112,7 +112,7 @@ caller=home-parent expect_spawn 'claude-~-home' claude claude --name home
 # Automatic names retain their existing format even with exact preference.
 TMUX_AGENTS_NAME_FORMAT=exact expect_spawn codex-project-1 codex codex
 FZF_PROMPT='agents · all windows> ' "$B/tmux-agents" --list | tr '\0' '\n' >"$tmp/list"
-check 'prefixed agent is visible in list' grep -Fq 'codex-project-build' "$tmp/list"
+check 'prefixed agent is abbreviated under its project in list' grep -Fq 'codex·build' "$tmp/list"
 check '--exact requires a given name' reject codex --exact
 check '--name requires a value' reject codex --name ''
 check 'resume rejects --exact' reject --resume claude-project-review --exact

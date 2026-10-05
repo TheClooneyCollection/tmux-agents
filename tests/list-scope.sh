@@ -64,25 +64,25 @@ check 'pinned section appears first' test "$(awk '/^%/ {print $1; exit}' "$tmp/l
 check 'waiting time wins over permission severity' test "$(awk '/^%/ {n++; if(n==2) {print $1; exit}}' "$tmp/local")" = "$perm"
 check 'pinned heading present' grep -q '▸ needs you' "$tmp/local"
 location="$(tmux display-message -p -t "$main_b" '#{session_name}:#{window_index}')"
-check 'hidden grandchild shows visible ancestor window, project and activity' grep -q "$location · project-b · waiting for a decision" "$tmp/local"
+check 'hidden grandchild shows visible ancestor window and project before truncation' grep -Fq "$location · project-b ·" "$tmp/local"
 check 'pinned agent appears only once' test "$(grep -c "^$need " "$tmp/local")" = 1
 # Visible splits use their own window, even with a parent elsewhere.
 tmux set -p -t "$split" @state needs_you; tmux set -p -t "$split" @activity split-wait
 tmux set -p -t "$split" @parent "$main_b"
 list 'agents · this window> ' "$tmp/split-pin"
 split_location="$(tmux display-message -p -t "$split" '#{session_name}:#{window_index}')"
-check 'pinned split uses its own visible window' grep -q "$split_location · .* · split-wait" "$tmp/split-pin"
+check 'pinned split uses its own visible window' grep -Fq "$split_location · " "$tmp/split-pin"
 tmux set -pu -t "$split" @state; tmux set -p -t "$split" @parent %0
 own_location="$(tmux display-message -p -t "$need" '#{session_name}:#{window_index}')"
 tmux set -p -t "$other" @parent %999999
 list 'agents · this window> ' "$tmp/broken-pin"
-check 'missing visible ancestor falls back to own window' grep -q "$own_location · project-b · waiting for a decision" "$tmp/broken-pin"
+check 'missing visible ancestor falls back to own window' grep -Fq "$own_location · " "$tmp/broken-pin"
 tmux set -pu -t "$other" @parent
 list 'agents · this window> ' "$tmp/hidden-pin"
-check 'entirely hidden ancestry falls back to own window' grep -q "$own_location · project-b · waiting for a decision" "$tmp/hidden-pin"
+check 'entirely hidden ancestry falls back to own window' grep -Fq "$own_location · " "$tmp/hidden-pin"
 tmux set -p -t "$other" @parent "$need"
 list 'agents · this window> ' "$tmp/cycle-pin"
-check 'hidden parent cycle falls back to own window' grep -q "$own_location · project-b · waiting for a decision" "$tmp/cycle-pin"
+check 'hidden parent cycle falls back to own window' grep -Fq "$own_location · " "$tmp/cycle-pin"
 tmux set -p -t "$other" @parent "$main_b"
 list 'agents · all windows> ' "$tmp/all"
 check 'all windows includes other sub agent' has "$tmp/all" "$other"

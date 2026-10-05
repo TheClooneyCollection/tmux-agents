@@ -68,7 +68,9 @@ assert 'closed:a000000000003' in keys # closed parent, not live same-label pane 
 assert 'closed:'+sys.argv[3] not in keys
 rendered='\n'.join(row.split(' ',1)[1] for row in rows if row)
 assert not re.search(r'a[0-9a-f]{12}',rendered)
-assert 'closed 2m ago' in rendered and 'closed 2h ago' in rendered
+closed_rows={row.split(' ',1)[0]: re.sub(r'\x1b\[[0-9;]*m', '', row).splitlines()[-1] for row in rows if row.startswith('closed:')}
+assert re.search(r'\b2m\b', closed_rows['closed:a000000000001'])
+assert re.search(r'\b2h\b', closed_rows['closed:a000000000002'])
 open(sys.argv[2],'w').write(rendered)
 PY
 check 'rows use hidden IDs and preserve duplicate labels and ancestry' has "$tmp/rendered" duplicate
@@ -103,7 +105,7 @@ exec "$LIST_IDS_REAL_TMUX" "$@"
 STUB
 chmod +x "$tmp/ui/fzf" "$tmp/ui/tmux"
 PATH="$tmp/ui:$PATH" "$B/tmux-agents" --client test-client </dev/null
-check 'fzf hides internal first field' has "$tmp/ui-log.args" --with-nth=2..
+check 'fzf hides ID and full-name lookup fields' has "$tmp/ui-log.args" --with-nth=3..
 reopened="$(find_pane_by_id a000000000002)"
 check 'selected record reopened exactly' test -n "$reopened"
 check 'other duplicate remains closed' test -z "$(find_pane_by_id a000000000001)"
