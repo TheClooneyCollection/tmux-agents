@@ -22,7 +22,7 @@ export TMUX="$socket,1,0" TMUX_PANE=%0
 tmux set -g default-shell /bin/sh
 tmux set -p -t %0 @agent stoneage
 pane="$(tmux new-session -d -s agents-garden -c "$tmp" -P -F '#{pane_id}' cat)"
-tmux set -p -t "$pane" @agent codex-tmux-agents-worker
+tmux set -p -t "$pane" @agent codex-garden-worker
 tmux set -p -t "$pane" @parent %0
 tmux set -p -t "$pane" @state needs_you
 tmux set -p -t "$pane" @activity activity-secret
@@ -51,8 +51,8 @@ def matches(query):
     p = subprocess.run([fzf, *flags, '--filter=' + query], input=data, capture_output=True)
     assert p.returncode in (0, 1), p.stderr
     return p.stdout.decode()
-for query in ('codex-tmux-agents-worker', 'garden'):
-    assert 'codex-tmux-agents-worker' in matches(query), (query, matches(query))
+for query in ('codex-garden-worker', 'garden'):
+    assert 'codex-garden-worker' in matches(query), (query, matches(query))
 for query in ('stoneage', 'needs', 'activity-secret', 'window-secret', 'you'):
     assert not matches(query), (query, matches(query))
 print('8 fzf argument/name/project/excluded-field checks passed')
