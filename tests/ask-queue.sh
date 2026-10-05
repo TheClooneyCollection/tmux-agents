@@ -33,6 +33,20 @@ receiver_id="$(pane_agent_id %1)"
 count=0
 check() { if "$@"; then count=$((count + 1)); echo "ok $count: $*"; else echo "FAIL: $*"; exit 1; fi; }
 wait_for() { local n; for n in $(seq 1 60); do "$@" && return 0; sleep .1; done; return 1; }
+# The remaining message must also have aged past the threshold before the
+# partial-delivery assertion. On fast CI, the two enqueues can straddle an
+# epoch second: marking the first does not imply the second is old enough.
+queued_aged() {
+  local now f stamp seen=0
+  now="$(date +%s)"
+  for f in "$Q"/*.msg; do
+    [ -f "$f" ] || continue
+    stamp="${f##*/}"; stamp="${stamp%%-*}"
+    [ "$((now-stamp))" -ge "$TMUX_ASK_QUEUE_SECS" ] || return 1
+    seen=1
+  done
+  [ "$seen" = 1 ]
+}
 chip_on() { [ "$(tmux show -gv status)" = 2 ]; }
 marked() { [ -n "$(tmux show -pqv -t %1 @msg_waiting_since)" ]; }
 cleared() { [ -z "$(tmux show -pqv -t %1 @msg_waiting_since)" ]; }
@@ -64,6 +78,7 @@ check test "$(find "$Q" -name '*.msg' | wc -l | tr -d ' ')" = 2
 check test "$(find "$Q" -name '*.undelivered' | wc -l | tr -d ' ')" = 0
 "$B/tmux-ask" --pending > "$state_dir/pending" </dev/null
 check grep -q 'sender.*receiver.*msg' "$state_dir/pending"
+check wait_for queued_aged
 tmux send-keys -t %1 -X cancel
 # Fail the second paste: the first delivery must leave the waiting marker.
 mkdir "$state_dir/fail-bin"
