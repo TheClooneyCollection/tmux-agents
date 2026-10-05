@@ -68,7 +68,12 @@ reload=""
 for arg in "$@"; do
   case "$arg" in
     --prompt=*) export FZF_PROMPT="${arg#--prompt=}" ;;
-    start:reload\(*) reload="${arg#start:reload(}"; reload="${reload%)}" ;;
+    start:reload\(*)
+      reload="${arg#start:reload(}"
+      # Only execute the reload action; start may also launch the preview loop.
+      reload="${reload%%)+*}"
+      reload="${reload%)}"
+      ;;
   esac
 done
 if [ -n "$reload" ]; then exec < <(eval "$reload"); fi
