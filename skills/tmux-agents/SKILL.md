@@ -51,6 +51,8 @@ The commands must be on PATH (tmux-agents' `install.sh` links them into `~/.loca
 - `tmux-spawn --list-closed`: list reopenable agents with their ID, name, closed time, parent and project.
 - `tmux-spawn --resume <name> --from ME`: reopen the unique closed agent with that name. If it lists several matches, choose the intended record and use `tmux-spawn --resume-id <id> --from ME`; never guess (see below).
 
+User settings, defaults and environment overrides: [Configuration](../../docs/configuration.md).
+
 ## Sub agents
 
 Whenever you would start a sub agent (your built-in Agent/Task tool, spawned or delegated agents, parallel workers), use `tmux-spawn` instead. The user wants every sub agent in its own tmux pane so they can read its full history and approve its permissions.

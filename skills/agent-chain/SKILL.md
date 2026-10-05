@@ -19,7 +19,7 @@ Names follow `<kind>-<project>-<role>`, e.g. `claude-~-main`, `claude-~-secondar
 - **Secondary** (Claude). Coordinates the worker and owns the main checkout. It merges the worker's commits, runs the project's steps (importers, backups, server relaunches, tests) and records decisions in docs. Anything that needs a user decision goes to the main agent, not to the user.
 - **Worker** (Codex by default, plus its own sub agents). The main implementer. By default it splits a task with independent parts across its own sub agents (`tmux-spawn`), one per part by file ownership, after agreeing the interfaces between them, then integrates and runs the full checks itself. It works alone only on short, strictly sequential or same-file tasks, and says why.
 
-The worker's agent is `codex` unless the user has named another (another agent kind, or a Codex profile from `@tmux_agents_codex_homes`, e.g. `codex-work`), for example in their CLAUDE.md or AGENTS.md. Use theirs if so.
+The worker's agent is `codex` unless the user has named another (another agent kind, or a Codex profile from `@tmux_agents_codex_homes`, e.g. `codex-work`), for example in their CLAUDE.md or AGENTS.md. Use theirs if so. See [Configuration](../../docs/configuration.md) for Codex profiles and other user settings.
 
 ## Starting the chain (main agent)
 

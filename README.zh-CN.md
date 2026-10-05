@@ -109,38 +109,17 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 
 ## 配置
 
-在 `tmux.conf` 中设置偏好，也可以用 `tmux set -g` 实时修改。环境变量优先于 option，再使用下表的默认值。给定名字的 `--exact` 优先级最高。后续使用 `tmux-spawn` 或 `tmux-rename` 输出的完整名字。
-
-```tmux
-set -g @tmux_agents_name_format exact
-```
-
-| Option | 环境变量覆盖 | 默认值 | 用途 |
-| --- | --- | --- | --- |
-| `@tmux_agents_name_format` | `TMUX_AGENTS_NAME_FORMAT` | `prefixed` | 给定名字格式：`exact` 或 `prefixed` |
-| `@tmux_agents_max_depth` | `TMUX_AGENTS_MAX_DEPTH` | `2` | 子 agent 最大层数 |
-| `@tmux_agents_codex_homes` | `TMUX_AGENTS_CODEX_HOMES` | `none` | 额外账户，格式为 `PROFILE=CODEX_HOME` |
-| `@tmux_agents_session_prefix` | `TMUX_AGENTS_PREFIX` | `agents` | 隐藏 session 名称前缀 |
-| `@tmux_agents_resume_days` | `TMUX_AGENTS_RESUME_DAYS` | `7` | 列表保留已关闭 agent 的天数 |
-| `@tmux_agents_preview_secs` | `TMUX_AGENTS_PREVIEW_SECS` | `0.5` | 预览刷新间隔，单位秒 |
-| `@tmux_agents_blink_secs` | `TMUX_AGENTS_BLINK_SECS` | `60` | 需要关注多久后开始闪烁，单位秒 |
-| `@tmux_agents_chip_fps` | 无 | `10` | chip 动画帧率 |
-| `@tmux_agents_ask_idle_secs` | `TMUX_ASK_IDLE_SECS` | `8` | 无按键多久后可投递，单位秒 |
-| `@tmux_agents_ask_copy_idle_secs` | `TMUX_ASK_COPY_IDLE_SECS` | `300` | 复制模式空闲多久后自动退出，单位秒；`0` 禁用 |
-| `@tmux_agents_ask_queue_secs` | `TMUX_ASK_QUEUE_SECS` | `1800` | 排队多久后显示消息等待，单位秒；消息继续保留 |
-| `@tmux_agents_ask_max_lines` | `TMUX_ASK_MAX_LINES` | `60` | 超过此行数的长消息保存为文件 |
-| `@tmux_agents_ask_enter_delay` | `TMUX_ASK_ENTER_DELAY` | `0.5` | 粘贴到按 Enter 的间隔，单位秒 |
-| `@tmux_agents_connect_highlight` | `TMUX_CONNECT_HIGHLIGHT` | `bg=colour24` | 连接选择器中目标 pane 的高亮样式 |
-
-`TMUX_AGENTS_CODEX_HOMES` 仍在本地覆盖和 option 均未设置时回退到 tmux 全局环境。每次命令调用读取一次设置；已有选择器或 chip daemon 的缓存设置需重启相应进程后更新。将覆盖值放在 `source-file tmux-agents.conf` 之后，因为该文件会设置默认 chip 帧率。内部 pane 状态和测试 hook 不是用户设置。
+有关 tmux 设置、默认值和环境变量覆盖，见[配置说明](docs/configuration.md)（英文）。
 
 ## 快速上手
 
-1. 把一个 tmux 窗口分成两半，一边启动 `claude`，另一边启动 `codex`。
-2. 对 Claude 说："用 tmux-agents 连接 codex 那个 pane，让它 review 这个 diff"。请求会出现在 Codex 的 pane 里，回复会回到 Claude。
-3. 对 Claude 说："开一个子 agent 给 parser 加测试"。它在隐藏窗口里运行，状态栏上方那一行会显示它的进度。
+1. 在 tmux 中启动 `claude` 或 `codex`。对它说："用 tmux-agents 在你右边开一个 Codex"。它会通过 `tmux-spawn --split` 在自己旁边打开一个已连接的 agent。
+2. 对原来的 agent 说："让你刚打开的 Codex review 这个 diff"。请求会出现在 Codex 的 pane 里，回复会回到原来的 agent。
+3. 对原来的 agent 说："开一个子 agent 给 parser 加测试"。它在隐藏窗口里运行，状态栏上方那一行会显示它的进度。
 4. 按 `prefix + a` 查看它。按 Enter 用 popup 打开，按 `prefix + d` 返回。
-5. 对 Claude 说："start the chain"。它会成为和你对话的 main agent，再开一个负责协调的 secondary 和一个负责实现的 Codex worker，三个并排在你的窗口里（`agent-chain` skill）。
+5. 对原来的 agent 说："start the chain"。它会成为和你对话的 main agent，再开一个负责协调的 secondary 和一个负责实现的 Codex worker，三个并排在你的窗口里（`agent-chain` skill）。
+
+也可以自己分屏，在两个 pane 中分别启动 `claude` 和 `codex`，再对其中一个说 "用 tmux-agents 连接另一个 agent"。
 
 也可以让 agent 带你走一遍：对它说 "tmux-agents quick start"。
 

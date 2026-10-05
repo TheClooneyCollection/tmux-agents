@@ -109,38 +109,17 @@ Hundreds of milliseconds there are paid on every `prefix + a` (the list itself d
 
 ## Configuration
 
-Set user preferences in `tmux.conf`, or change them live with `tmux set -g`. Environment overrides win over options, then the defaults below apply. For given names, `--exact` takes priority over both. Use the full name printed by `tmux-spawn` or `tmux-rename`.
-
-```tmux
-set -g @tmux_agents_name_format exact
-```
-
-| Option | Environment override | Default | What it does |
-| --- | --- | --- | --- |
-| `@tmux_agents_name_format` | `TMUX_AGENTS_NAME_FORMAT` | `prefixed` | Given-name format: `exact` or `prefixed` |
-| `@tmux_agents_max_depth` | `TMUX_AGENTS_MAX_DEPTH` | `2` | Maximum sub agent depth |
-| `@tmux_agents_codex_homes` | `TMUX_AGENTS_CODEX_HOMES` | `none` | Extra accounts as `PROFILE=CODEX_HOME` pairs |
-| `@tmux_agents_session_prefix` | `TMUX_AGENTS_PREFIX` | `agents` | Hidden session name prefix |
-| `@tmux_agents_resume_days` | `TMUX_AGENTS_RESUME_DAYS` | `7` | Days to retain closed agents in the list |
-| `@tmux_agents_preview_secs` | `TMUX_AGENTS_PREVIEW_SECS` | `0.5` | Seconds between preview refreshes |
-| `@tmux_agents_blink_secs` | `TMUX_AGENTS_BLINK_SECS` | `60` | Seconds before attention starts blinking |
-| `@tmux_agents_chip_fps` | none | `10` | Chip animation frames per second |
-| `@tmux_agents_ask_idle_secs` | `TMUX_ASK_IDLE_SECS` | `8` | Seconds without keys before delivery |
-| `@tmux_agents_ask_copy_idle_secs` | `TMUX_ASK_COPY_IDLE_SECS` | `300` | Exit idle copy mode after this many seconds; `0` disables |
-| `@tmux_agents_ask_queue_secs` | `TMUX_ASK_QUEUE_SECS` | `1800` | Seconds before showing message waiting; messages stay queued |
-| `@tmux_agents_ask_max_lines` | `TMUX_ASK_MAX_LINES` | `60` | Save longer messages to a file |
-| `@tmux_agents_ask_enter_delay` | `TMUX_ASK_ENTER_DELAY` | `0.5` | Seconds between paste and Enter |
-| `@tmux_agents_connect_highlight` | `TMUX_CONNECT_HIGHLIGHT` | `bg=colour24` | Style of the highlighted connection target |
-
-`TMUX_AGENTS_CODEX_HOMES` also keeps its tmux global-environment fallback when neither a local override nor the option is set. Settings are read once per command; restart an existing picker or chip daemon to apply changes to its cached settings. Set overrides after sourcing `tmux-agents.conf`, which installs the chip FPS default. Internal pane state and test hooks are not user settings.
+See [Configuration](docs/configuration.md) for tmux settings, defaults and environment overrides.
 
 ## Quick start
 
-1. Split a tmux window. Start `claude` in one pane and `codex` in the other.
-2. Tell Claude: "use tmux-agents to connect to the codex pane and have it review this diff". The request lands in Codex's pane, and the reply comes back to Claude.
-3. Tell Claude: "spawn a sub agent to add tests for the parser". It runs in a hidden window, and a line above your status bar shows how it's doing.
+1. Start `claude` or `codex` in tmux. Tell it: "use tmux-agents to open a Codex to your right". It uses `tmux-spawn --split` to open a connected agent beside itself.
+2. Tell your original agent: "ask the Codex you just opened to review this diff". The request lands in Codex's pane, and the reply comes back to your original agent.
+3. Tell your original agent: "spawn a sub agent to add tests for the parser". It runs in a hidden window, and a line above your status bar shows how it's doing.
 4. Press `prefix + a` to watch it. Enter opens it in a popup, `prefix + d` goes back.
-5. Tell Claude: "start the chain". It becomes the main agent you talk to, with a secondary that coordinates and a Codex worker that implements, side by side in your window (the `agent-chain` skill).
+5. Tell your original agent: "start the chain". It becomes the main agent you talk to, with a secondary that coordinates and a Codex worker that implements, side by side in your window (the `agent-chain` skill).
+
+Alternatively, split the window yourself, start `claude` and `codex` in separate panes, then tell one to "use tmux-agents to connect to the other agent".
 
 Or let your agent show you: say "tmux-agents quick start".
 
