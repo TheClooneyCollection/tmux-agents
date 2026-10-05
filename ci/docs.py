@@ -127,8 +127,10 @@ for path in files:
                   f"{path.relative_to(ROOT)}: broken heading link: {target}")
 changelog = (ROOT / "CHANGELOG.md").read_text()
 sections = re.findall(r"^## (.+)$", changelog, re.M)
-check(bool(sections) and sections[0] == "Unreleased" and sections.count("Unreleased") == 1,
-      "CHANGELOG.md must have exactly one Unreleased section before releases")
+# A release commit turns Unreleased into the version, so it may be absent.
+check(bool(sections) and sections.count("Unreleased") <= 1
+      and ("Unreleased" not in sections or sections[0] == "Unreleased"),
+      "CHANGELOG.md may have one Unreleased section, and only before releases")
 if errors:
     print("\n".join(errors), file=sys.stderr)
     sys.exit(1)
