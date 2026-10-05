@@ -11,7 +11,7 @@ python3 ci/docs.py
 /bin/bash ci/skills-cli.sh </dev/null
 ```
 
-The workflow runs runtime and installation checks on macOS and Ubuntu. It pins ShellCheck 0.11.0, fzf 0.65.2 and skills 1.5.12. Local runs need tmux, fzf, Perl, Python 3, Git and `column` (Ubuntu: `bsdextrautils`). The static check also needs ShellCheck. The upgrade check needs the local `v1.9.0` tag. Only the skills CLI check needs Node/npm and network access.
+The workflow runs runtime and installation checks on macOS and Ubuntu. It pins ShellCheck 0.11.0, fzf 0.65.2 and skills 1.7.0. Local runs need tmux, fzf, Perl, Python 3, Git and `column` (Ubuntu: `bsdextrautils`). The static check also needs ShellCheck. The upgrade check needs the local `v1.9.0` tag. Only the skills CLI check needs Node/npm and network access.
 
 Suites use private tmux sockets and stub agents. Installation checks use temporary homes. The suite runner retains logs and runs all suites even after one fails. It disables the list's wall-clock budget on shared CI runners while retaining the process-count limits; running `tests/list-budget.sh` directly still checks its time budget.
 

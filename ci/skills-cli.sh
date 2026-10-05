@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Network integration only; ordinary tests never download npm packages.
-# Verified skills@1.5.12: https://github.com/vercel-labs/skills/tree/e3a5432e888ef415f4d2bfb2d1d427dcf9a23b1f
+# Verified skills@1.7.0: https://github.com/vercel-labs/skills/tree/7407f3893ad4dceab546ac002c3ef806e4000c73
 set -euo pipefail
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/tmux-agents-skills.XXXXXX")"
@@ -26,9 +26,9 @@ mkdir -p "$CODEX_HOME"
 # Node os.homedir() and shell tilde expansion must agree before npm is run.
 node -e 'if (require("os").homedir() !== process.env.HOME) process.exit(1)'
 [ ~ = "$HOME" ]
-cli() { npx --yes skills@1.5.12 "$@" </dev/null; }
+cli() { npx --yes skills@1.7.0 "$@" </dev/null; }
 cli --version | tee "$scratch/version"
-grep -qx '1.5.12' "$scratch/version"
+grep -qx '1.7.0' "$scratch/version"
 cli --help > "$scratch/help"
 for flag in --yes --global --agent --skill --list --copy; do
   grep -q -- "$flag" "$scratch/help"
