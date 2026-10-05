@@ -20,6 +20,7 @@ Notes for AI agents working on tmux-agents.
 
   | Touching | Run |
   | --- | --- |
+  | working-time counters, state transitions or persistence | `worked-time.sh`, `list-layout.sh` plus the message and lifecycle suites |
   | `tmux-agent-report`, `tmux-ask`, the skills' messaging rules | `needs-you.sh`, `ask-queue.sh`, `resume-messages.sh` |
   | `tmux-agents` (list, chip, picker) | `list-budget.sh`, `list-scope.sh`, `msg-waiting-ui.sh`, `skill-links.sh` |
   | `tmux-spawn` | `spawn-for.sh`, `spawn-split.sh`, `spawn-names.sh`, `resume-messages.sh` |
