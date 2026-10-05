@@ -17,11 +17,13 @@ $1 == "P" {
     order[++np] = p
     name[p]=$3; dead[p]=$4; perm[p]=$5; state[p]=$6; parent[p]=$7
     session[p]=$8; activity[p]=$9; path[p]=$10; location[p]=$11
+    # P16..21 are timing; P22 is membership, independent of window ancestry.
     attention[p]=$12; waiting[p]=$13; window[p]=$14; ismember[p]=($22==1)
     if ($15 != "-") byid[$15]=p
     state_since[p]=$16; worked[p]=$17; last_turn[p]=$18; turns[p]=$19; turn_start[p]=$20; started[p]=$21
     next
 }
+# R9..14 are saved timing; R15 is membership.
 $1 == "R" { record[$2]=1; rid[$2]=$3; closed[$2]=$4; owner[$2]=$5; dir[$2]=$6; label[$2]=$7; parentlabel[$2]=$8; saved_since[$2]=$9; saved_worked[$2]=$10; saved_last[$2]=$11; saved_turns[$2]=$12; saved_start[$2]=$14; recordmember[$2]=($15==1); next }
 $1 == "D" { project[$2]=$3; next }
 # Walk to the first visible live ancestor, with the original pane as fallback.

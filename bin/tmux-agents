@@ -370,13 +370,24 @@ case "${1:-}" in
     exec "$here/tmux-agents" --client "${3:-}" --select "$name" --scope "${4:-window}" --mode "${5:-sub}"
     ;;
   # Started by fzf on "start": keep the preview live by asking fzf (on its
-  # --listen port) to refresh it. Ends when fzf exits and the port closes.
+  # --listen port) to refresh it. Picker cleanup stops it, including while paused.
   --preview-loop)
     settings_get preview_secs TMUX_AGENTS_PREVIEW_SECS @tmux_agents_preview_secs 0.5
-    while curl -fs -XPOST "http://localhost:${FZF_PORT:?}" -d refresh-preview >/dev/null 2>&1; do
-      # settings_get assigns this variable by name.
+    preview_sleep=""
+    trap '[ -z "$preview_sleep" ] || { kill "$preview_sleep" 2>/dev/null; wait "$preview_sleep" 2>/dev/null; }; exit 0' TERM HUP INT
+    while [ -d "$TMUX_AGENTS_PREVIEW_DIR" ]; do
+      # A builtin check adds no polling process while the preview is paused.
+      # F11 also gates an HTTP action already queued when scrolling started.
+      if [ ! -s "$TMUX_AGENTS_PREVIEW_DIR/paused" ]; then
+        curl -fs -XPOST "http://localhost:${FZF_PORT:?}" -d 'trigger(f11)' >/dev/null 2>&1 || break
+      fi
+      # settings_get assigns this variable by name. Track sleep so picker exit
+      # stops even a long refresh interval immediately.
       # shellcheck disable=SC2154
-      sleep "$preview_secs"
+      sleep "$preview_secs" &
+      preview_sleep=$!
+      wait "$preview_sleep" || true
+      preview_sleep=""
     done
     exit 0
     ;;
@@ -493,28 +504,45 @@ case "$prefix" in
   C-[a-z]) pk="ctrl-${prefix#C-}"
     prefix_keys=(--bind "$pk:execute-silent(tmux set-option -g @tmux_agents_prefix_at \$(date +%s))" --bind "d:transform:'$self' --prefix-d") ;;
 esac
+# No external tool before fzf: start creates this picker-owned directory.
+export TMUX_AGENTS_PREVIEW_DIR="${TMPDIR:-/tmp}/tmux-agents-preview-$$-$RANDOM-$RANDOM"
+cleanup_picker() {
+  local loop_pid
+  if [ -f "$TMUX_AGENTS_PREVIEW_DIR/loop" ]; then
+    read -r loop_pid <"$TMUX_AGENTS_PREVIEW_DIR/loop" || true
+    case "$loop_pid" in ''|*[!0-9]*) ;; *) kill "$loop_pid" 2>/dev/null || true ;; esac
+  fi
+  rm -rf "$TMUX_AGENTS_PREVIEW_DIR"
+  [ -z "${TMUX_AGENTS_SELECT_FILE:-}" ] || rm -f "$TMUX_AGENTS_SELECT_FILE"
+}
+trap cleanup_picker EXIT
 selection=()
 if [ -n "$select" ]; then
   export TMUX_AGENTS_SELECT="$select"
   TMUX_AGENTS_SELECT_FILE="$(mktemp "${TMPDIR:-/tmp}/tmux-agents-select.XXXXXX")"
   export TMUX_AGENTS_SELECT_FILE
-  trap 'rm -f "$TMUX_AGENTS_SELECT_FILE"' EXIT
   # An empty initial load must not consume the positioning action.
   selection=(--bind "load:transform:if [ -s \"\$TMUX_AGENTS_SELECT_FILE\" ]; then read -r n < \"\$TMUX_AGENTS_SELECT_FILE\"; printf 'pos(%s)+unbind(load)' \"\$n\"; fi")
 fi
+# F12 is a shared one-shot pause action; unbinding it leaves every scroll key
+# entirely inside fzf. Focus/ctrl-f rearm it. F11 gates timer refreshes. fzf
+# 0.65 has trigger/unbind/rebind, but no action to replace a binding dynamically.
+# fzf action shells expand these variables when their binding runs.
+# shellcheck disable=SC2016
 out="$(fzf </dev/null --read0 --ansi --reverse --no-sort --no-hscroll --header-lines=1 --delimiter=$'\037' --with-nth=3.. --nth=2,4 --prompt="$prompt" \
   ${selection[@]+"${selection[@]}"} \
   ${prefix_keys[@]+"${prefix_keys[@]}"} \
   --with-shell 'bash -c' \
-  --listen --bind "start:reload('$self' --initial-list)+execute-silent('$self' --preview-loop >/dev/null 2>&1 &)" \
-  --bind 'focus:change-preview-window(right,55%,follow,~7)' \
-  --bind 'shift-up:change-preview-window(right,55%,nofollow,~7)+preview-up,shift-down:change-preview-window(right,55%,nofollow,~7)+preview-down' \
-  --bind 'page-up:change-preview-window(right,55%,nofollow,~7)+preview-page-up,page-down:change-preview-window(right,55%,nofollow,~7)+preview-page-down' \
-  --bind 'alt-up:change-preview-window(right,55%,nofollow,~7)+preview-half-page-up,alt-down:change-preview-window(right,55%,nofollow,~7)+preview-half-page-down' \
-  --bind 'preview-scroll-up:change-preview-window(right,55%,nofollow,~7)+preview-up,preview-scroll-down:change-preview-window(right,55%,nofollow,~7)+preview-down' \
-  --bind 'shift-scroll-up:change-preview-window(right,55%,nofollow,~7)+preview-up,shift-scroll-down:change-preview-window(right,55%,nofollow,~7)+preview-down' \
-  --bind 'ctrl-f:change-preview-window(right,55%,follow,~7)+preview-bottom' \
-  --footer=$'enter open · ^o jump (prefix+L back) · ^x dismiss\n^d clean done · ^a all/sub · ^t this/all windows · ^r refresh · prefix+d close\npreview: wheel/shift-arrows/page keys scroll · ^f follow' --footer-border=rounded \
+  --listen --bind "start:reload('$self' --initial-list)+execute-silent(mkdir -m 700 \"\$TMUX_AGENTS_PREVIEW_DIR\" && { '$self' --preview-loop >/dev/null 2>&1 & printf '%s\\n' \"\$!\" >\"\$TMUX_AGENTS_PREVIEW_DIR/loop\"; })" \
+  --bind 'f11:refresh-preview' \
+  --bind 'f12:unbind(f11)+execute-silent(printf 1 > "$TMUX_AGENTS_PREVIEW_DIR/paused")+change-preview-window(right,55%,nofollow,~7)+unbind(f12)' \
+  --bind 'focus:execute-silent([ ! -d "$TMUX_AGENTS_PREVIEW_DIR" ] || : > "$TMUX_AGENTS_PREVIEW_DIR/paused")+rebind(f11,f12)+change-preview-window(right,55%,follow,~7)+refresh-preview' \
+  --bind 'shift-up:trigger(f12)+preview-up,shift-down:trigger(f12)+preview-down' \
+  --bind 'alt-up:trigger(f12)+preview-half-page-up,alt-down:trigger(f12)+preview-half-page-down' \
+  --bind 'preview-scroll-up:trigger(f12)+preview-up,preview-scroll-down:trigger(f12)+preview-down' \
+  --bind 'shift-scroll-up:trigger(f12)+preview-up,shift-scroll-down:trigger(f12)+preview-down' \
+  --bind 'ctrl-f:execute-silent(: > "$TMUX_AGENTS_PREVIEW_DIR/paused")+rebind(f11,f12)+change-preview-window(right,55%,follow,~7)+preview-bottom+refresh-preview' \
+  --footer=$'enter open · ^o jump (prefix+L back) · ^x dismiss\n^d clean done · ^a all/sub · ^t this/all windows · ^r refresh · prefix+d close\npreview: wheel/shift-alt arrows scroll · ^f follow' --footer-border=rounded \
   --preview "case {1} in closed:*) '$self' --closed-info {1} ;; *) '$self' --preview-info {1} ;; esac" --preview-window='right,55%,follow,~7' \
   --bind "ctrl-x:execute-silent('$self' --dismiss {1})+reload('$self' --list)" \
   --bind "ctrl-r:reload('$self' --list)" \
