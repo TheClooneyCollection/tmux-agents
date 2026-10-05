@@ -326,7 +326,15 @@ case "${1:-}" in
     if [ -n "${TMUX_AGENTS_SELECT_FILE:-}" ]; then
       # Write positioning before publishing rows; load runs after this reload.
       printf '%s' "$rows" | awk -v RS='\036' -v s="$TMUX_AGENTS_SELECT" '
-        NR > 1 { sub(/^[^ ]+ +/, ""); if (index($0,s " ")==1 || index($0,"\n" s " ")) { print NR-1; exit } }
+        NR > 1 {
+          if (index($0,"\037")) {
+            split($0,f,"\037"); sub(/ +$/, "", f[3])
+            if (f[3]==s) { print NR-1; exit }
+            next
+          }
+          sub(/^[^ ]+ +/, "")
+          if (index($0,s " ")==1 || index($0,"\n" s " ")) { print NR-1; exit }
+        }
       ' >"$TMUX_AGENTS_SELECT_FILE"
     fi
     printf '%s' "$rows" | tr '\036' '\0'
@@ -444,6 +452,8 @@ command -v fzf >/dev/null 2>&1 || die "fzf is required"
 self="$here/tmux-agents"
 # Scope starts local on every fresh open; popup return passes both dimensions.
 export TMUX_AGENTS_LIST_CLIENT="$client"
+# Invisible field separators keep search off status, parents and activity.
+export TMUX_AGENTS_LIST_FIELDS=1
 [ -n "$mode" ] || mode="$default_mode"
 [ "$mode" = all ] || mode=sub
 [ "$scope" = all ] || scope=window
@@ -465,7 +475,7 @@ if [ -n "$select" ]; then
   # An empty initial load must not consume the positioning action.
   selection=(--bind "load:transform:if [ -s \"\$TMUX_AGENTS_SELECT_FILE\" ]; then read -r n < \"\$TMUX_AGENTS_SELECT_FILE\"; printf 'pos(%s)+unbind(load)' \"\$n\"; fi")
 fi
-out="$(fzf </dev/null --read0 --ansi --reverse --no-sort --header-lines=1 --with-nth=2.. --prompt="$prompt" \
+out="$(fzf </dev/null --read0 --ansi --reverse --no-sort --no-hscroll --header-lines=1 --delimiter=$'\037' --with-nth=2.. --nth=2,4 --prompt="$prompt" \
   ${selection[@]+"${selection[@]}"} \
   ${prefix_keys[@]+"${prefix_keys[@]}"} \
   --with-shell 'bash -c' \

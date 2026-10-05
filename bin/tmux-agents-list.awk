@@ -81,6 +81,7 @@ END {
         else if (state[p]=="done") { rank=4; status="✓ done" }
         else { rank=2; status="⠿ working" }
         section=index(session[p],prefix)==1 ? substr(session[p],length(prefix)+1) : project[path[p]]
+        rowproject=section
         report=activity[p]
         if (dead[p]!=1 && (waiting[p]!="-" || (parent[p]!="-" && (perm[p]!="-" || state[p]=="needs_you")))) {
             since=perm[p]!="-" ? perm[p] : (waiting[p]!="-" ? waiting[p] : attention[p])
@@ -92,6 +93,7 @@ END {
         } else if (scope!="all" && !member[p]) continue
         ownername=(parent[p] in name) && name[parent[p]]!="-" ? name[parent[p]] : "-"
         add(rank,section,p,name[p]=="-" ? p : name[p],status,ownername,report)
+        rowprojects[nr]=rowproject
     }
     # Shell glob order used to be the stable tie-break for closed records.
     for (n in record) if (rid[n]!="" && !(n in byid) && (scope=="all" || (target!="" && record_window(owner[n])==target))) {
@@ -105,6 +107,7 @@ END {
         else if (age<86400) age=int(age/3600) "h"
         else age=int(age/86400) "d"
         add(20000000000-closed[n],"closed (" nc ") · enter reopens","closed:" n,label[n],"↺ closed",owner_label(n),project[dir[n]] " · closed " age " ago")
+        rowprojects[nr]=project[dir[n]]
     }
     # Small in-memory stable sort replaces sort/cut/column processes.
     for (i=1;i<=nr;i++) {
@@ -112,10 +115,26 @@ END {
         while(j>1 && before(i,sorted[j-1])) { sorted[j]=sorted[j-1]; j-- }
         sorted[j]=i
     }
-    printf "ID %-*s  %-*s  PARENT%s%c",namewidth,"NAME",statuswidth,"STATUS",(nr==0 && scope!="all" ? " (ctrl-t: all windows)" : ""),30
+    fields=ENVIRON["TMUX_AGENTS_LIST_FIELDS"]=="1"
+    if (fields) printf "ID\037\037"; else printf "ID "
+    printf "%-*s  %-*s  PARENT%s%c",namewidth,"NAME",statuswidth,"STATUS",(nr==0 && scope!="all" ? " (ctrl-t: all windows)" : ""),30
     for (i=1;i<=nr;i++) {
         r=sorted[i]; section=sections[r]; report=reports[r]
         if (report=="" || report=="-") report="no report yet"
+        if (fields) {
+            # fzf strips these control separators when drawing, but uses them
+            # to match only name/project. The original ID stays field 1.
+            printf "%s \037",ids[r]
+            if (section!=last) { printf "\033[1;38;5;180m▸ %s\033[0m\n",section; last=section }
+            printf "\037%-*s\037  %s%*s  %s\n  \033[38;5;245m",namewidth,labels[r],color(statuses[r]),statuswidth-widths[r],"",parents[r]
+            projectname=rowprojects[r]
+            pos=index(report,projectname " · ")
+            if (section=="needs you" || ids[r] ~ /^closed:/) {
+                printf "%s\037%s\037%s",substr(report,1,pos-1),projectname,substr(report,pos+length(projectname))
+            } else printf "\037%s\037 · %s",projectname,report
+            printf "\033[0m%c",30
+            continue
+        }
         printf "%s ",ids[r]
         if (section!=last) { printf "\033[1;38;5;180m▸ %s\033[0m\n",section; last=section }
         printf "%-*s  %s%*s  %s\n  \033[38;5;245m%s\033[0m%c",namewidth,labels[r],color(statuses[r]),statuswidth-widths[r],"",parents[r],report,30
