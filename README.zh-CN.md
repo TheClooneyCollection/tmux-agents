@@ -58,7 +58,7 @@ npx skills add TheClooneyCollection/tmux-agents -g
 
 ### 手动安装
 
-需要 tmux 3.2+ 和 bash。`fzf` 可选（选择器和实时 agent 列表会更好用）。
+需要 tmux 3.2+ 和 bash。agent 列表（`prefix + a`）还需要 `fzf`：macOS 使用 `brew install fzf`，Debian/Ubuntu 使用 `apt install fzf` 安装。其他命令无需 fzf 也能使用。
 
 ```sh
 git clone https://github.com/TheClooneyCollection/tmux-agents.git

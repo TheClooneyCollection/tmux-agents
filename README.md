@@ -58,7 +58,7 @@ To list the available skills without installing them, add `--list`. This preview
 
 ### By hand
 
-Needs tmux 3.2+ and bash. `fzf` is optional (nicer pickers and the live agent list).
+Needs tmux 3.2+ and bash. The agent list (`prefix + a`) also requires `fzf`: install it with `brew install fzf` (macOS) or `apt install fzf` (Debian/Ubuntu). Other commands work without it.
 
 ```sh
 git clone https://github.com/TheClooneyCollection/tmux-agents.git

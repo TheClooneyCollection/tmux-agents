@@ -2,6 +2,16 @@
 
 The details behind the [README](../README.md). Design notes and pitfalls are in [DESIGN.md](../DESIGN.md).
 
+## Dependencies
+
+Needs tmux 3.2+ and bash. The agent list (`prefix + a`) requires `fzf`:
+`brew install fzf` on macOS, or `apt install fzf` on Debian/Ubuntu.
+The installer warns if it is missing and still succeeds. The list popup shows
+installation instructions until a key is pressed, then exits with status 1.
+Redirected or piped input exits immediately with the same status, without waiting.
+Other commands, including `tmux-connect` with its fallback picker, `--list` and
+status chips, work without fzf.
+
 ## Configuration
 
 See [Configuration](configuration.md) for the settings table, `tmux.conf` instructions, precedence and environment overrides. The sections below explain how to use those settings in each workflow.

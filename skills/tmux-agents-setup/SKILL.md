@@ -11,11 +11,11 @@ You are installing tmux-agents for the user and then showing them how to use it.
 - Never kill, restart or rename the user's tmux sessions. During configuration, only run `tmux source-file` against their tmux server, after they agree. During the quick start, follow the `tmux-agents` skill for the connections, messages and agent launches the user requests.
 - Don't install system packages yourself; tell the user the command.
 
-If tmux-agents is already installed (`command -v tmux-spawn` finds it and `tmux list-keys | grep tmux-agents` shows the bindings), skip to the quick start, or to updating if the user asked for that.
+If tmux-agents is already installed (`command -v tmux-spawn` finds it and `tmux list-keys | grep tmux-agents` shows the bindings), still check fzf as below, then skip to the quick start, or to updating if the user asked for that.
 
 ## 1. Check
 
-- `tmux -V` is 3.2 or newer, and `git` and `bash` exist. `fzf` is optional; without it the pickers and the agent list are plainer.
+- `tmux -V` is 3.2 or newer, and `git` and `bash` exist. Run `command -v fzf`: the agent list (`prefix + a`) requires it. If missing, give a nonfatal note with `brew install fzf` (macOS) or `apt install fzf` (Debian/Ubuntu). Continue installation; other commands work without it, including the `tmux-connect` fallback picker. Do not install packages yourself.
 - The user's shell: `basename "$SHELL"` (fish, zsh, bash).
 - Which agents they use: `command -v claude codex`.
 - Whether you are inside tmux (`$TMUX` set). The quick start needs tmux.
@@ -68,7 +68,7 @@ Walk the user through it one step at a time. Say what to do, then wait for them 
 1. **Two agents side by side.** Ask the user to start `claude` or `codex` in tmux and tell that agent: "use tmux-agents to open a Codex to your right". If you are already that agent, have them give you that request. Follow the `tmux-agents` skill's identity rules, then use `tmux-spawn codex --from <your-name> --split <your-name> --right --name quick-start` for that explicit request; use the full name it prints. Honor a different agent kind or Codex profile if the user requests one; otherwise follow the same-kind default. Only use a visible split when the user asks for that layout.
 2. **Agents talking.** Tell the original agent: "ask the agent you just opened to review <a file in this project>". The agents are already connected. The request appears in the new pane, and the reply comes back to the original agent as a new message. Both panes show `name ⇄ peer` on their top border.
 3. **A sub agent.** Ask the original agent: "spawn a sub agent to <a small task, like adding a test>". It runs in a hidden window, and a line above the status bar shows it working.
-4. **Watch it.** Press `prefix + a`: the agent list with a live preview. Arrow keys move, Enter opens the agent in a popup where you can answer it or give direction, `prefix + d` goes back to the list, and `prefix + d` again closes it.
+4. **Watch it.** If fzf is missing, explain that the list shows installation instructions until a key is pressed; continue the command-based tour. Otherwise press `prefix + a`: the agent list with a live preview. Arrow keys move, Enter opens the agent in a popup where you can answer it or give direction, `prefix + d` goes back to the list, and `prefix + d` again closes it.
 5. **Needs you.** If a sub agent waits for permission the line turns red; if it ends its turn without answering its parent, amber. Open it from the list to answer.
 6. **Clean up.** The parent closes its sub agents when it is done with them. You can close one yourself with `ctrl-x` in the list, or every finished one with `ctrl-d`.
 
