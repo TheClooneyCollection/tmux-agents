@@ -48,7 +48,7 @@ list_project_label() { local LC_ALL=C; project="${1//[^a-zA-Z0-9_-]/-}"; }
 # sorting and alignment happen in awk; external work never scales with agents.
 list_agents() {
   local mode="${1:-sub}" scope="${2:-window}" client="${3:-}" snapshot window="" clients c w
-  local now records="" raw="" mtimes="" dir sock f tag rest path root project paths="" projects=""
+  local now records="" raw="" mtimes="" dir sock f tag rest path root project pane live_panes=" " paths="" projects=""
   local -a files=() expired=()
   local tab=$'\t' nl=$'\n' resume_days
   ensure_agent_ids
@@ -73,12 +73,23 @@ list_agents() {
     esac
     raw="$(LIST_MTIMES="$mtimes" awk -v now="$now" -v keep="$(( resume_days * 86400 ))" -f "$here/tmux-agents-records.awk" "${files[@]}")"
     while IFS="$tab" read -r tag rest; do
-      if [ "$tag" = X ]; then expired+=("$rest")
+      if [ "$tag" = X ]; then expired+=("$rest" "$dir/.record-${rest##*/}.lock")
       elif [ "$tag" = R ]; then records="$records$tag$tab$rest$nl"
       fi
     done <<<"$raw"
-    [ ${#expired[@]} -eq 0 ] || rm -f "${expired[@]}"
   fi
+  # Keep work locks while their pane exists, including retained dead panes.
+  # Saving on close can overlap a final hook, so sweep only vanished panes.
+  # Reuse the snapshot and the expiry batch: no per-lock subprocesses.
+  while IFS="$tab" read -r tag pane rest; do
+    [ "$tag" != P ] || live_panes="$live_panes$pane "
+  done <<<"$snapshot"
+  for f in "$dir"/.work-%*.lock; do
+    [ -f "$f" ] || continue
+    pane="${f##*/.work-}"; pane="${pane%.lock}"
+    case "$live_panes" in *" $pane "*) ;; *) expired+=("$f") ;; esac
+  done
+  [ ${#expired[@]} -eq 0 ] || rm -f "${expired[@]}"
   # Deduplicate directories across live panes and records before git lookup.
   paths="$(printf '%s\n%s' "$snapshot" "$records" | awk -F '\t' -v prefix="$AGENTS_PREFIX-" '
     $1 == "P" && index($8,prefix) != 1 { path=$10; if (!seen[path]++) print path }
@@ -397,7 +408,7 @@ case "${1:-}" in
   --dismiss)
     require_tmux
     case "${2:-}" in
-      closed:*) n="${2#closed:}"; valid_agent_id "$n" || die "invalid agent id: $n"; rm -f "$(sessions_dir)/$n" ;;
+      closed:*) n="${2#closed:}"; valid_agent_id "$n" || die "invalid agent id: $n"; d="$(sessions_dir)"; rm -f "$d/$n" "$d/.record-$n.lock" ;;
       *) "$here/tmux-dismiss" "$(pane_name "$2")" ;;
     esac
     exit 0

@@ -117,7 +117,9 @@ for ((i=0; i<100; i++)); do
 done
 check 'resumed stub has selected conversation' has "$tmp/screen" conversation-a000000000002
 check 'picker viewer follows ID despite label suffix' has "$tmp/ui-log" "--view $reopened "
+: >"$records/.record-a000000000001.lock"
 "$B/tmux-agents" --dismiss closed:a000000000001
+check 'forget removes exact record lock' test ! -e "$records/.record-a000000000001.lock"
 check 'forget removes exact record' test ! -e "$records/a000000000001"
 check 'forget preserves other same-label record' test -e "$records/a000000000002"
 # Parent display prefers current labels, then the saved fallback when missing.
@@ -126,4 +128,19 @@ FZF_PROMPT='all · all windows> ' "$B/tmux-agents" --list >"$tmp/fallback"
 check 'missing parent uses saved display label' has "$tmp/fallback" old-parent
 "$B/tmux-agents" --closed-info closed:a000000000003 >"$tmp/preview-parent"
 check 'closed parent preview falls back after exact forget' has "$tmp/preview-parent" old-parent
+# Expiry cleans record locks; work locks live until their pane disappears.
+record a000000000006 expired "$main_id" "$((now-8*86400))"
+: >"$records/.record-a000000000006.lock"
+: >"$records/.record-a000000000005.lock"
+agent_set_state %0 working
+vanished="$(tmux new-window -d -t work -P -F '#{pane_id}' cat)"
+agent_set_state "$vanished" working
+check 'accounting creates per-pane lock' test -e "$records/.work-$vanished.lock"
+tmux kill-pane -t "$vanished"
+FZF_PROMPT='all · all windows> ' "$B/tmux-agents" --list >"$tmp/expiry"
+check 'expiry removes record' test ! -e "$records/a000000000006"
+check 'expiry removes corresponding record lock' test ! -e "$records/.record-a000000000006.lock"
+check 'expiry keeps retained record lock' test -e "$records/.record-a000000000005.lock"
+check 'sweep removes vanished pane lock' test ! -e "$records/.work-$vanished.lock"
+check 'sweep preserves live pane lock' test -e "$records/.work-%0.lock"
 echo "$count checks passed"
