@@ -49,7 +49,7 @@ Notes for AI agents working on tmux-agents.
 
 ## Layout
 
-`bin/` commands, `tmux/tmux-agents.conf` bindings and hooks, `skills/` (one folder per skill, shared by Claude and Codex: `tmux-agents`, whose Codex sandbox section only applies to Codex, `tmux-agents-setup`, `tmux-agents-perf` and `agent-chain`; keep each at `skills/<name>/SKILL.md` so `npx skills` finds them), `integrations/` per-tool glue, `install.sh`, `tests/`. Docs: README (users), `docs/guide.md` (details), DESIGN.md and `docs/design/` (how and why), `docs/decisions/` (what the user decided), `docs/performance.md`. Keep them and the skills in sync when behaviour changes. No em dashes; keep the README short and move details to the guide.
+`bin/` commands, `tmux/tmux-agents.conf` bindings and hooks, `skills/` (one folder per skill, shared by Claude and Codex: `tmux-agents`, whose Codex sandbox section only applies to Codex, `tmux-agents-setup`, `tmux-agents-perf` and `agent-chain`; keep each at `skills/<name>/SKILL.md` so `npx skills` finds them), `integrations/` per-tool glue, `install.sh`, `tests/`. Docs: README (users), `docs/guide.md` (details), `docs/configuration.md` (user settings and overrides), DESIGN.md and `docs/design/` (how and why), `docs/decisions/` (what the user decided), `docs/performance.md`. Keep them and the skills in sync when behaviour changes. No em dashes; keep the README short and move details to the guide.
 
 **README.zh-CN.md must always match README.md.** Any change to README.md updates README.zh-CN.md in the same commit: same sections in the same order, same commands, links and code blocks, in natural Chinese rather than word for word.
 

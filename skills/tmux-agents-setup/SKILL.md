@@ -8,7 +8,7 @@ description: Install, update or configure tmux-agents for the user, then walk th
 You are installing tmux-agents for the user and then showing them how to use it. Go step by step and keep the user in the loop:
 
 - Before changing any file outside the tmux-agents checkout, show the exact change and wait for a yes. Back a file up before editing it.
-- Never kill, restart or rename the user's tmux sessions. The only thing you may run against their tmux server is `tmux source-file`, after they agree.
+- Never kill, restart or rename the user's tmux sessions. During configuration, only run `tmux source-file` against their tmux server, after they agree. During the quick start, follow the `tmux-agents` skill for the connections, messages and agent launches the user requests.
 - Don't install system packages yourself; tell the user the command.
 
 If tmux-agents is already installed (`command -v tmux-spawn` finds it and `tmux list-keys | grep tmux-agents` shows the bindings), skip to the quick start, or to updating if the user asked for that.
@@ -45,7 +45,7 @@ Run `./install.sh --dry-run` from the checkout, summarize what it will link and 
 
 ## 4. Configure
 
-One item at a time; skip what is already in place.
+One item at a time; skip what is already in place. See [Configuration](../../docs/configuration.md) for user settings, defaults and environment overrides.
 
 1. **tmux.** Add `source-file <checkout>/tmux/tmux-agents.conf` to the user's tmux config (`~/.tmux.conf`, or `~/.config/tmux/tmux.conf` if that is the one they use). If the commands were linked somewhere other than `~/.local/bin`, put `%hidden TMUX_AGENTS_BIN="<that dir>"` on the line before. Then offer to reload it with `tmux source-file <config>`.
 2. **PATH.** If `command -v tmux-ask` finds nothing, add `~/.local/bin`: `fish_add_path ~/.local/bin` for fish, or `export PATH="$HOME/.local/bin:$PATH"` in `~/.zshrc` / `~/.bashrc`.
@@ -65,11 +65,13 @@ Tell the user that agents already running (you included) won't see the new PATH,
 
 Walk the user through it one step at a time. Say what to do, then wait for them to do it before the next step. Keep explanations to a sentence or two.
 
-1. **Two agents side by side.** In a tmux window, split it in two (`prefix + %`). Start `claude` on the left and `codex` on the right (through the wrapper, so plain `codex` in a new shell).
-2. **Agents talking.** In Claude, say: "use tmux-agents to connect to the codex pane and have it review <a file in this project>". (Naming tmux-agents keeps Claude from reaching for some other Codex integration.) The request appears in Codex's pane, Codex works on it, and the reply comes back to Claude as a new message. Both panes now show `name ⇄ peer` on their top border.
-3. **A sub agent.** Ask Claude: "spawn a sub agent to <a small task, like adding a test>". It runs in a hidden window, and a line above the status bar shows it working.
+1. **Two agents side by side.** Ask the user to start `claude` or `codex` in tmux and tell that agent: "use tmux-agents to open a Codex to your right". If you are already that agent, have them give you that request. Follow the `tmux-agents` skill's identity rules, then use `tmux-spawn codex --from <your-name> --split <your-name> --right --name quick-start` for that explicit request; use the full name it prints. Honor a different agent kind or Codex profile if the user requests one; otherwise follow the same-kind default. Only use a visible split when the user asks for that layout.
+2. **Agents talking.** Tell the original agent: "ask the agent you just opened to review <a file in this project>". The agents are already connected. The request appears in the new pane, and the reply comes back to the original agent as a new message. Both panes show `name ⇄ peer` on their top border.
+3. **A sub agent.** Ask the original agent: "spawn a sub agent to <a small task, like adding a test>". It runs in a hidden window, and a line above the status bar shows it working.
 4. **Watch it.** Press `prefix + a`: the agent list with a live preview. Arrow keys move, Enter opens the agent in a popup where you can answer it or give direction, `prefix + d` goes back to the list, and `prefix + d` again closes it.
 5. **Needs you.** If a sub agent waits for permission the line turns red; if it ends its turn without answering its parent, amber. Open it from the list to answer.
 6. **Clean up.** The parent closes its sub agents when it is done with them. You can close one yourself with `ctrl-x` in the list, or every finished one with `ctrl-d`.
+
+As a manual alternative, the user can split the window themselves, start `claude` and `codex` in separate panes (Codex through its wrapper), then tell one to "use tmux-agents to connect to the other agent".
 
 Finish by pointing them to the README for the full command list and more than one Codex account.
