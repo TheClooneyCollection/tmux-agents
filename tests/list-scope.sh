@@ -246,6 +246,8 @@ STUB
     -e "XDG_STATE_HOME=$XDG_STATE_HOME" -e "SCOPE_BIN=$B" -e "SCOPE_CLIENT=$client" \
     -e "SCOPE_RESULT=$tmp/picker-result" -e "SCOPE_DONE=$tmp/picker-done" "$tmp/picker")"
   # Wait for explicit fzf events, not a row left visible from the old scope.
+  # Invoked through check, which forwards the function name and arguments.
+  # shellcheck disable=SC2329
   wait_picker_event() {
     local i
     for ((i=0; i<100; i++)); do
