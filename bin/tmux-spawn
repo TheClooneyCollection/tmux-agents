@@ -26,12 +26,12 @@ Codex approvals_reviewer=auto_review).
                 an existing prefix is kept; clashes add -2, -3...
                 profiles use codex as <agent>, home uses ~ as <dir>
                 (without --name: <agent>-<dir>-<N>)
-  --member      start a long-lived member at its owner's depth; --done keeps it
+  --member      start a long-lived member (top-level callers only); --done keeps it
   --exact       use --name verbatim, without its agent/directory prefix
   --for OWNER   spawn it for OWNER, an agent you're connected to: it becomes
                 OWNER's sub agent, connected to OWNER only, and starts without
                 a task. OWNER is told, with your brief, and sends the first
-                task itself. Helper depth counts from you; member depth from OWNER.
+                task itself. Depth counts from you plus one, including members.
   --split PANE  open in a visible split of an agent name or pane id
   --right       split left/right (default); the new pane is on the right
   --below       split top/bottom; the new pane is below
@@ -319,7 +319,6 @@ if [ -n "$split_target" ]; then
 fi
 
 depth="${TMUX_AGENTS_DEPTH:-0}"
-[ "$member" -eq 1 ] || [ "$depth" -lt "$MAX_DEPTH" ] || die "spawn depth limit ($MAX_DEPTH) reached; do this task yourself"
 
 # Default to the caller's own kind of agent. Codex's commands run in a
 # shared daemon without its CODEX_HOME, so Codex started through tmux-spawn
@@ -347,6 +346,15 @@ if [ -z "$me" ]; then
   set_name "$self" "$me"
 fi
 
+# Membership creation is reserved for top-level callers, regardless of --for.
+if [ "$member" -eq 1 ]; then
+  [ -z "$(tmux show-options -pqv -t "$self" @parent)" ] \
+    && [ "$(tmux show-options -pqv -t "$self" @member)" != 1 ] \
+    || die "only a top-level agent can spawn members; $me is a sub agent/member"
+fi
+
+[ "$depth" -lt "$MAX_DEPTH" ] || die "spawn depth limit ($MAX_DEPTH) reached; do this task yourself"
+
 # --for: the sub agent belongs to OWNER, which must be connected to us.
 # It starts without a task; the brief goes to OWNER, who sends the first one.
 owner="$self" owner_name="$me" brief=""
@@ -357,13 +365,8 @@ if [ -n "$for_name" ]; then
   brief="$task" task=""
 fi
 
-# Ordinary helpers retain caller-based depth, including --for. Members use
-# the actual owner's recorded depth; a main pane has no record and is depth 0.
+# All new agents count from the caller, including --for and --member.
 spawn_depth="$((depth + 1))"
-if [ "$member" -eq 1 ]; then
-  owner_depth="$(record_get "$(ensure_agent_id "$owner")" depth)"
-  spawn_depth="${owner_depth:-0}"
-fi
 
 cwd="$(tmux display-message -p -t "$self" '#{pane_current_path}')"
 if [ -n "$name" ]; then

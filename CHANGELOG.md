@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Long-lived members.** `tmux-spawn --member` keeps chain agents out of the default sub-agent list, ordinary chip counts and bulk cleanup, while preserving attention, ownership, subtree dismissal and resume. Members take their owner's depth; the agent-chain skill uses members for the secondary and worker.
+- **Long-lived members.** `tmux-spawn --member` keeps chain agents out of the default sub-agent list, ordinary chip counts and bulk cleanup, while preserving attention, ownership, subtree dismissal and resume. Only top-level callers can spawn members, with ordinary caller-based depth and limits; the agent-chain skill uses members for the secondary and worker.
 
 ## v1.10.0 (2026-10-05)
 
