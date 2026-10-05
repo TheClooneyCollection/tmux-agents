@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.10.0 (2026-10-05)
 
 - **Re-run `./install.sh` after updating:** run it from the actual installed checkout to repair links that still point to the removed `skills/claude/` and `skills/codex/` folders. The skill now lives at `skills/tmux-agents/`. For a tag-pinned install, check out the chosen new tag in that installed checkout first.
 - **Install the skills with `npx skills add TheClooneyCollection/tmux-agents -g`.** Each skill is one folder under `skills/`, shared by Claude and Codex (the Codex-only sandbox notes are a section of the `tmux-agents` skill). The `tmux-agents` skill offers the setup skill when the commands aren't installed yet.
