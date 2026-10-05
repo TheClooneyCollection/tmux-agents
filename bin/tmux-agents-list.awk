@@ -6,11 +6,11 @@ $1 == "P" {
     order[++np] = p
     name[p]=$3; dead[p]=$4; perm[p]=$5; state[p]=$6; parent[p]=$7
     session[p]=$8; activity[p]=$9; path[p]=$10; location[p]=$11
-    attention[p]=$12; waiting[p]=$13; window[p]=$14
+    attention[p]=$12; waiting[p]=$13; window[p]=$14; ismember[p]=($16==1)
     if ($15 != "-") byid[$15]=p
     next
 }
-$1 == "R" { record[$2]=1; rid[$2]=$3; closed[$2]=$4; owner[$2]=$5; dir[$2]=$6; label[$2]=$7; parentlabel[$2]=$8; next }
+$1 == "R" { record[$2]=1; rid[$2]=$3; closed[$2]=$4; owner[$2]=$5; dir[$2]=$6; label[$2]=$7; parentlabel[$2]=$8; recordmember[$2]=($9==1); next }
 $1 == "D" { project[$2]=$3; next }
 # Walk to the first visible live ancestor, with the original pane as fallback.
 function visible(p, original, visited) {
@@ -90,8 +90,12 @@ END {
             if (report=="-") report="no report yet"
             report=location[visible(p)] " · " section " · " report
             section="needs you"
-        } else if (scope!="all" && !member[p]) continue
+        } else {
+            if (mode!="all" && ismember[p]) continue
+            if (scope!="all" && !member[p]) continue
+        }
         ownername=(parent[p] in name) && name[parent[p]]!="-" ? name[parent[p]] : "-"
+        if (ismember[p]) ownername="member of " ownername
         add(rank,section,p,name[p]=="-" ? p : name[p],status,ownername,report)
         rowprojects[nr]=rowproject
     }
@@ -106,7 +110,7 @@ END {
         if (age<3600) age=int(age/60) "m"
         else if (age<86400) age=int(age/3600) "h"
         else age=int(age/86400) "d"
-        add(20000000000-closed[n],"closed (" nc ") · enter reopens","closed:" n,label[n],"↺ closed",owner_label(n),project[dir[n]] " · closed " age " ago")
+        add(20000000000-closed[n],"closed (" nc ") · enter reopens","closed:" n,label[n],"↺ closed",(recordmember[n] ? "member of " : "") owner_label(n),project[dir[n]] " · closed " age " ago")
         rowprojects[nr]=project[dir[n]]
     }
     # Small in-memory stable sort replaces sort/cut/column processes.
