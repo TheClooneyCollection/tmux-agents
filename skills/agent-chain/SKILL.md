@@ -29,7 +29,7 @@ The worker's agent is `codex` unless the user has named another (another agent k
 2. Spawn the secondary to your right:
 
    ```sh
-   tmux-spawn claude --from <me> --split <me> --right --name secondary <<'MSG'
+   tmux-spawn claude --from <me> --member --split <me> --right --name secondary <<'MSG'
    You are the secondary in the agent chain (agent-chain skill). Main: <me>.
    Current goal: <goal>
    MSG
@@ -38,19 +38,21 @@ The worker's agent is `codex` unless the user has named another (another agent k
 3. Spawn the worker for the secondary, below it:
 
    ```sh
-   tmux-spawn <worker agent> --from <me> --for <secondary> --split <secondary> --below --name worker <<'MSG'
+   tmux-spawn <worker agent> --from <me> --member --for <secondary> --split <secondary> --below --name worker <<'MSG'
    <Brief for the secondary: the worker's role and its first goal.>
    MSG
    ```
 
-   The worker becomes the secondary's sub agent, connected to the secondary only (not to you), and starts without a task. The secondary gets the brief, introduces itself to the worker (including that it is the worker in the agent chain and splits independent parts across sub agents by default) and sends the first task.
+   The worker becomes the secondary's long-lived member, connected to the secondary only (not to you), and starts without a task. The secondary gets the brief, introduces itself to the worker (including that it is the worker in the agent chain and splits independent parts across sub agents by default) and sends the first task.
 4. Tell the user the three names. The layout, all in your window: you on the left half, the secondary top right, the worker bottom right.
 
-Spawn both from the main agent, not the worker from the secondary, so the worker stays at depth 1 and can still start its own sub agents; `--for` makes it the secondary's all the same. The main agent doesn't message the worker; it goes through the secondary (`tmux-ask --any` only if the user asks). Each brief names the agent's role in the agent chain, so it loads this skill; beyond that, it only needs the other agents' names and the current goal.
+Spawn both from the main agent; `--for` makes the worker the secondary's member. Each member takes its owner's depth, so with a top-level main both chain members stay at depth 0. The worker's ordinary helpers start at depth 1 and can spawn helpers at depth 2. Helpers do not inherit membership. The main agent doesn't message the worker; it goes through the secondary (`tmux-ask --any` only if the user asks). Each brief names the agent's role in the agent chain, so it loads this skill; beyond that, it only needs the other agents' names and the current goal.
+
+The secondary and worker are long-lived members: they stay out of the default sub-agent list, ordinary chip counts and `--done` cleanup. Find them with `ctrl-a` in the agent list, labelled `member of <owner>`; attention still pins them in the list and chip.
 
 ## Ending the chain
 
-`tmux-dismiss --from <me> <secondary>` closes the secondary, the worker and the worker's sub agents. Each can be reopened with `tmux-spawn --resume <name> --from <me>`.
+`tmux-dismiss --from <me> <secondary>` closes the secondary, the worker and the worker's sub agents. Each can be reopened with `tmux-spawn --resume <name> --from <me>`, preserving membership. Existing chains keep their sub-agent status until restarted; there is no conversion command.
 
 ## Messages
 

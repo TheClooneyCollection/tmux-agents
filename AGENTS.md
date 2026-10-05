@@ -23,6 +23,8 @@ Notes for AI agents working on tmux-agents.
   | `tmux-agent-report`, `tmux-ask`, the skills' messaging rules | `needs-you.sh`, `ask-queue.sh`, `resume-messages.sh` |
   | `tmux-agents` (list, chip, picker) | `list-budget.sh`, `list-scope.sh`, `msg-waiting-ui.sh`, `skill-links.sh` |
   | `tmux-spawn` | `spawn-for.sh`, `spawn-split.sh`, `spawn-names.sh`, `resume-messages.sh` |
+  | member lifecycle (spawn, depth, ownership, dismiss, resume; owner A) | `tests/members.sh` |
+  | member UI (list, chip, attention; owner B) | `tests/member-ui.sh` |
   | user settings or configuration lookup | `settings.sh`, `spawn-names.sh`, `list-budget.sh`, `install.sh`, `skill-links.sh` |
   | skills or installer | `skills.sh`, `install.sh`, `skill-links.sh` |
   | `tmux-dismiss` | `dismiss.sh` |

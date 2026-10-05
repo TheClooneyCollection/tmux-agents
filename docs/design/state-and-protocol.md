@@ -12,7 +12,8 @@ Live state uses tmux user options on the panes (`set-option -p`); session record
 | `@agent_id` | Stable agent identity: `a` plus 12 random hex digits. A reopened agent keeps it. |
 | `@peers` | Space-separated pane ids (`%12`) this pane links to. |
 | `@peer_names` | Cached `name, name` string for the border label. |
-| `@parent` | On spawned sub agents: the pane id that spawned them. |
+| `@parent` | On spawned sub agents and members: the owner pane id, including the `--for` target. |
+| `@member` | `1` for a long-lived member; persisted as `member=1` in its session record. |
 | `@closed` | Agent IDs of peers the user closed (set by `note_closed` before `kill-pane`), rendered as labels. |
 | `@state` | On sub agents: `idle`, `done`, `working` or `needs_you`. See [done state](sub-agents.md#done-state-and-cleanup) and [chip data](sub-agents.md#data-not-screen-scraping). |
 | `@msg_waiting_since` | Epoch when a queued message began waiting; set after the escalation threshold and cleared on delivery. Pins the receiver in the list and highlights it in the chip. |

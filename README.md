@@ -152,11 +152,13 @@ Or let your agent show you: say "tmux-agents quick start".
 | `prefix + A` | Connect this pane to another one (`ctrl-a`: any window) |
 | `prefix + d` | In a popup: back to the list. In the list: close it |
 
-The list opens on this window and its descendants, with sub agents needing you pinned from every window.
+The list opens on this window and its descendants, with sub agents and members needing you pinned from every window.
 
 In the list: `enter` open · `ctrl-o` jump there · `ctrl-x` dismiss · `ctrl-d` close all finished · `ctrl-a` all panes / sub agents · `ctrl-t` this window / all windows
 
-Closed sub agents stay in a `closed` section at the bottom for 7 days: `enter` reopens one with its whole conversation. Or ask its parent to reopen it.
+Long-lived team members use `tmux-spawn --member`. They stay out of the default sub-agent list, ordinary chip counts and `ctrl-d` / `--done` cleanup. `ctrl-a` shows them as `member of <owner>`; attention still pins them. Explicit dismissal still closes their subtree, and reopening preserves membership.
+
+Closed sub agents and members stay in a `closed` section at the bottom for 7 days: `enter` reopens one with its whole conversation. Or ask its parent to reopen it.
 
 Status: `⠹` working · `○` idle (no task yet) · `✓` done · `⚠` waiting for permission (red) · `◆` needs you (amber) · `✉` message waiting for you to stop typing or scrolling · `✗` exited
 
@@ -169,7 +171,7 @@ Agents run these for you; each takes `--help`.
 | `tmux-connect` | Name this pane and link it to another |
 | `tmux-rename` | Change an agent's label while keeping its identity, history and links |
 | `tmux-ask` | Send a message to a connected agent |
-| `tmux-spawn` | Start a sub agent hidden, or in a visible split with `--split` |
+| `tmux-spawn` | Start a sub agent, or a long-lived `--member`, hidden or with `--split` |
 | `tmux-agents` | The agent list (`prefix + a`) |
 | `tmux-peers`, `tmux-peek` | Show connections; read another pane |
 | `tmux-dismiss`, `tmux-disconnect` | Close a sub agent; unlink panes |
