@@ -55,6 +55,7 @@ Notes for AI agents working on tmux-agents.
 ## Commits and releases
 
 - Commit style: `feat: ...`, `fix: ...`, `docs: ...`, `test: ...`, `chore: ...`.
+- Merge PRs with rebase merges only (`gh pr merge N --rebase`), never merge commits or squash, so main's history stays linear. Rebase a branch onto main before merging it. The GitHub repo allows only rebase merging.
 - Release: turn CHANGELOG.md's "Unreleased" into the version (semver: minor for new options or changed behaviour, patch for fixes and docs), run every suite, commit and push, then `gh release create vX.Y.Z --target main` as a separate step. Before tagging, check new messages, HEAD and existing tags; a hold on the release must be lifted explicitly.
 - Reply as soon as the release is out; send follow-ups (syncs, announcements) as notices.
 - Never move or delete a published tag. If something missed a release, ship a follow-up patch.
