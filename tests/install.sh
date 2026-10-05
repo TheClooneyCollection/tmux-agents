@@ -77,6 +77,7 @@ check 'collision keeps existing backup' contains "$file.bak.20261004010203" 'old
 rm "$file"
 # Direct calls must not print, must keep settings cache, and work without tmux.
 . "$here/bin/lib.sh"
+result=''
 resolve_codex_homes result >"$tmp/helper-output"
 check 'unavailable tmux yields empty mapping' test -z "$result"
 check 'helper has no stdout' test ! -s "$tmp/helper-output"
@@ -107,6 +108,7 @@ TMUX_AGENTS_CODEX_HOMES='' install
 check 'empty environment falls through to option' contains "$tmp/output" "Codex home: $tmp/option"
 # Two helper calls keep the original option snapshot in the same shell.
 _TMUX_SETTINGS_LOADED=0
+first='' second=''
 resolve_codex_homes first
 tmux -L "$sock" set -g @tmux_agents_codex_homes 'changed=/unused'
 resolve_codex_homes second

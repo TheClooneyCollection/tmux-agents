@@ -23,6 +23,8 @@ S="$(tmux -L "$sock" display -p '#{socket_path}')"
 case "$S" in ''|*/default) echo "ABORT: unsafe socket '$S'"; tmux -L "$sock" kill-server; exit 1 ;; esac
 export TMUX="$S,1,0"
 . "$here/tests/helpers/cleanup.sh"
+# Invoked by the EXIT trap.
+# shellcheck disable=SC2329
 cleanup() { cleanup_test_server || return; rm -rf "$state_dir"; }
 trap cleanup EXIT
 
@@ -73,16 +75,16 @@ expect "first request starts idle agent working" working
 reset
 ask %0 kid "do x"; turn_start "[request from boss to kid via tmux-ask] do x"
 ask %1 --reply boss "done"; turn_end
-expect "replies to its parent, then ends its turn" done
+expect "replies to its parent, then ends its turn" "done"
 
 reset
 ask %0 kid "do z"; turn_start "[request from boss to kid via tmux-ask] do z"
 ask %1 --reply boss "delivered abc123"
 "$B/tmux-agent-report" --pane %1 "abc123 delivered, all green" >/dev/null; turn_end
-expect "replies, then reports progress, then ends its turn" done
+expect "replies, then reports progress, then ends its turn" "done"
 
 turn_start "$(printf '[notice from boss to kid via tmux-ask]\nfyi')"; turn_end
-expect "done, then gets a notice" done
+expect "done, then gets a notice" "done"
 [ -z "$(st %0 @awaiting)" ] || { echo "FAIL  a notice made boss wait on kid"; fail=1; }
 
 reset
@@ -108,9 +110,9 @@ turn_start "[notice from boss to kid via tmux-ask] acknowledged"; turn_end
 expect "parent notice wait survives an incoming notice" working
 
 ask %1 --reply boss "done"; turn_end
-expect "reply after parent notice stays done" done
+expect "reply after parent notice stays done" "done"
 ask %1 --notice boss "one last FYI"; turn_end
-expect "done agent sends parent notice and stays done" done
+expect "done agent sends parent notice and stays done" "done"
 
 reset
 # The parent's display name can change; ownership is its pane ID.
@@ -142,9 +144,9 @@ expect "Codex names its session (title thread)" working
 [ "$(st %1 @codex_thread)" = main-thread ] || { echo "FAIL  the title thread replaced @codex_thread"; fail=1; }
 
 reset
-tmux set -p -t %1 @codex_thread main-thread; tmux set -p -t %1 @state done
+tmux set -p -t %1 @codex_thread main-thread; tmux set -p -t %1 @state "done"
 notify main-thread "done, standing by" "anything"
-expect "Codex, done, another turn end" done
+expect "Codex, done, another turn end" "done"
 
 echo "Real cases: needs you"
 
@@ -187,7 +189,7 @@ turn_start "[request from boss to kid via tmux-ask] new task"; turn_end
 expect "a new request ends the old wait; no reply" needs_you
 
 reset
-tmux set -p -t %1 @state done
+tmux set -p -t %1 @state "done"
 ask %0 kid "no reply needed, don't restart"
 turn_start "[request from boss to kid via tmux-ask] no reply needed"; turn_end
 expect "a request (not a notice) answered only locally" needs_you

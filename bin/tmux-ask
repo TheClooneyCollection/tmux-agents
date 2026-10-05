@@ -53,6 +53,8 @@ deliver() {
   local buf="tmux-ask-$$-${1#%}"
   printf '%s' "$2" | tmux load-buffer -b "$buf" - || return 1
   tmux paste-buffer -p -d -b "$buf" -t "$1" || return 1
+  # settings_get assigns this variable by name.
+  # shellcheck disable=SC2154
   sleep "$ask_enter_delay"
   tmux send-keys -t "$1" Enter
 }
@@ -133,6 +135,8 @@ refresh_waiting() {
     [ -f "$f" ] || continue
     stamp="$(basename "$f")"; stamp="${stamp%%-*}"
     case "$stamp" in ''|*[!0-9]*) continue ;; esac
+    # settings_get assigns this variable by name.
+    # shellcheck disable=SC2154
     if [ "$((now - stamp))" -ge "$ask_queue_secs" ]; then
       [ -n "$oldest" ] && [ "$oldest" -le "$stamp" ] || oldest="$stamp"
     fi
@@ -363,6 +367,8 @@ if [ "${1:-}" = --deliver ]; then
     else
       copy_idle=0
     fi
+    # settings_get assigns this variable by name.
+    # shellcheck disable=SC2154
     limit="$ask_copy_idle_secs"
     if [ "$limit" -gt 0 ] 2>/dev/null && [ "$copy_idle" -ge "$limit" ]; then
       tmux send-keys -t "$peer" -X cancel 2>/dev/null || true
@@ -458,6 +464,8 @@ fi
 
 # Safety net for long messages: keep the full text in a file and send the
 # head plus the path. Agents are asked to do this themselves with a summary.
+# settings_get assigns this variable by name.
+# shellcheck disable=SC2154
 max="$ask_max_lines"
 lines="$(printf '%s\n' "$msg" | wc -l | tr -d ' ')"
 if [ "$lines" -gt "$max" ]; then
@@ -502,7 +510,7 @@ if [ "$notice" -eq 1 ]; then
     tmux set-option -p -t "$self" @waiting_on "$(pane_name "$peer") (after a notice)"
   fi
 elif [ "$reply" -eq 1 ]; then
-  [ "$(tmux display-message -p -t "$self" '#{@parent}')" != "$peer" ] || tmux set-option -p -t "$self" @state done
+  [ "$(tmux display-message -p -t "$self" '#{@parent}')" != "$peer" ] || tmux set-option -p -t "$self" @state "done"
   remove_word "$peer" @awaiting "$from_id"
 else
   tmux set-option -p -t "$peer" @state working

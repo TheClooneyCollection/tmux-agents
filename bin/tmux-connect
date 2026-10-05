@@ -104,6 +104,8 @@ if [ "${1:-}" = "--highlight" ]; then
     tmux set-option -pu -t "$p" window-style 2>/dev/null || true
   done
   settings_get highlight TMUX_CONNECT_HIGHLIGHT @tmux_agents_connect_highlight bg=colour24
+  # settings_get assigns this variable by name.
+  # shellcheck disable=SC2154
   [ -n "${2:-}" ] && tmux set-option -p -t "$2" window-style "$highlight"
   exit 0
 fi
@@ -336,9 +338,9 @@ if [ -z "$target" ]; then
           --bind "ctrl-a:transform:'$0' --toggle \"\$FZF_PROMPT\" '$self'")" || exit 0
     target="$(printf '%s\n' "$choice" | sed -n 1p | awk '{ print $1 }')"
   else
-    if [ "$scope" = all ]; then scope="-a"; else scope="-t $self"; fi
+    if [ "$scope" = all ]; then scope_args=(-a); else scope_args=(-t "$self"); fi
     # Grouped sessions list a window once per session, so dedupe by pane id.
-    list="$(tmux list-panes $scope -F '#{pane_id}	#{?@agent,#{@agent},-}	#{pane_current_command}	#{b:pane_current_path}	#{session_name}:#{window_index}.#{pane_index}' \
+    list="$(tmux list-panes "${scope_args[@]}" -F '#{pane_id}	#{?@agent,#{@agent},-}	#{pane_current_command}	#{b:pane_current_path}	#{session_name}:#{window_index}.#{pane_index}' \
       | awk -F '\t' -v s="$self" '$1 != s && !seen[$1]++')"
     [ -n "$list" ] || die "no other panes in this window (try --all)"
     table="$( { printf 'ID\tNAME\tCOMMAND\tDIR\tWHERE\n'; printf '%s\n' "$list"; } | column -t -s "$(printf '\t')")"

@@ -59,7 +59,7 @@ check 'needs-you count unchanged' contains "$tmp/chip" '#[fg=black,bg=colour214,
 tmux set -pu -t "$unnamed" @msg_waiting_since
 tmux set -pu -t "$need" @state
 tmux set -pu -t "$perm" @perm_since
-tmux set -p -t "$receiver" @state done
+tmux set -p -t "$receiver" @state "done"
 chip
 check 'waiting focus overrides done and blinks after threshold' contains "$tmp/chip" '#[fg=black,bg=colour214,bold,blink] ✉ receiver: message waiting #[default]'
 check 'receiver counted once' contains "$tmp/chip" ' ✉ 1 '
@@ -91,7 +91,7 @@ check 'cleared receiver disappears from chip' absent "$tmp/chip" 'receiver'
 check 'cleared marker removes waiting counts' absent "$tmp/chip" '✉'
 # Ordinary agent states remain intact, including restored state after delivery.
 tmux set -p -t "$local_agent" @state idle
-tmux set -p -t "$need" @state done
+tmux set -p -t "$need" @state "done"
 tmux set -p -t "$perm" @activity running
 chip
 check 'ordinary idle count preserved' contains "$tmp/chip" '#[fg=colour244]○ 1'
@@ -111,7 +111,7 @@ check 'cleared local marker restores idle chip count' contains "$tmp/chip" '#[fg
 tmux set -w -t "$receiver" remain-on-exit on
 tmux set -p -t "$receiver" @msg_waiting_since "$((now-300))"
 tmux send-keys -t "$receiver" C-d
-for i in {1..50}; do [ "$(tmux display-message -p -t "$receiver" '#{pane_dead}')" != 1 ] || break; sleep 0.1; done
+for ((i=0; i<50; i++)); do [ "$(tmux display-message -p -t "$receiver" '#{pane_dead}')" != 1 ] || break; sleep 0.1; done
 list 'agents · all windows> '
 check 'dead receiver uses exited list status' contains "$tmp/list" '✗ exited'
 chip

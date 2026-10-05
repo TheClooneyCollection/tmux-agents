@@ -18,6 +18,8 @@ S="$(tmux -L "$sock" display-message -p '#{socket_path}')"
 case "$S" in ''|*/default) echo "ABORT: unsafe socket '$S'"; tmux -L "$sock" kill-server; exit 1 ;; esac
 export TMUX="$S,1,0"
 . "$here/tests/helpers/cleanup.sh"
+# Invoked by the EXIT trap.
+# shellcheck disable=SC2329
 cleanup() { cleanup_test_server || return; rm -rf "$tmp"; }
 trap cleanup EXIT
 tmux set -g default-shell /bin/sh
@@ -28,13 +30,19 @@ fail=0
 count=0
 check() { local label="$1"; shift; count=$((count + 1)); if "$@"; then echo "ok    $label"; else echo "FAIL  $label"; fail=1; fi; }
 pane_of() { tmux list-panes -a -F '#{pane_id} #{@agent}' | awk -v n="$1" '$2 == n {print $1}'; }
+# Invoked indirectly by test helpers or by commands under test.
+# shellcheck disable=SC2329
 alive() { tmux list-panes -a -F '#{pane_id}' | grep -qx -- "$1"; }
+# Invoked indirectly by test helpers or by commands under test.
+# shellcheck disable=SC2329
 gone() { ! alive "$1"; }
+# Invoked indirectly by test helpers or by commands under test.
+# shellcheck disable=SC2329
 reject() { if "$B/tmux-dismiss" "$@" >"$tmp/error" 2>&1; then return 1; else return 0; fi; }
 spawn() { TMUX_PANE=%0 "$B/tmux-spawn" claude --from main "$@" </dev/null >/dev/null; }
 ready() {
   local i
-  for i in {1..100}; do
+  for ((i=0; i<100; i++)); do
     # Requests/notices may scroll the startup marker off the visible screen.
     if tmux capture-pane -p -S - -t "$1" | grep -q "FAKE claude"; then
       return 0
@@ -53,7 +61,7 @@ tree() {
   secondary_id="$(tmux show -pqv -t "$secondary" @agent_id)"
   worker_id="$(tmux show -pqv -t "$worker" @agent_id)"
   child_id="$(tmux show -pqv -t "$child" @agent_id)"
-  ready "$secondary" && ready "$worker" && ready "$child" || { echo "ABORT: stubs not ready"; exit 1; }
+  if ! ready "$secondary" || ! ready "$worker" || ! ready "$child"; then echo "ABORT: stubs not ready"; exit 1; fi
 }
 records="$XDG_STATE_HOME/tmux-agents/$(basename "$S")/sessions"
 tree
@@ -103,7 +111,7 @@ check 'former ancestor cannot close unowned subtree' reject --from main worker
 check 'plain user dismissal closes subtree root' gone "$worker"
 check 'plain user dismissal closes subtree child' gone "$child"
 tree
-tmux set -p -t "$secondary" @state done
+tmux set -p -t "$secondary" @state "done"
 tmux set -p -t "$worker" @state waiting
 tmux set -p -t "$child" @state working
 "$B/tmux-dismiss" --from main --done >"$tmp/done"
@@ -112,9 +120,9 @@ check 'done preserves finished parent' alive "$secondary"
 check 'done preserves waiting child' alive "$worker"
 check 'done preserves working descendant' alive "$child"
 # Also verify accepted --done through a real test-server tty.
-tmux set -p -t "$worker" @state done
+tmux set -p -t "$worker" @state "done"
 tmux respawn-pane -k -t "$child" 'exit 0'
-for i in {1..50}; do
+for ((i=0; i<50; i++)); do
   [ "$(tmux display-message -p -t "$child" '#{pane_dead}')" != 1 ] || break
   sleep 0.05
 done
@@ -122,12 +130,12 @@ check 'exited process is retained as a dead pane' test "$(tmux display-message -
 # Run in a dedicated pane so /dev/tty confirmation never uses the caller tty.
 printf '#!/bin/sh\n"%s/tmux-dismiss" --from main --done >"%s/done-confirmed" 2>&1\necho $? >"%s/done-status"\nexec cat\n' "$B" "$tmp" "$tmp" >"$tmp/confirm"
 confirm="$(tmux new-window -d -P -F '#{pane_id}' "/bin/sh '$tmp/confirm'")"
-for i in {1..100}; do
+for ((i=0; i<100; i++)); do
   if [ -f "$tmp/done-confirmed" ] && grep -q '\[y/N\]' "$tmp/done-confirmed"; then break; fi
   sleep 0.05
 done
 tmux send-keys -t "$confirm" y Enter
-for i in {1..100}; do [ ! -f "$tmp/done-status" ] || break; sleep 0.05; done
+for ((i=0; i<100; i++)); do [ ! -f "$tmp/done-status" ] || break; sleep 0.05; done
 check 'confirmed done succeeds' test "$(cat "$tmp/done-status" 2>/dev/null)" = 0
 grep -o 'dismissed .*' "$tmp/done-confirmed" >"$tmp/actual"
 printf 'dismissed child (%s)\ndismissed worker (%s)\ndismissed secondary (%s)\n' "$child" "$worker" "$secondary" >"$tmp/expected"

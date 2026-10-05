@@ -29,7 +29,8 @@ link() {
   if [ -L "$2" ] || [ ! -e "$2" ] || [ "$force" -eq 1 ]; then
     run mkdir -p "$(dirname "$2")"
     if [ ! -L "$2" ] && [ -e "$2" ]; then
-      local backup="$2.bak.$(date +%Y%m%d%H%M%S)"
+      local backup
+      backup="$2.bak.$(date +%Y%m%d%H%M%S)"
       if [ -e "$backup" ] || [ -L "$backup" ]; then
         echo "refusing to overwrite backup: $backup" >&2
         return 1
@@ -61,6 +62,7 @@ link "$here/skills/tmux-agents-perf" "$HOME/.claude/skills/tmux-agents-perf"
 link "$here/skills/agent-chain" "$HOME/.claude/skills/agent-chain"
 
 # Always cover the standard home as well as an explicitly selected account.
+codex_map=''
 resolve_codex_homes codex_map
 codex_homes=("${CODEX_HOME:-$HOME/.codex}" "$HOME/.codex")
 for e in $codex_map; do codex_homes+=("${e#*=}"); done

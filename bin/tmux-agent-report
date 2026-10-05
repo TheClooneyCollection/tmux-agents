@@ -136,7 +136,7 @@ if [ -n "$notify_json" ]; then
     # A late notification from a closed conversation must not bind to a
     # new agent that has reused its label. Records also survive renames.
     for rec in "$(sessions_dir)"/*; do
-      [ -f "$rec" ] && valid_agent_id "${rec##*/}" || continue
+      if [ ! -f "$rec" ] || ! valid_agent_id "${rec##*/}"; then continue; fi
       [ "$(record_get "${rec##*/}" id)" = "$thread" ] || continue
       pane="$(find_pane_by_id "${rec##*/}")"
       [ -n "$pane" ] || exit 0
@@ -209,7 +209,7 @@ fi
 tmux set-option -p -t "$pane" @activity "$text"
 # A report after replying ("delivered abc123") is a summary, not new work:
 # a done agent stays done. Only a new request (tmux-ask) makes it working.
-[ "$(tmux show-options -pqv -t "$pane" @state)" = done ] || tmux set-option -p -t "$pane" @state working
+[ "$(tmux show-options -pqv -t "$pane" @state)" = "done" ] || tmux set-option -p -t "$pane" @state working
 tmux set-option -pu -t "$pane" @perm_since 2>/dev/null || true
 tmux set-option -pu -t "$pane" @attention_since 2>/dev/null || true
 echo "reported: $text"

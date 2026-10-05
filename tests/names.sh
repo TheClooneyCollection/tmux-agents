@@ -32,6 +32,8 @@ S="$(tmux -L "$sock" display -p '#{socket_path}')"
 case "$S" in ''|*/default) echo "ABORT: unsafe socket '$S'"; tmux -L "$sock" kill-server; exit 1 ;; esac
 export TMUX="$S,1,0"
 . "$here/tests/helpers/cleanup.sh"
+# Invoked by the EXIT trap.
+# shellcheck disable=SC2329
 cleanup() { cleanup_test_server || return; rm -rf "$state_dir"; }
 trap cleanup EXIT
 tmux set-option -g default-shell /bin/sh
@@ -51,6 +53,8 @@ check() {  # name, then the command; passes if the command's success matches $2
   if "$@" >/dev/null 2>&1; then got=ok; else got=fails; fi
   if [ "$got" = "$want" ]; then echo "ok    $name ($got)"; else echo "FAIL  $name: $got, wanted $want"; fail=1; fi
 }
+# Invoked indirectly by test helpers or by commands under test.
+# shellcheck disable=SC2329
 wait_for() {
   local i=0
   while [ "$i" -lt 100 ]; do
@@ -60,6 +64,8 @@ wait_for() {
   done
   return 1
 }
+# Invoked indirectly by test helpers or by commands under test.
+# shellcheck disable=SC2329
 ready() { tmux capture-pane -p -t "$1" | grep -q 'NAMES STUB READY'; }
 check "first stub is ready" ok wait_for ready %0
 check "second stub is ready" ok wait_for ready %1
@@ -136,6 +142,8 @@ check "old name cannot connect" fails env TMUX_PANE=%1 "$B/tmux-connect" --from 
 # The renamed sender must clear the new awaiting token when replying.
 tmux send-keys -t %1 -X cancel
 check "new name can reply" ok env TMUX_PANE=%0 "$B/tmux-ask" --from renamed --reply claude-blog.example.io-1 connect-rename-reply
+# Invoked indirectly by test helpers or by commands under test.
+# shellcheck disable=SC2329
 reply_received() { tmux capture-pane -p -J -t %1 -S -200 | grep -q 'connect-rename-reply'; }
 check "reply reaches the connected peer" ok wait_for reply_received
 check "reply clears renamed awaiting token" ok test "$(tmux show -pqv -t %1 @awaiting)" = 'before after'

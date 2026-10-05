@@ -7,6 +7,8 @@ sock="tmux-agents-resume-test-$$"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/tmux-agents-resume.XXXXXX")"
 queue="/tmp/tmux-agents-$(id -u)/queue/$sock"
 . "$here/tests/helpers/cleanup.sh"
+# Invoked by the EXIT trap.
+# shellcheck disable=SC2329
 cleanup() {
   cleanup_test_server || return
   rm -rf "$tmp"
@@ -42,6 +44,8 @@ check() {
   count=$((count + 1))
   if "$@"; then echo "ok    $label"; else echo "FAIL  $label"; fail=1; fi
 }
+# Invoked indirectly by test helpers or by commands under test.
+# shellcheck disable=SC2329
 wait_for() {
   local i=0
   while [ "$i" -lt 100 ]; do
@@ -54,9 +58,15 @@ wait_for() {
 pane_of() { tmux list-panes -a -F '#{pane_id} #{@agent}' | awk -v n="$1" '$2 == n {print $1}'; }
 info() { tmux display-message -p -t "$1" "#{$2}"; }
 spawn() { "$B/tmux-spawn" "$@" --from main </dev/null; }
+# Invoked indirectly by test helpers or by commands under test.
+# shellcheck disable=SC2329
 ready() { tmux capture-pane -p -S -100 -t "$1" | grep -q 'STUB READY'; }
 file_count() { find "$queue" -name "$1" -type f | wc -l | tr -d ' '; }
+# Invoked indirectly by test helpers or by commands under test.
+# shellcheck disable=SC2329
 bounced() { [ "$(file_count '*.undelivered')" -eq 3 ]; }
+# Invoked indirectly by test helpers or by commands under test.
+# shellcheck disable=SC2329
 original_metadata_intact() {
   local f
   for f in "$tmp"/original/*.meta; do
@@ -74,7 +84,11 @@ receiver_file_count() {
   done
   printf '%s\n' "$n"
 }
+# Invoked indirectly by test helpers or by commands under test.
+# shellcheck disable=SC2329
 notices_queued() { [ "$(find "$queue" -name '*-0.msg' -type f | wc -l | tr -d ' ')" = 3 ]; }
+# Invoked indirectly by test helpers or by commands under test.
+# shellcheck disable=SC2329
 received() { cmp -s "$tmp/expected" "$RESUME_MESSAGES_LOG"; }
 spawn claude --exact --name receiver >"$tmp/spawn"
 old="$(pane_of receiver)"
@@ -140,7 +154,7 @@ check 'explicit retry does not duplicate delivered messages' received
 "$B/tmux-dismiss" --from main receiver-2 >"$tmp/dismiss-again"
 spawn --resume receiver-2 >"$tmp/resume-again"
 new="$(pane_of receiver-2)"
-check 'resume without pending messages stays done' test "$(info "$new" @state)" = done
+check 'resume without pending messages stays done' test "$(info "$new" @state)" = "done"
 check 'second resume does not replay delivered messages' received
 printf '%s checks; failures=%s\n' "$count" "$fail"
 exit "$fail"

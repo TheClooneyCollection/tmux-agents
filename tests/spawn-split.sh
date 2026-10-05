@@ -7,6 +7,8 @@ sock="tmux-agents-test-$$"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/tmux-agents-test.XXXXXX")"
 mkdir -p "$tmp/bin"
 for a in claude codex; do
+  # Expanded by the child shell, Perl, or generated script, not this shell.
+  # shellcheck disable=SC2016
   printf '#!/bin/sh\necho "FAKE %s $*"\necho "DEPTH=$TMUX_AGENTS_DEPTH HOMES=$TMUX_AGENTS_CODEX_HOMES"\nexec cat\n' "$a" > "$tmp/bin/$a"
   chmod +x "$tmp/bin/$a"
 done
@@ -20,16 +22,22 @@ S="$(tmux -L "$sock" display -p '#{socket_path}')"
 case "$S" in ''|*/default) echo "ABORT: unsafe socket '$S'"; tmux -L "$sock" kill-server; exit 1 ;; esac
 export TMUX="$S,1,0"
 . "$here/tests/helpers/cleanup.sh"
+# Invoked by the EXIT trap.
+# shellcheck disable=SC2329
 cleanup() { cleanup_test_server || return; rm -rf "$tmp"; }
 trap cleanup EXIT
 # Personal fish/zsh startup files must not override the test environment.
 tmux set -g default-shell /bin/sh
 fail=0
 check() { local label="$1"; shift; if "$@"; then echo "ok    $label"; else echo "FAIL  $label"; fail=1; fi; }
+# Invoked indirectly by test helpers or by commands under test.
+# shellcheck disable=SC2329
 near() { [ "$1" -ge "$(($2 - 2))" ] && [ "$1" -le "$(($2 + 2))" ]; }
 info() { tmux display-message -p -t "$1" "#{$2}"; }
 pane_of() { tmux list-panes -a -F '#{pane_id} #{@agent}' | awk -v n="$1" '$2 == n { print $1 }'; }
 spawn() { TMUX_PANE=%0 "$B/tmux-spawn" "$@" </dev/null; }
+# Invoked indirectly by test helpers or by commands under test.
+# shellcheck disable=SC2329
 reject() { if spawn "$@" >"$tmp/error" 2>&1; then return 1; else return 0; fi; }
 peers() { TMUX_PANE="$1" "$B/tmux-peers" --from "$2"; }
 tmux set -p -t %0 @agent main
@@ -68,7 +76,7 @@ record="$XDG_STATE_HOME/tmux-agents/$(basename "$S")/sessions/$(info "$worker" @
 check 'record keeps caller depth 1' grep -qx 'depth=1' "$record"
 check 'record keeps secondary as owner' grep -qx "parent=$(info "$secondary" @agent_id)" "$record"
 # Wait for the stub's startup output without depending on a fixed startup delay.
-for i in {1..50}; do
+for ((i=0; i<50; i++)); do
   tmux capture-pane -p -J -t "$worker" -S -100 >"$tmp/screen"
   if grep -q 'DEPTH=1 HOMES=' "$tmp/screen"; then break; fi
   sleep 0.1
@@ -90,7 +98,9 @@ check 'ask and peek work for the split' grep -q split-message-test "$tmp/peek"
 # Exercise Enter's real branch with a fake picker and record client operations.
 # Every other tmux command still talks to the verified isolated server.
 mkdir "$tmp/ui"
-export SPLIT_PICK="$worker" SPLIT_UI_LOG="$tmp/ui.log" SPLIT_REAL_TMUX="$(command -v tmux)"
+export SPLIT_PICK="$worker" SPLIT_UI_LOG="$tmp/ui.log"
+SPLIT_REAL_TMUX="$(command -v tmux)"
+export SPLIT_REAL_TMUX
 cat >"$tmp/ui/fzf" <<'STUB'
 #!/bin/sh
 cat >/dev/null
