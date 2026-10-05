@@ -484,7 +484,22 @@ defaults="$(tmux display-message -p '#{?client_name,#{client_name},-}	#{?@tmux_a
 IFS=$'\t' read -r default_client default_mode prefix <<<"$defaults"
 [ "$default_client" != - ] || default_client=""
 [ -n "$client" ] || client="$default_client"
-command -v fzf >/dev/null 2>&1 || die "fzf is required"
+if ! command -v fzf >/dev/null 2>&1; then
+  printf '%s\n' 'tmux-agents: fzf is required for the agent list (prefix + a).' \
+    'Install it with: brew install fzf  (macOS)' \
+    '             or: apt install fzf   (Debian/Ubuntu)' \
+    'Other tmux-agents commands still work without fzf.' >&2
+  # Only an interactive invocation waits. A controlling terminal alone is not
+  # enough: redirected/piped stdin must still fail promptly in automation.
+  if [ -t 0 ] && [ -t 2 ]; then
+    printf '\nPress any key to close.\n' >&2
+    if { exec 3</dev/tty; } 2>/dev/null; then
+      IFS= read -r -s -n 1 <&3 || true
+      exec 3<&-
+    fi
+  fi
+  exit 1
+fi
 
 self="$here/tmux-agents"
 # Scope starts local on every fresh open; popup return passes both dimensions.

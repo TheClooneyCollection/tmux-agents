@@ -22,6 +22,13 @@ for a in "$@"; do
   esac
 done
 
+if ! command -v fzf >/dev/null 2>&1; then
+  printf '%s\n' 'Note: fzf is required for the agent list (prefix + a).' \
+    'Install it with: brew install fzf  (macOS)' \
+    '             or: apt install fzf   (Debian/Ubuntu)' \
+    'Installation continues; other tmux-agents commands work without fzf.' >&2
+fi
+
 run() { if [ "$dry" -eq 1 ]; then echo "would: $*"; else "$@"; fi; }
 
 # Link $1 at $2, replacing an older link but never a real file unless --force.
