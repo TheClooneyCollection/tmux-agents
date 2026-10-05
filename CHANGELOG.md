@@ -7,6 +7,7 @@
 - **Agent chain skill.** Say "start the chain" for a main agent you talk to, a secondary that coordinates and merges, and a worker that implements, side by side in your window. `install.sh` links the new `agent-chain` skill.
 - **Safer installation updates.** Extra Codex accounts follow the runtime setting precedence and covered homes are printed. Forced links back up real files and directories first; enabling the chip layout warns about dangling skill links.
 - **Continuous integration.** macOS and Ubuntu run the offline suites, installation and upgrade checks, and a pinned skills CLI integration. Static checks cover shell scripts and matching documentation; list process budgets remain enforced on hosted runners.
+- **Aligned picker rows.** Searching no longer scrolls rows horizontally or matches status, parent and activity text. Only agent names and projects are searched.
 - **Docs:** examples use a generic Codex profile name (`codex-work`, from `@tmux_agents_codex_homes`) instead of the maintainer's own.
 - **Docs:** AGENTS.md's release routine ends with updating your installed copy as your local setup describes; the maintainer's dotfiles no longer vendor this repo as a subtree.
 
