@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Long-lived members.** `tmux-spawn --member` keeps chain agents out of the default sub-agent list, ordinary chip counts and bulk cleanup, while preserving attention, ownership, subtree dismissal and resume. Members take their owner's depth; the agent-chain skill uses members for the secondary and worker.
+
 ## v1.10.0 (2026-10-05)
 
 - **Re-run `./install.sh` after updating:** run it from the actual installed checkout to repair links that still point to the removed `skills/claude/` and `skills/codex/` folders. The skill now lives at `skills/tmux-agents/`. For a tag-pinned install, check out the chosen new tag in that installed checkout first.

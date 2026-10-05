@@ -152,11 +152,13 @@ set -g @tmux_agents_name_format exact
 | `prefix + A` | 把当前 pane 连接到另一个 pane（`ctrl-a`：任意窗口） |
 | `prefix + d` | 在 popup 里：返回列表。在列表里：关闭列表 |
 
-列表默认显示当前窗口及其下属 agent，所有窗口中需要你处理的子 agent 都置顶。
+列表默认显示当前窗口及其下属 agent，所有窗口中需要你处理的子 agent 和成员都置顶。
 
 列表里：`enter` 打开 · `ctrl-o` 跳过去 · `ctrl-x` 关闭 agent · `ctrl-d` 关闭所有已完成的 · `ctrl-a` 切换所有 pane / 子 agent · `ctrl-t` 当前窗口 / 所有窗口
 
-关掉的子 agent 会在列表底部的 `closed` 区保留 7 天：按 `enter` 就能带着完整对话重新打开。也可以让它的父 agent 帮你重开。
+长期团队成员使用 `tmux-spawn --member` 创建，不进入默认子 agent 列表和普通状态计数，也不会被 `ctrl-d` / `--done` 清理。`ctrl-a` 会以 `member of <owner>` 标明归属；需要你处理时仍会置顶。显式关闭仍会关闭整个子树，重开也会保留成员身份。
+
+关掉的子 agent 和成员会在列表底部的 `closed` 区保留 7 天：按 `enter` 就能带着完整对话重新打开。也可以让它的父 agent 帮你重开。
 
 状态：`⠹` 工作中 · `○` 空闲（还没有任务）· `✓` 已完成 · `⚠` 等待权限（红）· `◆` 需要你（黄）· `✉` 有消息在等你停止打字或滚动 · `✗` 已退出
 
@@ -169,7 +171,7 @@ set -g @tmux_agents_name_format exact
 | `tmux-connect` | 给当前 pane 命名并连接到另一个 pane |
 | `tmux-rename` | 修改 agent 标签，保留身份、历史和连接 |
 | `tmux-ask` | 给已连接的 agent 发消息 |
-| `tmux-spawn` | 在隐藏窗口或 `--split` 指定的可见分屏中启动子 agent |
+| `tmux-spawn` | 在隐藏窗口或 `--split` 分屏中启动子 agent，或用 `--member` 创建长期成员 |
 | `tmux-agents` | agent 列表（`prefix + a`） |
 | `tmux-peers`、`tmux-peek` | 查看连接关系；读取另一个 pane 的内容 |
 | `tmux-dismiss`、`tmux-disconnect` | 关闭子 agent；断开 pane 之间的连接 |
