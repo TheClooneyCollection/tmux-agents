@@ -26,11 +26,12 @@ Codex approvals_reviewer=auto_review).
                 an existing prefix is kept; clashes add -2, -3...
                 profiles use codex as <agent>, home uses ~ as <dir>
                 (without --name: <agent>-<dir>-<N>)
+  --member      start a long-lived member at its owner's depth; --done keeps it
   --exact       use --name verbatim, without its agent/directory prefix
   --for OWNER   spawn it for OWNER, an agent you're connected to: it becomes
                 OWNER's sub agent, connected to OWNER only, and starts without
                 a task. OWNER is told, with your brief, and sends the first
-                task itself. Depth still counts from you.
+                task itself. Helper depth counts from you; member depth from OWNER.
   --split PANE  open in a visible split of an agent name or pane id
   --right       split left/right (default); the new pane is on the right
   --below       split top/bottom; the new pane is below
@@ -136,7 +137,7 @@ if [ "${1:-}" = "--run" ]; then
 fi
 
 agent="" name="" task="" FROM_PANE="" resume="" resume_id="" list_closed=0 parent_name="" for_name=""
-exact=0 name_given=0
+exact=0 name_given=0 member=0
 split_target="" split_pane="" split_direction="" split_size="50%" split_options=0
 case "${1:-}" in
   claude|codex) agent="$1"; shift ;;
@@ -150,6 +151,7 @@ while [ $# -gt 0 ]; do
       [ -n "${2:-}" ] || die "--name needs a name"
       name="$2"; name_given=1; shift 2 ;;
     --exact) exact=1; shift ;;
+    --member) member=1; shift ;;
     --from) FROM_PANE="${2:-}"; shift 2 ;;
     --resume) [ -n "${2:-}" ] || die "--resume needs a name"; resume="$2"; shift 2 ;;
     --resume-id) [ -n "${2:-}" ] || die "--resume-id needs an id"; resume_id="$2"; shift 2 ;;
@@ -170,6 +172,7 @@ while [ $# -gt 0 ]; do
     *) task="$*"; break ;;
   esac
 done
+[ -z "$resume$resume_id" ] || [ "$member" -eq 0 ] || die "--resume restores membership from its record; --member is only for new agents"
 [ -z "$resume" ] || [ -z "$resume_id" ] || die "choose --resume or --resume-id"
 [ -z "$resume$resume_id" ] || { [ "$name_given" -eq 0 ] && [ "$exact" -eq 0 ]; } || die "--resume keeps its recorded name; --name and --exact are only for new sub agents"
 [ "$exact" -eq 0 ] || [ "$name_given" -eq 1 ] || die "--exact requires --name"
@@ -187,6 +190,8 @@ ensure_agent_ids
 adopt() {
   tmux set-option -p -t "$1" remain-on-exit on
   [ "${4:-hidden}" = split ] || tmux set-option -w -t "$1" automatic-rename off
+  # Set a local value even for helpers: never inherit a window/server marker.
+  tmux set-option -p -t "$1" @member "$member"
   set_name "$1" "$3"
   if [ -n "$2" ]; then
     tmux set-option -p -t "$1" @parent "$2"
@@ -264,6 +269,8 @@ if [ -n "$resume$resume_id" ]; then
   fi
   valid_agent_id "$resume_id" || die "invalid agent id '$resume_id'"
   closed_record "$resume_id" || die "'$resume_id' has no closed record or is still open"
+  member=0
+  [ "$(record_get "$resume_id" member)" != 1 ] || member=1
   resume="$(record_get "$resume_id" name)"
   kind="$(record_get "$resume_id" kind)" sid="$(record_get "$resume_id" id)"
   dir="$(record_get "$resume_id" dir)" rdepth="$(record_get "$resume_id" depth)"
@@ -312,7 +319,7 @@ if [ -n "$split_target" ]; then
 fi
 
 depth="${TMUX_AGENTS_DEPTH:-0}"
-[ "$depth" -lt "$MAX_DEPTH" ] || die "spawn depth limit ($MAX_DEPTH) reached; do this task yourself"
+[ "$member" -eq 1 ] || [ "$depth" -lt "$MAX_DEPTH" ] || die "spawn depth limit ($MAX_DEPTH) reached; do this task yourself"
 
 # Default to the caller's own kind of agent. Codex's commands run in a
 # shared daemon without its CODEX_HOME, so Codex started through tmux-spawn
@@ -350,6 +357,14 @@ if [ -n "$for_name" ]; then
   brief="$task" task=""
 fi
 
+# Ordinary helpers retain caller-based depth, including --for. Members use
+# the actual owner's recorded depth; a main pane has no record and is depth 0.
+spawn_depth="$((depth + 1))"
+if [ "$member" -eq 1 ]; then
+  owner_depth="$(record_get "$(ensure_agent_id "$owner")" depth)"
+  spawn_depth="${owner_depth:-0}"
+fi
+
 cwd="$(tmux display-message -p -t "$self" '#{pane_current_path}')"
 if [ -n "$name" ]; then
   kind=codex
@@ -384,15 +399,16 @@ record_set "$agent_id" id "$sid"
 record_set "$agent_id" dir "$cwd"
 record_set "$agent_id" parent "$(ensure_agent_id "$owner")"
 record_set "$agent_id" parent_name "$owner_name"
-record_set "$agent_id" depth "$((depth + 1))"
+record_set "$agent_id" depth "$spawn_depth"
+[ "$member" -eq 0 ] || record_set "$agent_id" member 1
 
 if [ -n "$split_pane" ]; then
-  pane="$(open_split "$split_pane" "$cwd" "'$here/tmux-spawn' --run '$agent' '$file' '$sid'" "$((depth + 1))")"
+  pane="$(open_split "$split_pane" "$cwd" "'$here/tmux-spawn' --run '$agent' '$file' '$sid'" "$spawn_depth")"
   ensure_agent_id "$pane" "$agent_id" >/dev/null
   adopt "$pane" "$owner" "$name" split
   location="in a visible split of $split_pane"
 else
-  pane="$(open_window "$session" "$cwd" "$name" "'$here/tmux-spawn' --run '$agent' '$file' '$sid'" "$((depth + 1))")"
+  pane="$(open_window "$session" "$cwd" "$name" "'$here/tmux-spawn' --run '$agent' '$file' '$sid'" "$spawn_depth")"
   ensure_agent_id "$pane" "$agent_id" >/dev/null
   adopt "$pane" "$owner" "$name"
   location="hidden in session \"$session\""
@@ -404,7 +420,9 @@ fi
 
 if [ -n "$for_name" ]; then
   tmux set-option -p -t "$pane" @activity "waiting for its first task from $owner_name"
-  msg="I spawned $name ($agent) for you: it is your sub agent now, connected to you (not to me), and it has no task yet. Introduce yourself to it (who you are, your role, how you'll work together), then send it its first task: tmux-ask --from $owner_name $name. It replies to you; close it with tmux-dismiss --from $owner_name $name when you're done with it."
+  role="sub agent"
+  [ "$member" -eq 0 ] || role="member"
+  msg="I spawned $name ($agent) for you: it is your $role now, connected to you (not to me), and it has no task yet. Introduce yourself to it (who you are, your role, how you'll work together), then send it its first task: tmux-ask --from $owner_name $name. It replies to you; close it with tmux-dismiss --from $owner_name $name when you're done with it."
   [ -z "$brief" ] || msg="$msg
 
 My brief for it:

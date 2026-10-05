@@ -51,13 +51,24 @@ if [ "$done_only" -eq 1 ]; then
   candidates="$(tmux list-panes -a -F '#{pane_id} #{@parent}' | awk 'NF == 2 && !seen[$1]++ {print $1}')"
   selected=" "
   for pane in $candidates; do
-    pane_finished "$pane" || continue
     [ -z "$closer" ] || pane_is_descendant "$pane" "$closer" || continue
+    if [ "$(tmux show-option -pqv -t "$pane" @member)" = 1 ]; then
+      echo "skipped $(pane_name "$pane") ($pane): member"
+      continue
+    fi
+    pane_finished "$pane" || continue
     subtree="$(pane_subtree "$pane")" || continue
-    blocked=""
+    blocked="" members=""
     for child in $subtree; do
+      if [ "$(tmux show-option -pqv -t "$child" @member)" = 1 ]; then
+        members="${members:+$members, }$(pane_name "$child") ($child)"
+      fi
       if ! pane_finished "$child"; then blocked="${blocked:+$blocked, }$(pane_name "$child") ($child)"; fi
     done
+    if [ -n "$members" ]; then
+      echo "skipped $(pane_name "$pane") ($pane): subtree contains members: $members"
+      continue
+    fi
     if [ -n "$blocked" ]; then
       echo "skipped $(pane_name "$pane") ($pane): subtree has unfinished agents: $blocked"
       continue
