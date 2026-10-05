@@ -506,9 +506,15 @@ out="$(fzf </dev/null --read0 --ansi --reverse --no-sort --no-hscroll --header-l
   ${selection[@]+"${selection[@]}"} \
   ${prefix_keys[@]+"${prefix_keys[@]}"} \
   --with-shell 'bash -c' \
-  --listen --bind "start:reload('$self' --initial-list)" \
-  --bind "focus:execute-silent('$self' --preview-loop >/dev/null 2>&1 &)+unbind(focus)" \
-  --footer=$'enter open · ^o jump (prefix+L back) · ^x dismiss\n^d clean done · ^a all/sub · ^t this/all windows · ^r refresh · prefix+d close' --footer-border=rounded \
+  --listen --bind "start:reload('$self' --initial-list)+execute-silent('$self' --preview-loop >/dev/null 2>&1 &)" \
+  --bind 'focus:change-preview-window(right,55%,follow,~7)' \
+  --bind 'shift-up:change-preview-window(right,55%,nofollow,~7)+preview-up,shift-down:change-preview-window(right,55%,nofollow,~7)+preview-down' \
+  --bind 'page-up:change-preview-window(right,55%,nofollow,~7)+preview-page-up,page-down:change-preview-window(right,55%,nofollow,~7)+preview-page-down' \
+  --bind 'alt-up:change-preview-window(right,55%,nofollow,~7)+preview-half-page-up,alt-down:change-preview-window(right,55%,nofollow,~7)+preview-half-page-down' \
+  --bind 'preview-scroll-up:change-preview-window(right,55%,nofollow,~7)+preview-up,preview-scroll-down:change-preview-window(right,55%,nofollow,~7)+preview-down' \
+  --bind 'shift-scroll-up:change-preview-window(right,55%,nofollow,~7)+preview-up,shift-scroll-down:change-preview-window(right,55%,nofollow,~7)+preview-down' \
+  --bind 'ctrl-f:change-preview-window(right,55%,follow,~7)+preview-bottom' \
+  --footer=$'enter open · ^o jump (prefix+L back) · ^x dismiss\n^d clean done · ^a all/sub · ^t this/all windows · ^r refresh · prefix+d close\npreview: wheel/shift-arrows/page keys scroll · ^f follow' --footer-border=rounded \
   --preview "case {1} in closed:*) '$self' --closed-info {1} ;; *) '$self' --preview-info {1} ;; esac" --preview-window='right,55%,follow,~7' \
   --bind "ctrl-x:execute-silent('$self' --dismiss {1})+reload('$self' --list)" \
   --bind "ctrl-r:reload('$self' --list)" \
