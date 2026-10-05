@@ -327,6 +327,7 @@ case "${1:-}" in
   -h|--help) usage; exit 0 ;;
   # fzf reloads call this; the prompt says which view is showing.
   --chip) require_tmux; chip; exit 0 ;;
+  --sweep-closed) require_tmux; agent_sweep_closed; exit 0 ;;
   --chip-layout) require_tmux; chip_layout "${2:-on}"; exit 0 ;;
   --chip-daemon) require_tmux; chip_daemon; exit 0 ;;
   # Run every status-interval from the chip line: restart a dead daemon.

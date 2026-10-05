@@ -710,7 +710,7 @@ _agent_work() {
       return $v{state} || "working";
     }
     my $old = effective();
-    exit 0 if $op eq "spawn" && number($v{started});
+    $op = "checkpoint" if $op eq "spawn" && number($v{started});
     # Never infer an interval from a legacy working state without turn_start.
     if ($op eq "restore") {
       die "invalid agent id" unless $value =~ /^a[0-9a-f]{12}$/;
@@ -749,6 +749,7 @@ _agent_work() {
         $v{$key} = $op eq "perm" && length($value) && $v{$key} ? $v{$key} : $value;
       }
       elsif ($op eq "save") { $v{work_closed} = 1 }
+      elsif ($op eq "checkpoint") { }
       else { die "unknown accounting operation" }
       my $new = effective();
       if (number($v{turn_start}) && $new ne "working") {
@@ -782,8 +783,14 @@ _agent_work() {
       push @cmd, $v{$key} if length($v{$key} // "");
     }
     system("tmux", @cmd) == 0 or die "accounting update failed" if @cmd;
-    if ($op eq "save") {
-      my $id = $v{agent_id};
+    # Persist timing transitions in this same process. Repeated reports do not
+    # rewrite unchanged counters; initial/restore checkpoints also bind pane ID.
+    my $persist = $op =~ /^(save|spawn|checkpoint|restore)$/;
+    for (qw(state_since worked last_turn turns turn_start)) {
+      $persist = 1 if ($v{$_} // "") ne ($before{$_} // "");
+    }
+    if ($persist) {
+      my $id = $v{agent_id} || ($op eq "restore" ? $value : "");
       exit 0 unless defined($id) && $id =~ /^a[0-9a-f]{12}$/;
       open(my $rl, ">>", "$dir/.record-$id.lock") or die "$!";
       flock($rl, LOCK_EX) or die "$!";
@@ -801,7 +808,9 @@ _agent_work() {
       for (qw(state_since worked last_turn turns turn_start started)) {
         if (number($v{$_})) { $r{$_} = $v{$_} } else { delete $r{$_} }
       }
-      $r{closed} = $now unless $r{closed};
+      $r{pane} = $pane;
+      if ($op eq "save") { $r{closed} = $now unless $r{closed} }
+      else { delete $r{closed} }
       my $tmp = "$dir/.rec-$$";
       open(my $out, ">", $tmp) or die "$!";
       print $out "$_=$r{$_}\n" for sort keys %r;
@@ -987,4 +996,55 @@ resolve_codex_homes() {
     esac
   fi
   printf -v "$1" '%s' "$_codex_homes_value"
+}
+
+# Hooks after removal cannot read the removed panes. Close their records using
+# one snapshot, retaining checkpointed work without guessing the lost interval.
+agent_sweep_closed() {
+  local d
+  d="$(sessions_dir)"
+  [ -d "$d" ] || return 0
+  perl -MFcntl=:flock -e '
+    use strict; use warnings;
+    my ($dir) = @ARGV;
+    sub read_record {
+      my ($file) = @_; my %r;
+      if (open(my $in, "<", $file)) {
+        while (<$in>) { chomp; my ($k,$v) = split /=/, $_, 2; $r{$k}=$v if defined $v }
+        close $in;
+      }
+      return %r;
+    }
+    # Read candidates before snapshotting panes. After locking, verify the
+    # binding is unchanged, so a concurrent resume is never closed by an old
+    # snapshot that preceded creation of its new pane.
+    opendir(my $dh, $dir) or die "$!";
+    my %candidate;
+    for my $id (readdir $dh) {
+      next unless $id =~ /^a[0-9a-f]{12}$/;
+      my %r=read_record("$dir/$id");
+      next if $r{closed} || ($r{pane} // "") !~ /^%[0-9]+$/;
+      $candidate{$id}=$r{pane};
+    }
+    closedir $dh;
+    exit 0 unless %candidate;
+    open(my $panes, "-|", "tmux", "list-panes", "-a", "-F", "#{pane_id}") or die "$!";
+    my %live; while (<$panes>) { chomp; $live{$_}=1 }
+    close($panes) or exit 0; # A failed query is not evidence of disappearance.
+    my $now=time;
+    for my $id (sort keys %candidate) {
+      next if $live{$candidate{$id}};
+      open(my $lock, ">>", "$dir/.record-$id.lock") or die "$!";
+      flock($lock, LOCK_EX) or die "$!";
+      my %r=read_record("$dir/$id");
+      next if $r{closed} || ($r{pane} // "") ne $candidate{$id};
+      $r{closed}=$now;
+      delete $r{turn_start};
+      my $tmp="$dir/.rec-$$";
+      open(my $out, ">", $tmp) or die "$!";
+      print $out "$_=$r{$_}\n" for sort keys %r;
+      close($out) or die "$!";
+      rename($tmp,"$dir/$id") or die "$!";
+    }
+  ' "$d"
 }
