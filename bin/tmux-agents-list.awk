@@ -65,10 +65,10 @@ END {
     if (target=="") target=window[ENVIRON["TMUX_PANE"]]
     scope=ENVIRON["LIST_SCOPE"]; mode=ENVIRON["LIST_MODE"]
     namewidth=4; statuswidth=6
-    for (p in name) if (window[p]==target && target!="") member[p]=1
+    for (p in name) if (window[p]==target && target!="") inwindow[p]=1
     do {
         changed=0
-        for (p in name) if (!member[p] && member[parent[p]]) { member[p]=1; changed=1 }
+        for (p in name) if (!inwindow[p] && inwindow[parent[p]]) { inwindow[p]=1; changed=1 }
     } while (changed)
     for (i=1;i<=np;i++) {
         p=order[i]
@@ -92,7 +92,7 @@ END {
             section="needs you"
         } else {
             if (mode!="all" && ismember[p]) continue
-            if (scope!="all" && !member[p]) continue
+            if (scope!="all" && !inwindow[p]) continue
         }
         ownername=(parent[p] in name) && name[parent[p]]!="-" ? name[parent[p]] : "-"
         if (ismember[p]) ownername="member of " ownername
