@@ -39,3 +39,7 @@ Isolated tmux hook checks established these limits:
 Previously, abrupt removal could lose all increments since the last close/save, including completed turns (the entire total for a never-saved new agent). Checkpoints now preserve completed turns and banked work before pauses. At most the current unsaved working interval is lost; an unfinished logical turn is not reported as a completed turn.
 
 Store `pane=` alongside counters. The three after-removal hooks run a batch sweep with one `list-panes` snapshot and no per-record tmux calls, marking records whose pane disappeared `closed=` without adding guessed work. Read candidate bindings before the snapshot and recheck them under each record lock so concurrent resumes with a new pane are not closed by a stale snapshot. This sweep is separate from list building. Legacy records without a pane binding are left alone.
+
+## Preview scrolling
+
+Keep the seven-line header fixed with fzf `~7`, including every `change-preview-window` action. Manual preview wheel, shifted arrows, page keys and half-page keys switch to `nofollow` before scrolling. A focus change resets `follow`. fzf 0.65 documents preview geometry variables and scroll key events, but no bottom-reached event; use explicit `ctrl-f` to return to the tail and resume follow, and show it in the footer and guide. The existing refresh loop starts once on `start`, leaving `focus` available for the native follow reset without launching another loop per agent. No filtering or scroll-monitor process is added.
