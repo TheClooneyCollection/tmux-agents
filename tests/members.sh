@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Member spawn, owner depth, resume and cleanup on an isolated tmux server.
+# Member spawn, caller restrictions and depth, resume and cleanup on an isolated tmux server.
 set -eu
 here="$(cd "$(dirname "$0")/.." && pwd)"
 B="$here/bin"
@@ -58,45 +58,58 @@ check 'default member is hidden' test "$(info "$secondary" session_name)" != wor
 check 'default member keeps owner' test "$(info "$secondary" @parent)" = %0
 check 'member marker is local' test "$(tmux show -pqv -t "$secondary" @member)" = 1
 check 'member recorded' grep -qx 'member=1' "$(record_for "$secondary")"
-check 'member depth is zero' grep -qx 'depth=0' "$(record_for "$secondary")"
-# --for uses the owner's depth even when the caller is at its depth limit.
-TMUX_AGENTS_DEPTH=2 spawn --member --for secondary --split main --below --exact --name worker
+check 'member depth is one' grep -qx 'depth=1' "$(record_for "$secondary")"
+# A top-level caller can give a member its own member; depth stays caller-based.
+spawn --member --for secondary --split main --below --exact --name worker
 worker="$(pane_of worker)"
 ready "$worker" || { echo 'ABORT: worker stub not ready'; exit 1; }
 check 'member supports split and for together' test "$(info "$worker" window_id)" = "$(info %0 window_id)"
 check 'for member owned by secondary' test "$(info "$worker" @parent)" = "$secondary"
 check 'for member only connected to owner' test "$(info "$worker" @peers)" = "$secondary"
-check 'for member takes owner depth, not caller depth' grep -qx 'depth=0' "$(record_for "$worker")"
+check 'for member takes caller depth plus one' grep -qx 'depth=1' "$(record_for "$worker")"
 # The positional argument is expanded by the child shell.
 # shellcheck disable=SC2016
-check 'member process receives zero depth' bash -c 'tmux capture-pane -p -S - -t "$1" | grep -q DEPTH=0' _ "$worker"
+check 'member process receives depth one' bash -c 'tmux capture-pane -p -S - -t "$1" | grep -q DEPTH=1' _ "$worker"
 # Helpers do not inherit membership, even when a window sets the option.
 tmux set -w -t "$worker" @member 1
-TMUX_AGENTS_DEPTH=0 "$B/tmux-spawn" claude --from worker --exact --name helper </dev/null >/dev/null
+TMUX_AGENTS_DEPTH=1 "$B/tmux-spawn" claude --from worker --split "$worker" --exact --name helper </dev/null >/dev/null
 helper="$(pane_of helper)"
-TMUX_AGENTS_DEPTH=1 "$B/tmux-spawn" claude --from helper --split "$worker" --exact --name grandhelper </dev/null >/dev/null
-grandhelper="$(pane_of grandhelper)"
-if ! ready "$helper" || ! ready "$grandhelper"; then echo 'ABORT: helper stubs not ready'; exit 1; fi
+ready "$helper" || { echo 'ABORT: helper stub not ready'; exit 1; }
 check 'helper is ordinary' test "$(info "$helper" @member)" = 0
-check 'split helper overrides inherited member marker' test "$(info "$grandhelper" @member)" = 0
+check 'split helper overrides inherited member marker' test "$(tmux show -pqv -t "$helper" @member)" = 0
 check 'helper record has no member marker' test "$(record_get "$(info "$helper" @agent_id)" member)" = ''
-check 'first helper depth is one' grep -qx 'depth=1' "$(record_for "$helper")"
-check 'second helper depth is two' grep -qx 'depth=2' "$(record_for "$grandhelper")"
-if TMUX_AGENTS_DEPTH=2 "$B/tmux-spawn" claude --from grandhelper --name too-deep </dev/null >"$tmp/error" 2>&1; then
+check 'worker helper depth is two' grep -qx 'depth=2' "$(record_for "$helper")"
+if TMUX_AGENTS_DEPTH=2 "$B/tmux-spawn" claude --from helper --name too-deep </dev/null >"$tmp/error" 2>&1; then
   check 'ordinary helper depth limit enforced' false
 else
   check 'ordinary helper depth limit enforced' grep -q 'depth limit' "$tmp/error"
 fi
 tmux set -wu -t "$worker" @member
-# A member under a normal helper takes the actual owner's nonzero depth.
-TMUX_AGENTS_DEPTH=0 "$B/tmux-spawn" claude --from worker --for helper --member --exact --name nested-member </dev/null >/dev/null
-nested="$(pane_of nested-member)"
-ready "$nested" || { echo 'ABORT: nested stub not ready'; exit 1; }
-check 'member under helper keeps owner depth one' grep -qx 'depth=1' "$(record_for "$nested")"
+# --from must win over TMUX_PANE, and --for must not hide a restricted caller.
+for caller in worker helper; do
+  if TMUX_PANE=%0 TMUX_AGENTS_DEPTH=0 "$B/tmux-spawn" claude --from "$caller" --for main --member --name forbidden </dev/null >"$tmp/error" 2>&1; then
+    check "$caller cannot spawn members" false
+  else
+    check "$caller cannot spawn members" grep -q "only a top-level agent can spawn members; $caller is a sub agent/member" "$tmp/error"
+  fi
+done
+# A member remains restricted even after its parent is removed.
+tmux set -pu -t "$worker" @parent
+if TMUX_PANE="$worker" TMUX_AGENTS_DEPTH=0 "$B/tmux-spawn" claude --member --name forbidden </dev/null >"$tmp/error" 2>&1; then
+  check 'unowned member caller refused' false
+else
+  check 'unowned member caller refused' grep -q 'only a top-level agent can spawn members; worker is a sub agent/member' "$tmp/error"
+fi
+tmux set -p -t "$worker" @parent "$secondary"
+if TMUX_AGENTS_DEPTH=2 spawn --member --for secondary --name too-deep >"$tmp/error" 2>&1; then
+  check 'member depth limit enforced' false
+else
+  check 'member depth limit enforced' grep -q 'depth limit' "$tmp/error"
+fi
 # Explicit main-level dismissal traverses members and their ordinary helpers.
 secondary_id="$(info "$secondary" @agent_id)"
 "$B/tmux-dismiss" --from main secondary >"$tmp/cascade"
-for pane in "$secondary" "$worker" "$helper" "$grandhelper" "$nested"; do check "cascade closes $pane" gone "$pane"; done
+for pane in "$secondary" "$worker" "$helper"; do check "cascade closes $pane" gone "$pane"; done
 check 'closed record preserves member marker' test "$(record_get "$secondary_id" member)" = 1
 "$B/tmux-spawn" --from main --resume-id "$secondary_id" </dev/null >/dev/null
 secondary="$(pane_of secondary)"
@@ -105,7 +118,7 @@ check 'resume retains identity' test "$(info "$secondary" @agent_id)" = "$second
 check 'resume retains member' test "$(info "$secondary" @member)" = 1
 # The positional argument is expanded by the child shell.
 # shellcheck disable=SC2016
-check 'resume retains depth in process' bash -c 'tmux capture-pane -p -S - -t "$1" | grep -q DEPTH=0' _ "$secondary"
+check 'resume retains depth in process' bash -c 'tmux capture-pane -p -S - -t "$1" | grep -q DEPTH=1' _ "$secondary"
 check 'resume reconnects owner' test "$(info "$secondary" @parent)" = %0
 check 'resume starts done' test "$(info "$secondary" @state)" = "done"
 # An ordinary ancestor must not make a nested member eligible for --done.
@@ -113,7 +126,7 @@ spawn --exact --name ordinary
 ordinary="$(pane_of ordinary)"
 spawn --for ordinary --member --exact --name protected
 protected="$(pane_of protected)"
-TMUX_AGENTS_DEPTH=0 "$B/tmux-spawn" claude --from secondary --exact --name disposable </dev/null >/dev/null
+TMUX_AGENTS_DEPTH=1 "$B/tmux-spawn" claude --from secondary --exact --name disposable </dev/null >/dev/null
 disposable="$(pane_of disposable)"
 for pane in "$ordinary" "$protected" "$disposable"; do
   ready "$pane" || { echo 'ABORT: cleanup stub not ready'; exit 1; }
