@@ -79,7 +79,7 @@ FZF_PROMPT='agents · all windows> ' TMUX_AGENTS_LIST_FIELDS=1 COLUMNS=80 "$B/tm
 FZF_PROMPT='agents · all windows> ' TMUX_AGENTS_LIST_FIELDS=1 COLUMNS=240 "$B/tmux-agents" --list </dev/null >"$tmp/wide"
 FZF_PROMPT='agents · all windows> ' TMUX_AGENTS_LIST_FIELDS=1 TMUX_AGENTS_SELECT_FILE="$tmp/selection" TMUX_AGENTS_SELECT="$full" "$B/tmux-agents" --initial-list </dev/null >"$tmp/initial"
 python3 - "$tmp" "$real_fzf" "$parent" "$child" "$pinned" "$closed" "$full" "$project" <<'PY'
-import pathlib, re, shlex, subprocess, sys, unicodedata
+import os, pathlib, re, shlex, subprocess, sys, unicodedata
 root, fzf, parent, child, pinned, closed, full, project = sys.argv[1:]
 root = pathlib.Path(root)
 ansi = re.compile(r'\x1b\[[0-9;]*m')
@@ -192,6 +192,32 @@ if preview:
         if ident==child:
             check('preview reports three completed turns',bool(re.search(r'(?:turns\s*[:=]?\s*3|3\s+turns)',lower)),text)
             check('preview reports last seven-minute turn','7m' in lower,text)
+# Exercise real preview commands at narrow widths, including multiline input
+# that resembles the list protocol. The full activity must survive wrapping.
+activity='汉字宽度 éé review=value '+('界'*12)+' tail-complete'
+subprocess.run(['tmux','set','-p','-t',child,'@activity',activity+'\nP\tsecond-line'],check=True)
+record=pathlib.Path(os.environ['XDG_STATE_HOME'])/'tmux-agents'/pathlib.Path(os.environ['TMUX'].split(',')[0]).name/'sessions'/closed
+with record.open('a') as out: out.write('activity='+activity+'\n')
+def preview_at(ident, columns):
+    env=dict(os.environ)
+    if columns is None: env.pop('FZF_PREVIEW_COLUMNS',None)
+    else: env['FZF_PREVIEW_COLUMNS']=str(columns)
+    result=subprocess.run(['/bin/sh','-c',preview.replace('{1}',shlex.quote(ident))],env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,check=True)
+    return result.stdout.decode(),ansi.sub('',result.stdout.decode()).splitlines()
+for ident in (child,'closed:'+closed):
+    for columns in (9,24,40):
+        raw,lines=preview_at(ident,columns)
+        end=next(i for i,line in enumerate(lines) if line.startswith('started '))
+        wrapped=lines[1:end]
+        expected=activity+('P second-line' if ident==child else '')
+        check('preview preserves full activity '+ident+str(columns),''.join(wrapped)==expected,wrapped)
+        check('activity respects CJK display width '+ident+str(columns),all(width(line)<=columns for line in wrapped),wrapped)
+        check('separator spans preview width '+ident+str(columns),'─'*columns in lines,lines)
+        check('separator is dim '+ident+str(columns),'\x1b[2m'+'─'*columns+'\x1b[0m' in raw)
+record.write_text(''.join(line for line in record.read_text().splitlines(True) if not line.startswith('activity=')))
+_,lines=preview_at('closed:'+closed,None)
+check('legacy closed preview skips missing activity',lines[1].startswith('started '),lines)
+check('separator defaults to forty cells','─'*40 in lines,lines)
 if failures:
     print(str(len(failures))+' checks failed'); sys.exit(1)
 print('all passed')

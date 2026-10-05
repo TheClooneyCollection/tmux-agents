@@ -133,7 +133,10 @@ for pause in perm message needs_you overlap; do
 done
 # Helpers round-trip completed work without adding idle time or inventing start.
 aid="$(pane_agent_id %0)"
+tmux set -p -t %0 @activity $'review=full\nkind=not-a-record-key\ntail\t完'
 agent_save_work %0 600
+check 'activity flattens line breaks and preserves equals' test "$(record_get "$aid" activity)" = 'review=full kind=not-a-record-key tail 完'
+check 'activity cannot inject record keys' test "$(record_get "$aid" kind)" != not-a-record-key
 check 'saved completed work' test "$(record_get "$aid" worked)" = 135
 check 'saved legacy start is unknown' test "$(record_get "$aid" started)" = ''
 restored="$(tmux new-window -d -P -F '#{pane_id}' cat </dev/null)"
