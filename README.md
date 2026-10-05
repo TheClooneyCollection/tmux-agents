@@ -54,6 +54,8 @@ For user-level skill installation, use the [skills CLI](https://skills.sh) below
 npx skills add TheClooneyCollection/tmux-agents -g
 ```
 
+To list the available skills without installing them, add `--list`. This previews discovery only; `./install.sh --dry-run` previews the checkout installer.
+
 ### By hand
 
 Needs tmux 3.2+ and bash. `fzf` is optional (nicer pickers and the live agent list).

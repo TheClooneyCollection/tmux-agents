@@ -54,6 +54,8 @@ agent 之间可以互相派任务、同步进度。它们的 pane 会一直保�
 npx skills add TheClooneyCollection/tmux-agents -g
 ```
 
+加上 `--list` 可以列出可用 skill 而不安装。这只预览 skill 发现结果；`./install.sh --dry-run` 则预览 checkout 安装器的操作。
+
 ### 手动安装
 
 需要 tmux 3.2+ 和 bash。`fzf` 可选（选择器和实时 agent 列表会更好用）。

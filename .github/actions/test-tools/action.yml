@@ -1,0 +1,20 @@
+name: Test tools
+description: Install isolated-test dependencies and a fixed fzf version
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        if [[ "$RUNNER_OS" == Linux ]]; then
+          sudo apt-get update
+          sudo apt-get install -y tmux bsdextrautils perl python3 curl xz-utils
+        else
+          brew install tmux
+        fi
+        case "$RUNNER_OS" in Linux) os=linux ;; macOS) os=darwin ;; esac
+        case "$(uname -m)" in x86_64) arch=amd64 ;; arm64|aarch64) arch=arm64 ;; esac
+        archive="fzf-0.65.2-${os}_${arch}.tar.gz"
+        mkdir -p "$RUNNER_TEMP/test-tools"
+        curl --fail --location --retry 3 "https://github.com/junegunn/fzf/releases/download/v0.65.2/$archive" -o "$RUNNER_TEMP/$archive"
+        tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP/test-tools"
+        echo "$RUNNER_TEMP/test-tools" >> "$GITHUB_PATH"
