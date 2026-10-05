@@ -54,7 +54,7 @@ list_agents() {
   ensure_agent_ids
   settings_get AGENTS_PREFIX TMUX_AGENTS_PREFIX @tmux_agents_session_prefix agents
   settings_get resume_days TMUX_AGENTS_RESUME_DAYS @tmux_agents_resume_days 7
-  snapshot="$(tmux list-panes -a -F 'P	#{pane_id}	#{?@agent,#{@agent},-}	#{pane_dead}	#{?@perm_since,#{@perm_since},-}	#{?@state,#{@state},-}	#{?@parent,#{@parent},-}	#{session_name}	#{?@activity,#{@activity},-}	#{pane_current_path}	#{session_name}:#{window_index}	#{?@attention_since,#{@attention_since},-}	#{?@msg_waiting_since,#{@msg_waiting_since},-}	#{window_id}	#{?@agent_id,#{@agent_id},-}	#{?@member,#{@member},0}')"
+  snapshot="$(tmux list-panes -a -F 'P	#{pane_id}	#{?@agent,#{@agent},-}	#{pane_dead}	#{?@perm_since,#{@perm_since},-}	#{?@state,#{@state},-}	#{?@parent,#{@parent},-}	#{session_name}	#{?@activity,#{@activity},-}	#{pane_current_path}	#{session_name}:#{window_index}	#{?@attention_since,#{@attention_since},-}	#{?@msg_waiting_since,#{@msg_waiting_since},-}	#{window_id}	#{?@agent_id,#{@agent_id},-}	#{@state_since}	#{@worked}	#{@last_turn}	#{@turns}	#{@turn_start}	#{@started}	#{?@member,#{@member},0}')"
   if [ -n "$client" ]; then
     clients="$(tmux list-clients -F '#{client_name}	#{window_id}')"
     while IFS="$tab" read -r c w; do [ "$c" != "$client" ] || { window="$w"; break; }; done <<<"$clients"
@@ -96,7 +96,13 @@ list_agents() {
     projects="$projects""D$tab$path$tab$project$nl"
   done <<<"$paths"
   printf '%s\n%s%s' "$snapshot" "$records" "$projects" |
-    LIST_PREFIX="$AGENTS_PREFIX" LIST_NOW="$now" LIST_WINDOW="$window" LIST_SCOPE="$scope" LIST_MODE="$mode" awk -f "$here/tmux-agents-list.awk"
+    LIST_PREFIX="$AGENTS_PREFIX" LIST_NOW="$now" LIST_WINDOW="$window" LIST_SCOPE="$scope" LIST_MODE="$mode" LC_ALL=C awk -f "$here/tmux-agents-list.awk"
+}
+
+# Preview timing uses the same formatter as rows, refreshed on every capture.
+# This is separate from list builds and never adds a lookup per list row.
+preview_header() {
+  LIST_NOW="$(date +%s)" LIST_PREVIEW=1 LC_ALL=C awk -f "$here/tmux-agents-list.awk"
 }
 
 # Check only when enabling the layout, never on the list/chip refresh paths.
@@ -328,8 +334,8 @@ case "${1:-}" in
       printf '%s' "$rows" | awk -v RS='\036' -v s="$TMUX_AGENTS_SELECT" '
         NR > 1 {
           if (index($0,"\037")) {
-            split($0,f,"\037"); sub(/ +$/, "", f[3])
-            if (f[3]==s) { print NR-1; exit }
+            split($0,f,"\037")
+            if (f[2]==s) { print NR-1; exit }
             next
           }
           sub(/^[^ ]+ +/, "")
@@ -362,6 +368,12 @@ case "${1:-}" in
     done
     exit 0
     ;;
+  --preview-info)
+    tmux display-message -p -t "$2" 'V	#{@agent}	#{@started}	#{@worked}	#{@last_turn}	#{@turns}	#{@turn_start}	#{@state}	#{@perm_since}	#{@msg_waiting_since}	#{pane_dead}' | preview_header
+    printf '\n'
+    tmux capture-pane -ep -J -t "$2" -S -300
+    exit 0
+    ;;
   # fzf "d": after the tmux prefix key (within 2s), prefix + d closes the
   # list, like it leaves an agent's view; otherwise d is just typed.
   # Preview of a closed sub agent: what reopening it would bring back.
@@ -371,7 +383,10 @@ case "${1:-}" in
     valid_agent_id "$n" || die "invalid agent id: $n"
     parent="$(agent_name_by_id "$(record_get "$n" parent)")"
     [ -n "$parent" ] || parent="$(record_get "$n" parent_name)"
-    printf '\033[1m%s\033[0m  closed, can be reopened\n\n' "$(record_get "$n" name)"
+    printf 'V\t%s\t%s\t%s\t%s\t%s\n' "$(record_get "$n" name)" \
+      "$(record_get "$n" started)" "$(record_get "$n" worked)" \
+      "$(record_get "$n" last_turn)" "$(record_get "$n" turns)" | preview_header
+    printf 'closed, can be reopened\n\n'
     printf '  ID       %s\n' "$n"
     printf '  agent    %s\n  dir      %s\n  parent   %s\n  session  %s\n\n' \
       "$(record_get "$n" kind)" "$(record_get "$n" dir)" "$parent" "$(record_get "$n" id)"
@@ -452,7 +467,8 @@ command -v fzf >/dev/null 2>&1 || die "fzf is required"
 self="$here/tmux-agents"
 # Scope starts local on every fresh open; popup return passes both dimensions.
 export TMUX_AGENTS_LIST_CLIENT="$client"
-# Invisible field separators keep search off status, parents and activity.
+# Fields 1/2 preserve ID/full name for actions and exact return positioning.
+# After hiding them, --nth selects only the displayed name and project.
 export TMUX_AGENTS_LIST_FIELDS=1
 [ -n "$mode" ] || mode="$default_mode"
 [ "$mode" = all ] || mode=sub
@@ -475,14 +491,14 @@ if [ -n "$select" ]; then
   # An empty initial load must not consume the positioning action.
   selection=(--bind "load:transform:if [ -s \"\$TMUX_AGENTS_SELECT_FILE\" ]; then read -r n < \"\$TMUX_AGENTS_SELECT_FILE\"; printf 'pos(%s)+unbind(load)' \"\$n\"; fi")
 fi
-out="$(fzf </dev/null --read0 --ansi --reverse --no-sort --no-hscroll --header-lines=1 --delimiter=$'\037' --with-nth=2.. --nth=2,4 --prompt="$prompt" \
+out="$(fzf </dev/null --read0 --ansi --reverse --no-sort --no-hscroll --header-lines=1 --delimiter=$'\037' --with-nth=3.. --nth=2,4 --prompt="$prompt" \
   ${selection[@]+"${selection[@]}"} \
   ${prefix_keys[@]+"${prefix_keys[@]}"} \
   --with-shell 'bash -c' \
   --listen --bind "start:reload('$self' --initial-list)" \
   --bind "focus:execute-silent('$self' --preview-loop >/dev/null 2>&1 &)+unbind(focus)" \
   --footer=$'enter open · ^o jump (prefix+L back) · ^x dismiss\n^d clean done · ^a all/sub · ^t this/all windows · ^r refresh · prefix+d close' --footer-border=rounded \
-  --preview "case {1} in closed:*) '$self' --closed-info {1} ;; *) tmux capture-pane -ep -J -t {1} -S -300 ;; esac" --preview-window='right,55%,follow' \
+  --preview "case {1} in closed:*) '$self' --closed-info {1} ;; *) '$self' --preview-info {1} ;; esac" --preview-window='right,55%,follow' \
   --bind "ctrl-x:execute-silent('$self' --dismiss {1})+reload('$self' --list)" \
   --bind "ctrl-r:reload('$self' --list)" \
   --bind "ctrl-d:execute('$here/tmux-dismiss' --done)+reload('$self' --list)" \
