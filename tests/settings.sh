@@ -113,7 +113,8 @@ value="$(tmux show -gv 'status-format[0]')"
 check 'one FPS option selects command-rendered chip' test "$value" = "#($B/tmux-agents --chip)"
 "$B/tmux-agents" --chip-layout off
 # One deterministic preview iteration; inspect the requested delay, never sleep.
-mkdir "$tmp/bin"
+mkdir "$tmp/bin" "$tmp/preview"
+export TMUX_AGENTS_PREVIEW_DIR="$tmp/preview"
 cat >"$tmp/bin/curl" <<'STUB'
 #!/bin/sh
 [ ! -f "$SETTINGS_PREVIEW_ONCE" ] || exit 1
