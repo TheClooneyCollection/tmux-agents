@@ -6,6 +6,7 @@ Each file: the context, the decision, why, and what was rejected. Name new ones 
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-05 | [Agent list layout and worked time](2026-10-05-list-layout-and-worked-time.md) |
 | 2026-10-05 | [Members: long-lived spawned agents](2026-10-05-members.md) |
 | 2026-10-04 | [Skills install with the skills CLI; no Claude Code plugin yet](2026-10-04-skills-cli-install.md) |
 | 2026-10-04 | [Agents have hidden ids; names are labels](2026-10-04-agents-have-ids.md) |
