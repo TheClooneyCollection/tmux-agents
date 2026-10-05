@@ -13,6 +13,8 @@ S="$(tmux -L "$sock" display-message -p '#{socket_path}')"
 case "$S" in ''|*/default) echo "ABORT: unsafe socket '$S'"; tmux -L "$sock" kill-server; exit 1 ;; esac
 export TMUX="$S,1,0"
 . "$here/tests/helpers/cleanup.sh"
+# Invoked by the EXIT trap.
+# shellcheck disable=SC2329
 cleanup() { cleanup_test_server || return; rm -rf "$tmp"; }
 trap cleanup EXIT
 tmux set -g default-shell /bin/sh
@@ -20,7 +22,11 @@ fail=0
 check() { local label="$1"; shift; if "$@"; then echo "ok    $label"; else echo "FAIL  $label"; fail=1; fi; }
 agent() { tmux set -p -t "$1" @agent "$2"; [ -z "${3:-}" ] || tmux set -p -t "$1" @parent "$3"; }
 fixture_id() { printf 'a%012x' "$(printf %s "$1" | cksum | awk '{print $1}')"; }
+# Invoked indirectly by test helpers or by commands under test.
+# shellcheck disable=SC2329
 has() { local key="$2"; case "$key" in closed:*) key="closed:$(fixture_id "${key#closed:}")" ;; esac; grep -q "^$key " "$1"; }
+# Invoked indirectly by test helpers or by commands under test.
+# shellcheck disable=SC2329
 lacks() { ! has "$@"; }
 agent %0 main-a
 split="$(tmux split-window -d -h -t %0 -P -F '#{pane_id}' cat)"; agent "$split" split-a %0
@@ -39,7 +45,7 @@ tmux set -p -t "$need" @activity 'waiting for a decision'
 mkfifo "$tmp/input"
 exec 9<>"$tmp/input"
 tmux -C attach-session -t work:0 <"$tmp/input" >"$tmp/client.log" 2>&1 &
-for i in {1..50}; do
+for ((i=0; i<50; i++)); do
   client="$(tmux list-clients -F '#{client_name}' | head -1)"
   [ -z "$client" ] || break
   sleep 0.1
@@ -158,7 +164,8 @@ check 'ctrl-t returns to this window' test "$a" = "change-prompt(all · this win
 # Exercise the picker wiring with fake UI endpoints, preserving real list reads.
 mkdir "$tmp/ui"
 export SCOPE_UI_ARGS="$tmp/ui-args" SCOPE_UI_LOG="$tmp/ui-log"
-export SCOPE_REAL_TMUX="$(command -v tmux)" SCOPE_PICK="$hidden"
+SCOPE_REAL_TMUX="$(command -v tmux)"
+export SCOPE_REAL_TMUX SCOPE_PICK="$hidden"
 cat >"$tmp/ui/fzf" <<'STUB'
 #!/bin/sh
 if [ "${SCOPE_REAL_PICKER:-}" = 1 ]; then exec "$SCOPE_REAL_FZF" "$@"; fi
@@ -204,9 +211,11 @@ STUB
     -e "SCOPE_REAL_TMUX=$SCOPE_REAL_TMUX" -e "SCOPE_UI_LOG=$SCOPE_UI_LOG" \
     -e "XDG_STATE_HOME=$XDG_STATE_HOME" -e "SCOPE_BIN=$B" -e "SCOPE_CLIENT=$client" \
     -e "SCOPE_RESULT=$tmp/picker-result" -e "SCOPE_DONE=$tmp/picker-done" "$tmp/picker")"
+  # Invoked indirectly by test helpers or by commands under test.
+  # shellcheck disable=SC2329
   wait_prompt() {
     local i
-    for i in {1..100}; do
+    for ((i=0; i<100; i++)); do
       if tmux capture-pane -p -t "$ui" 2>/dev/null | grep -q "$1"; then return 0; fi
       [ ! -f "$tmp/picker-done" ] || break
       sleep 0.1
@@ -220,7 +229,7 @@ STUB
   # Load transform is asynchronous; wait for it before accepting the selection.
   sleep 0.3
   tmux send-keys -t "$ui" Enter
-  for i in {1..100}; do [ ! -f "$tmp/picker-done" ] || break; sleep 0.1; done
+  for ((i=0; i<100; i++)); do [ ! -f "$tmp/picker-done" ] || break; sleep 0.1; done
   check 'initial select opens requested hidden agent after reload' grep -q -- "--view $hidden $client window all" "$SCOPE_UI_LOG"
   rm -f "$SCOPE_UI_LOG" "$tmp/picker-done"
   ui="$(tmux new-window -d -t work -P -F '#{pane_id}' \
@@ -236,7 +245,7 @@ STUB
   tmux send-keys -l -t "$ui" hidden-a
   check 'real reload finishes before selection' wait_prompt 'hidden-a.*working.*main-a'
   tmux send-keys -t "$ui" Enter
-  for i in {1..100}; do [ ! -f "$tmp/picker-done" ] || break; sleep 0.1; done
+  for ((i=0; i<100; i++)); do [ ! -f "$tmp/picker-done" ] || break; sleep 0.1; done
   check 'real picker accepts without error' test "$(cat "$tmp/picker-done" 2>/dev/null)" = 0
   check 'real Enter forwards final scope to viewer' grep -q -- "--view $hidden $client all sub" "$SCOPE_UI_LOG"
 else

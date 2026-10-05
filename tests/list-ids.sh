@@ -87,7 +87,8 @@ check 'default peers hides IDs' lacks "$tmp/peers" a000000000001
 "$B/tmux-peers" --ids --from main >"$tmp/peers-ids"
 for aid in "$main_id" "$other_id" a000000000001 a000000000002; do check "peers --ids includes $aid" has "$tmp/peers-ids" "$aid"; done
 # Run the real picker acceptance path with a deterministic fzf selection.
-export LIST_IDS_REAL_TMUX="$(command -v tmux)" LIST_IDS_UI_LOG="$tmp/ui-log"
+LIST_IDS_REAL_TMUX="$(command -v tmux)"
+export LIST_IDS_REAL_TMUX LIST_IDS_UI_LOG="$tmp/ui-log"
 cat >"$tmp/ui/fzf" <<'STUB'
 #!/bin/sh
 printf '%s\n' "$@" >"$LIST_IDS_UI_LOG.args"
@@ -107,7 +108,7 @@ reopened="$(find_pane_by_id a000000000002)"
 check 'selected record reopened exactly' test -n "$reopened"
 check 'other duplicate remains closed' test -z "$(find_pane_by_id a000000000001)"
 check 'reopened label gets suffix on live conflict' test "$(pane_name "$reopened")" = duplicate-2
-for i in {1..100}; do
+for ((i=0; i<100; i++)); do
   tmux capture-pane -p -J -S -100 -t "$reopened" >"$tmp/screen"
   if grep -q 'STUB READY codex.*conversation-a000000000002' "$tmp/screen"; then break; fi
   sleep 0.05

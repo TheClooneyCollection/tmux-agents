@@ -39,7 +39,7 @@ ensure_agent_ids "$state_dir/empty-queue"
 check() { "$@" || { echo "FAIL: $*"; exit 1; }; echo "ok: $*"; }
 reject() { if "$@" > "$state_dir/rejected" 2>&1; then echo "unexpected success: $*"; return 1; fi; }
 captured() { local content; content="$(tmux capture-pane -p -J -S -300 -t "$1")"; case "$content" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
-wait_for() { local i; for i in $(seq 1 100); do "$@" && return 0; sleep .05; done; return 1; }
+wait_for() { local i; for ((i=0; i<100; i++)); do "$@" && return 0; sleep .05; done; return 1; }
 check wait_for captured %0 STUB-claude
 check wait_for captured %1 STUB-codex
 set_name %0 parent; set_name %1 child; set_name %2 peer; set_name %3 stranger
@@ -96,7 +96,7 @@ check "$B/tmux-rename" parent reserved --exact
 check "$B/tmux-rename" reserved parent --exact
 tmux set -p -t %2 @awaiting "$parent_id parent-tail"
 tmux set -p -t %2 @closed "parent-tail $parent_id"
-tmux set -p -t %0 @state done
+tmux set -p -t %0 @state "done"
 tmux set -p -t %2 @state idle
 tmux copy-mode -t %0
 tmux copy-mode -t %2
@@ -147,7 +147,7 @@ check wait_for captured %0 queued-identity-body
 check wait_for captured %0 'notice from tmux-rename to renamed'
 check wait_for captured %2 'parent is now renamed'
 check "$B/tmux-ask" --from kid --reply renamed child-reply-after-rename
-check test "$(tmux show -pqv -t %1 @state)" = done
+check test "$(tmux show -pqv -t %1 @state)" = "done"
 check wait_for captured %0 child-reply-after-rename
 # A delivery holds a shared identity lock through paste/Enter. Rename waits
 # for it, then leaves neither resurrected metadata nor a lost message.

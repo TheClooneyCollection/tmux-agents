@@ -36,7 +36,10 @@ done
 cleanup_test_server
 [ -f "$tmp/direct.stopped" ] && [ -f "$tmp/server.stopped" ]
 [ ! -e "$queue" ]
-! tmux -L "$sock" has-session 2>/dev/null
+if tmux -L "$sock" has-session 2>/dev/null; then
+  echo "FAIL: cleanup left the private test server running" >&2
+  exit 1
+fi
 # Unsafe socket names must fail before deleting anything or touching a server.
 saved_sock="$sock"
 for sock in '' . .. default ../default; do

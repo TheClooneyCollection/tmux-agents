@@ -161,6 +161,8 @@ check captured %2 restart-worker-body
 # removes the migration marker. Bound this regression and kill its group.
 marker="$(sessions_dir)/.ids-v1"
 mv "$marker" "$marker.saved"
+# Expanded by the child shell, Perl, or generated script, not this shell.
+# shellcheck disable=SC2016
 check agent_identity_lock shared perl -e '
   my $pid = fork(); die "fork: $!" unless defined $pid;
   if (!$pid) { setpgrp(0, 0); exec @ARGV; die "exec: $!"; }
@@ -180,6 +182,8 @@ fi
 exec '$real_tmux' "\$@"
 WRAP
 chmod +x "$state_dir/cleanup-bin/tmux"
+# Expanded by the child shell, Perl, or generated script, not this shell.
+# shellcheck disable=SC2016
 check perl -e '
   my $pid = fork(); die "fork: $!" unless defined $pid;
   if (!$pid) { setpgrp(0, 0); exec @ARGV; die "exec: $!"; }

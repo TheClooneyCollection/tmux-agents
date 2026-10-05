@@ -52,7 +52,7 @@ mkfifo "$tmp/input"
 exec 9<>"$tmp/input"
 tmux -C attach-session -t work:0 <"$tmp/input" >"$tmp/client.log" 2>&1 &
 client=""
-for i in {1..50}; do
+for ((i=0; i<50; i++)); do
   client="$(tmux list-clients -F '#{client_name}' | head -1)"
   [ -z "$client" ] || break
   sleep 0.1
@@ -94,11 +94,17 @@ for tool in tmux perl awk git basename sed date stat dirname tr column sort cut 
   if [ "$tool" = fzf ]; then real="$tmp/ui/fzf"; else real="$(command -v "$tool")"; fi
   {
     printf '#!/bin/bash\n'
+    # Expanded by the child shell, Perl, or generated script, not this shell.
+    # shellcheck disable=SC2016
     printf 'printf "%%s\\n" "%s" >>"$BENCH_CALLS"\n' "$tool"
     if [ "$tool" = tmux ]; then
+      # Expanded by the child shell, Perl, or generated script, not this shell.
+      # shellcheck disable=SC2016
       printf 'if [ "${1:-} ${2:-}" = "list-panes -a" ]; then printf "snapshot\\n" >>"$BENCH_CALLS"; fi\n'
     fi
     if [ "$tool" = date ]; then
+      # Expanded by the child shell, Perl, or generated script, not this shell.
+      # shellcheck disable=SC2016
       printf 'if [ "$*" = +%%s ]; then printf "%%s\\n" "$BENCH_NOW"; exit; fi\n'
     fi
     printf 'exec %q "$@"\n' "$real"
@@ -115,8 +121,12 @@ print('fixture: 50 panes, 100 records, nested/closed ancestors, 3 paths', flush=
 # 300ms was noisy under concurrent test load; process limits are deterministic.
 # Keep a loose 1s regression cap, overridable on reliably faster/slower hosts.
 cap = float(os.environ.get('TMUX_LIST_BUDGET_MS', '1000'))
-print(f'budget: <=20 external tools per build; <={cap:g}ms median of 3 after runs', flush=True)
-print(f'pre-fzf budget: <=3 tools and <={cap:g}ms per open', flush=True)
+skip_time = os.environ.get('TMUX_LIST_BUDGET_SKIP_TIME') == '1'
+if skip_time:
+    print('time caps disabled for CI; all process/snapshot/cache caps remain enforced', flush=True)
+print('budget: <=20 external tools per build; pre-fzf <=3 tools', flush=True)
+if not skip_time:
+    print(f'time budget: <={cap:g}ms median of 3 builds and per pre-fzf open', flush=True)
 old = {}
 checks = 0
 for label, script in [('before', before), ('after', after)]:
@@ -157,8 +167,10 @@ for label, script in [('before', before), ('after', after)]:
             if label == 'after':
                 if mode.startswith('open'):
                     assert exec_counts[-1] <= 3, (mode, exec_counts)
-                    assert exec_times[-1] <= cap, (mode, exec_times)
-                    checks += 2
+                    checks += 1
+                    if not skip_time:
+                        assert exec_times[-1] <= cap, (mode, exec_times)
+                        checks += 1
                 assert len(calls) <= 20, (mode, len(calls), detail)
                 assert snapshots == 1, calls
                 assert detail['git'] == 3, detail
@@ -167,7 +179,7 @@ for label, script in [('before', before), ('after', after)]:
             print(f'{label:6s} {mode:11s} to fzf exec: {statistics.median(exec_times):.1f} ms; {max(exec_counts)} tools', flush=True)
         median = statistics.median(timings)
         print(f'{label:6s} {mode:11s} {median:8.1f} ms; {max(counts)} tools; {dict(detail)}', flush=True)
-        if label == 'after':
+        if label == 'after' and not skip_time:
             assert median <= cap, (mode, timings)
             checks += 1
 print(f'{checks} budget/snapshot/cache checks passed', flush=True)

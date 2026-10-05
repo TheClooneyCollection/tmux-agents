@@ -71,7 +71,7 @@ list_agents() {
       darwin*|*bsd*) mtimes="$(stat -f "%m$tab%N" "${files[@]}")" ;;
       *) mtimes="$(stat -c "%Y$tab%n" "${files[@]}")" ;;
     esac
-    raw="$(LIST_MTIMES="$mtimes" awk -v now="$now" -v keep="$(( $resume_days * 86400 ))" -f "$here/tmux-agents-records.awk" "${files[@]}")"
+    raw="$(LIST_MTIMES="$mtimes" awk -v now="$now" -v keep="$(( resume_days * 86400 ))" -f "$here/tmux-agents-records.awk" "${files[@]}")"
     while IFS="$tab" read -r tag rest; do
       if [ "$tag" = X ]; then expired+=("$rest")
       elif [ "$tag" = R ]; then records="$records$tag$tab$rest$nl"
@@ -240,8 +240,8 @@ chip() {
       [[ $since =~ ^[0-9]+$ ]] || since="$now"
     elif [ "$st" = idle ]; then
       state=idle act="idle"
-    elif [ "$st" = done ]; then
-      state=done act="done"
+    elif [ "$st" = "done" ]; then
+      state="done" act="done"
     elif [ "$st" = needs_you ]; then
       state=needs act="NEEDS YOU" since="$attention"
       [ "$since" != - ] || since="$now"
@@ -295,7 +295,7 @@ EOF
   focus="$icon $(short_task "${names[i]}"): ${acts[i]}"
   if [ "${states[i]}" = perm ] || [ "${states[i]}" = needs ] || [ "${states[i]}" = message ]; then
     if [ "${states[i]}" = perm ]; then style="fg=white,bg=red,bold"; else style="fg=black,bg=colour214,bold"; fi
-    [ $((now - ${sinces[i]})) -lt "$blink_secs" ] || style="$style,blink"
+    [ $((now - sinces[i])) -lt "$blink_secs" ] || style="$style,blink"
     focus="#[$style] $focus #[default]"
   elif [ "${states[i]}" = idle ]; then
     focus="#[fg=colour244]$focus#[default]"
@@ -348,6 +348,8 @@ case "${1:-}" in
   --preview-loop)
     settings_get preview_secs TMUX_AGENTS_PREVIEW_SECS @tmux_agents_preview_secs 0.5
     while curl -fs -XPOST "http://localhost:${FZF_PORT:?}" -d refresh-preview >/dev/null 2>&1; do
+      # settings_get assigns this variable by name.
+      # shellcheck disable=SC2154
       sleep "$preview_secs"
     done
     exit 0

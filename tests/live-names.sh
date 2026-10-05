@@ -7,7 +7,6 @@ state="$(mktemp -d "${TMPDIR:-/tmp}/live-names.XXXXXX")"
 sock="live-names-$$"
 unset TMUX TMUX_PANE CLAUDECODE TMUX_AGENTS_PINNED
 export XDG_STATE_HOME="$state/state" TMUX_ASK_ENTER_DELAY=0 TMUX_ASK_IDLE_SECS=0
-queue="/tmp/tmux-agents-$(id -u)/queue/$sock"
 . "$here/tests/helpers/cleanup.sh"
 cleanup() { cleanup_test_server || return; rm -rf "$state"; }
 trap cleanup EXIT

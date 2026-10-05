@@ -30,6 +30,8 @@ while read -r key env default sample; do
   value="$(/bin/bash -c '. "$1"; settings_get result "$2" "$3" "$4"; printf %s "$result"' settings "$B/lib.sh" "${env/-/}" "@tmux_agents_$key" "${default/NONE/}")"
   check "$key option" test "$value" = "$sample"
   if [ "$env" != - ]; then
+    # Expanded by the child shell, Perl, or generated script, not this shell.
+    # shellcheck disable=SC2016
     value="$(env "$env=override" /bin/bash -c '. "$1"; settings_get result "$2" "$3" "$4"; printf %s "$result"' settings "$B/lib.sh" "$env" "@tmux_agents_$key" "${default/NONE/}")"
     check "$key environment wins" test "$value" = override
   fi
@@ -53,7 +55,8 @@ MAP
 # Quotes, spaces, shell substitutions and newlines must stay data, not code.
 tricky=$'one="two words" literal=$(touch NEVER) slash=\\\nnext\tline'
 tmux set -g @tmux_agents_codex_homes "$tricky"
-export SETTINGS_REAL_TMUX="$(command -v tmux)" SETTINGS_CALLS="$tmp/calls"
+SETTINGS_REAL_TMUX="$(command -v tmux)"
+export SETTINGS_REAL_TMUX SETTINGS_CALLS="$tmp/calls"
 /bin/bash -c '
   tmux() { [ "$*" != "show-options -g" ] || printf "snapshot\n" >>"$SETTINGS_CALLS"; "$SETTINGS_REAL_TMUX" "$@"; }
   . "$1"

@@ -4,19 +4,19 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 state="$(mktemp -d "${TMPDIR:-/tmp}/agent-ids.XXXXXX")"
-sock="agent-ids-test-$$"
+test_sock="agent-ids-test-$$"
 other_sock="agent-ids-other-test-$$"
 unset TMUX TMUX_PANE CLAUDECODE TMUX_AGENTS_PINNED
 . "$here/tests/helpers/cleanup.sh"
 cleanup() {
-  cleanup_test_server || return
+  cleanup_test_server "$test_sock" || return
   cleanup_test_server "$other_sock" || return
   rm -rf "$state"
 }
 trap cleanup EXIT
-tmux -L "$sock" -f /dev/null new-session -d -s test 'exec /bin/sh'
-tmux -L "$sock" has-session || exit 1
-socket="$(tmux -L "$sock" display-message -p '#{socket_path}')"
+tmux -L "$test_sock" -f /dev/null new-session -d -s test 'exec /bin/sh'
+tmux -L "$test_sock" has-session || exit 1
+socket="$(tmux -L "$test_sock" display-message -p '#{socket_path}')"
 case "$socket" in ''|*/default) echo 'unsafe test socket' >&2; exit 1 ;; esac
 export TMUX="$socket,1,0" XDG_STATE_HOME="$state/state"
 tmux set-option -g default-shell /bin/sh
@@ -25,10 +25,12 @@ check() { "$@" || { echo "FAIL: $*" >&2; exit 1; }; }
 check valid_agent_id a123456789abc
 if valid_agent_id a123456789abz || valid_agent_id 123456789abcd || valid_agent_id a123; then exit 1; fi
 # Source must not invoke tmux (in particular no implicit live migration).
+# Invoked indirectly by test helpers or by commands under test.
+# shellcheck disable=SC2329
 ( tmux() { echo 'unexpected tmux call while sourcing' >&2; exit 1; }; . "$here/bin/lib.sh" )
 d="$(sessions_dir)"
 q="$state/queue"
-mkdir -p "$d" "$q/$sock" "$q/foreign"
+mkdir -p "$d" "$q/$test_sock" "$q/foreign"
 tmux set-option -p -t %0 @agent live
 tmux set-option -p -t %0 @awaiting 'child parent'
 tmux set-option -p -t %0 @closed 'parent child a111111111111'
@@ -41,10 +43,10 @@ printf 'kind=codex\nid=orphan-conversation\nparent=missing\nclosed=103\n' > "$d/
 # recover its old name mapping, even when its original filename is gone.
 printf 'agent_id=a222222222222\nname=recovered\nid=recovered-conversation\nclosed=104\n' > "$d/a222222222222"
 printf 'id=recovered-child-conversation\nparent=recovered\nclosed=105\n' > "$d/recovered-child"
-printf 'from_name=live\nto_name=child\nkind=request\n' > "$q/$sock/1.meta"
-printf 'body stays untouched\n' > "$q/$sock/1.msg"
-printf 'from_name=parent\nto_name=child\nkind=reply\n' > "$q/$sock/2.meta"
-printf 'undelivered body\n' > "$q/$sock/2.undelivered"
+printf 'from_name=live\nto_name=child\nkind=request\n' > "$q/$test_sock/1.meta"
+printf 'body stays untouched\n' > "$q/$test_sock/1.msg"
+printf 'from_name=parent\nto_name=child\nkind=reply\n' > "$q/$test_sock/2.meta"
+printf 'undelivered body\n' > "$q/$test_sock/2.undelivered"
 printf 'from_name=live\nto_name=parent\n' > "$q/3.meta"
 printf 'from_name=live\nto_name=parent\nserver=foreign\n' > "$q/4.meta"
 printf 'from_name=live\nto_name=parent\n' > "$q/foreign/5.meta"
@@ -79,7 +81,7 @@ for f in "$state/original-records"/*; do check cmp "$f" "$d/${f##*/}"; done
 check test -z "$(pane_agent_id %0)"
 check test "$(tmux show-options -pqv -t %0 @awaiting)" = 'child parent'
 for f in "$state/flat-originals"/*; do check cmp "$f" "$q/${f##*/}"; done
-check test "$(wc -l < "$q/$sock/1.meta" | tr -d ' ')" = 3
+check test "$(wc -l < "$q/$test_sock/1.meta" | tr -d ' ')" = 3
 # Never label a possibly partial old migration as an original backup.
 printf '{}\n' > "$d/.ids-journal"
 if ensure_agent_ids "$q"; then echo 'accepted journal without backup' >&2; exit 1; fi
@@ -139,18 +141,20 @@ check test "$(record_get "$recovered_child" parent)" = a222222222222
 check test "$(record_get a222222222222 id)" = recovered-conversation
 check test "$(tmux show-options -pqv -t %0 @awaiting)" = "$child_id $parent_id"
 check test "$(closed_names %0)" = "$parent_id $child_id $shape_id"
-check grep -qx "from_id=$live_id" "$q/$sock/1.meta"
-check grep -qx "to_id=$child_id" "$q/$sock/1.meta"
-check grep -qx "from_id=$parent_id" "$q/$sock/2.meta"
+check grep -qx "from_id=$live_id" "$q/$test_sock/1.meta"
+check grep -qx "to_id=$child_id" "$q/$test_sock/1.meta"
+check grep -qx "from_id=$parent_id" "$q/$test_sock/2.meta"
 for f in "$state/flat-originals"/*; do check cmp "$f" "$q/${f##*/}"; done
 check diff -r "$state/original-records" "$d/.pre-ids-v1"
 check test "$(wc -l < "$q/4.meta" | tr -d ' ')" = 3
 check test "$(wc -l < "$q/foreign/5.meta" | tr -d ' ')" = 2
-check grep -qx 'body stays untouched' "$q/$sock/1.msg"
-check grep -qx 'undelivered body' "$q/$sock/2.undelivered"
+check grep -qx 'body stays untouched' "$q/$test_sock/1.msg"
+check grep -qx 'undelivered body' "$q/$test_sock/2.undelivered"
 cp -R "$d" "$state/before-records"
 cp -R "$q" "$state/before-queue"
 # Marker fast path must not invoke any external command, including tmux.
+# Invoked indirectly by test helpers or by commands under test.
+# shellcheck disable=SC2329
 ( tmux() { return 99; }; agent_identity_lock() { return 98; }; ensure_agent_ids "$q" )
 check diff -r "$state/before-records" "$d"
 check diff -r "$state/before-queue" "$q"
@@ -177,7 +181,7 @@ check diff -r "$state/original-records" "$d/.pre-ids-v1"
 _rename_agent_locked %0 renamed >/dev/null
 check test "$(pane_agent_id %0)" = "$live_id"
 check test "$(record_get "$live_id" name)" = renamed
-check grep -qx 'from_name=live' "$q/$sock/1.meta"
+check grep -qx 'from_name=live' "$q/$test_sock/1.meta"
 check test "$(agent_name_by_id "$live_id")" = renamed
 # Closed names may be reused, without overwriting their conversations.
 set_name %0 parent

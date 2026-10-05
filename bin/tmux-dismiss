@@ -89,7 +89,7 @@ if [ "$done_only" -eq 1 ]; then
   for pane in $ordered; do close_pane "$pane"; done
 else
   pane="$(find_pane "$target")"
-  [ -n "$pane" ] && pane_alive "$pane" || die "no agent named '$target'"
+  if [ -z "$pane" ] || ! pane_alive "$pane"; then die "no agent named '$target'"; fi
   if [ -n "$closer" ]; then
     pane_is_descendant "$pane" "$closer" \
       || die "'$target' is not your descendant; you can only close your sub agents and their descendants"

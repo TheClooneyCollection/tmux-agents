@@ -6,10 +6,14 @@ B="$here/bin"
 sock="tmux-agents-spawn-names-$$"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/tmux-agents-spawn-names.XXXXXX")"
 . "$here/tests/helpers/cleanup.sh"
+# Invoked by the EXIT trap.
+# shellcheck disable=SC2329
 cleanup() { cleanup_test_server || return; rm -rf "$tmp"; }
 trap cleanup EXIT
 mkdir -p "$tmp/bin" "$tmp/project"
 for a in claude codex; do
+  # Expanded by the child shell, Perl, or generated script, not this shell.
+  # shellcheck disable=SC2016
   printf '#!/bin/sh\nprintf "STUB READY %s FORMAT=%%s HOME=%%s HOMES=%%s\\n" "${TMUX_AGENTS_NAME_FORMAT-unset}" "${CODEX_HOME-unset}" "${TMUX_AGENTS_CODEX_HOMES-unset}"\nexec cat\n' "$a" >"$tmp/bin/$a"
   chmod +x "$tmp/bin/$a"
 done
@@ -30,11 +34,15 @@ fail=0 count=0
 check() { local label="$1"; shift; count=$((count + 1)); if "$@"; then echo "ok    $label"; else echo "FAIL  $label"; fail=1; fi; }
 pane_of() { tmux list-panes -a -F '#{pane_id} #{@agent}' | awk -v n="$1" '$2 == n {print $1}'; }
 spawn() { "$B/tmux-spawn" "$@" --from "${caller:-main}" </dev/null; }
+# Invoked indirectly by test helpers or by commands under test.
+# shellcheck disable=SC2329
 reject() { if spawn "$@" >"$tmp/error" 2>&1; then return 1; else return 0; fi; }
+# Invoked indirectly by test helpers or by commands under test.
+# shellcheck disable=SC2329
 ready() {
   local p="$1" kind="$2" i
   [ -n "$p" ] || return 1
-  for i in {1..100}; do
+  for ((i=0; i<100; i++)); do
     tmux capture-pane -p -J -t "$p" -S -100 >"$tmp/screen"
     if grep -q "STUB READY $kind " "$tmp/screen"; then return 0; fi
     sleep 0.05

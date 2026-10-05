@@ -290,7 +290,7 @@ resolve_pane() {
     is_target "$1" || die "no agent named '$1' (it may have been closed or renamed; see tmux-peers)"
     id="$(tmux display-message -p -t "$1" '#{pane_id}' 2>/dev/null)" || id=""
   fi
-  [ -n "$id" ] && pane_alive "$id" || die "no pane named or targeted by '$1'"
+  if [ -z "$id" ] || ! pane_alive "$id"; then die "no pane named or targeted by '$1'"; fi
   printf '%s\n' "$id"
 }
 
@@ -450,6 +450,8 @@ ensure_agent_id() {
     printf '%s\n' "$aid"
     return 0
   fi
+  # Expanded by the child shell, Perl, or generated script, not this shell.
+  # shellcheck disable=SC2016
   agent_identity_lock exclusive /bin/bash -c '. "$1"; _ensure_agent_id_locked "$2" "$3"' \
     identity "${BASH_SOURCE[0]}" "$1" "${2:-}"
 }
@@ -478,6 +480,8 @@ ensure_agent_ids() {
   local dir
   dir="$(sessions_dir)"
   [ ! -f "$dir/.ids-v1" ] || return 0
+  # Expanded by the child shell, Perl, or generated script, not this shell.
+  # shellcheck disable=SC2016
   agent_identity_lock exclusive /bin/bash -c '. "$1"; _migrate_agent_ids_locked "$2"' \
     migrate "${BASH_SOURCE[0]}" "${1:-}"
 }
@@ -705,7 +709,8 @@ pane_finished() {
 # Kernel locks survive exec and are released even if a process is killed.
 agent_identity_lock() {
   local mode="$1"; shift
-  local root="/tmp/tmux-agents-$(id -u)/queue"
+  local root
+  root="/tmp/tmux-agents-$(id -u)/queue"
   mkdir -p "$root"
   perl -MFcntl=:flock -e '
     $^F = 255;
@@ -739,6 +744,8 @@ rename_agent() {
   local pane="$1" new="$2" old peer lib ask
   lib="${BASH_SOURCE[0]}"
   ask="$(dirname "$lib")/tmux-ask"
+  # Expanded by the child shell, Perl, or generated script, not this shell.
+  # shellcheck disable=SC2016
   old="$(agent_identity_lock exclusive /bin/bash -c '. "$1"; _rename_agent_locked "$2" "$3"' rename "$lib" "$pane" "$new")" || return 1
   [ "$old" != "$new" ] || return 0
   "$ask" --system-notice "$pane" "you are now $new; pass --from $new from now on" || return 1
@@ -774,8 +781,8 @@ settings_load() {
   _TMUX_SETTING_KEYS=() _TMUX_SETTING_VALUES=()
   local _settings_key _settings_value _settings_index=0
   while IFS= read -r -d '' _settings_key && IFS= read -r -d '' _settings_value; do
-    _TMUX_SETTING_KEYS[$_settings_index]="$_settings_key"
-    _TMUX_SETTING_VALUES[$_settings_index]="$_settings_value"
+    _TMUX_SETTING_KEYS[_settings_index]="$_settings_key"
+    _TMUX_SETTING_VALUES[_settings_index]="$_settings_value"
     _settings_index=$((_settings_index + 1))
   done < <(tmux show-options -g 2>/dev/null | perl -ne '
     next unless /^(@tmux_agents_\S+)\s+(.*)$/;

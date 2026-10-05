@@ -29,6 +29,8 @@ S="$(tmux -L "$sock" display -p '#{socket_path}')"
 case "$S" in ''|*/default) echo "ABORT: unsafe socket '$S'"; tmux -L "$sock" kill-server; exit 1 ;; esac
 export TMUX="$S,1,0"
 . "$here/tests/helpers/cleanup.sh"
+# Invoked by the EXIT trap.
+# shellcheck disable=SC2329
 cleanup() { cleanup_test_server || return; rm -rf "$tmp"; }
 trap cleanup EXIT
 tmux set -g default-shell /bin/sh
@@ -45,7 +47,7 @@ tmux set -p -t %0 @agent main
 ensure_agent_ids "$tmp/empty-queue"
 CLAUDECODE=1 TMUX_PANE=%0 "$B/tmux-spawn" --exact --name secondary "assist" </dev/null >/dev/null
 coord="$(pane_of secondary)"
-for i in {1..100}; do
+for ((i=0; i<100; i++)); do
   tmux capture-pane -p -t "$coord" | grep -q "FAKE claude" && break
   sleep .05
 done
@@ -53,20 +55,20 @@ tmux capture-pane -p -t "$coord" | grep -q "FAKE claude" || { bad "secondary stu
 
 out="$(TMUX_PANE=%0 "$B/tmux-spawn" codex --for secondary --exact --name worker "build the parser" </dev/null)" || bad "spawn --for failed: $out"
 w="$(pane_of worker)"
-for i in {1..100}; do
+for ((i=0; i<100; i++)); do
   tmux capture-pane -p -t "$w" | grep -q "FAKE codex" && break
   sleep .05
 done
 tmux capture-pane -p -t "$w" | grep -q "FAKE codex" || { bad "worker stub not ready"; exit 1; }
-[ -n "$w" ] && ok "worker spawned ($w)" || { bad "no worker pane"; exit 1; }
-[ "$(tmux show -pqv -t "$w" @state)" = idle ] && ok "worker starts idle" || bad "worker did not start idle"
+if [ -n "$w" ]; then ok "worker spawned ($w)"; else bad "no worker pane"; exit 1; fi
+if [ "$(tmux show -pqv -t "$w" @state)" = idle ]; then ok "worker starts idle"; else bad "worker did not start idle"; fi
 listing="$(FZF_PROMPT='agents · all windows> ' "$B/tmux-agents" --list | tr '\0' '\n')"
 case "$listing" in *"worker"*"○ idle"*) ok "list shows worker idle" ;; *) bad "list did not show worker idle" ;; esac
 
-[ "$(printf '%s\n' "$listing" | awk '/^%/ {print $1; exit}')" = "$coord" ] && ok "working sorts before idle" || bad "idle sorted before working"
-tmux set -p -t "$coord" @state done
+if [ "$(printf '%s\n' "$listing" | awk '/^%/ {print $1; exit}')" = "$coord" ]; then ok "working sorts before idle"; else bad "idle sorted before working"; fi
+tmux set -p -t "$coord" @state "done"
 listing="$(FZF_PROMPT='agents · all windows> ' "$B/tmux-agents" --list | tr '\0' '\n')"
-[ "$(printf '%s\n' "$listing" | awk '/^%/ {print $1; exit}')" = "$w" ] && ok "idle sorts before done" || bad "done sorted before idle"
+if [ "$(printf '%s\n' "$listing" | awk '/^%/ {print $1; exit}')" = "$w" ]; then ok "idle sorts before done"; else bad "done sorted before idle"; fi
 tmux set -p -t "$coord" @state working
 
 # With the worker as the only sub agent, chip focus and counts are deterministic.
@@ -77,10 +79,10 @@ case "$chip" in *'#[fg=colour244]○ 1'*) ok "chip counts idle worker" ;; *) bad
 tmux set -p -t "$coord" @parent %0
 TMUX_PANE=%0 "$B/tmux-spawn" codex --exact --name no-task </dev/null >/dev/null
 no_task="$(pane_of no-task)"
-[ "$(tmux show -pqv -t "$no_task" @state)" = idle ] && ok "ordinary no-task spawn starts idle" || bad "no-task spawn did not start idle"
+if [ "$(tmux show -pqv -t "$no_task" @state)" = idle ]; then ok "ordinary no-task spawn starts idle"; else bad "no-task spawn did not start idle"; fi
 TMUX_PANE=%0 "$B/tmux-dismiss" --from main no-task >/dev/null
 
-[ "$(tmux show -pqv -t "$w" @parent)" = "$coord" ] && ok "its parent is the secondary" || bad "parent is $(tmux show -pqv -t "$w" @parent), not $coord"
+if [ "$(tmux show -pqv -t "$w" @parent)" = "$coord" ]; then ok "its parent is the secondary"; else bad "parent is $(tmux show -pqv -t "$w" @parent), not $coord"; fi
 case " $(peers_of "$w")" in *" secondary "*) ok "connected to the secondary" ;; *) bad "not connected to the secondary" ;; esac
 case " $(peers_of "$w")" in *" main "*) bad "connected to main" ;; *) ok "not connected to main" ;; esac
 case " $(peers_of %0)" in *" worker "*) bad "main lists the worker as a peer" ;; *) ok "main has no link to it" ;; esac
@@ -93,14 +95,14 @@ cs="$(tmux capture-pane -p -J -t "$coord" -S -100)"
 case "$cs" in *"[request from main to secondary"*"I spawned worker"*) ok "the secondary was told, by main" ;; *) bad "the secondary wasn't told" ;; esac
 case "$cs" in *"build the parser"*) ok "with main's brief" ;; *) bad "the brief didn't reach the secondary" ;; esac
 
-[ "$(grep '^depth=' "$XDG_STATE_HOME"/tmux-agents/*/sessions/"$(tmux show -pqv -t "$w" @agent_id)" | cut -d= -f2)" = 1 ] && ok "its depth counts from main (1)" || bad "recorded depth is not 1"
+if [ "$(grep '^depth=' "$XDG_STATE_HOME"/tmux-agents/*/sessions/"$(tmux show -pqv -t "$w" @agent_id)" | cut -d= -f2)" = 1 ]; then ok "its depth counts from main (1)"; else bad "recorded depth is not 1"; fi
 
 TMUX_PANE=%0 "$B/tmux-spawn" codex --for secondary --exact --name ancestor-close "cleanup check" </dev/null >/dev/null
-TMUX_PANE=%0 "$B/tmux-dismiss" --from main ancestor-close >/dev/null 2>&1 && ok "main can close its descendant" || bad "main could not close its descendant"
-TMUX_PANE="$coord" "$B/tmux-dismiss" --from secondary worker >/dev/null 2>&1 && ok "the secondary can close it" || bad "the secondary couldn't close it"
+if TMUX_PANE=%0 "$B/tmux-dismiss" --from main ancestor-close >/dev/null 2>&1; then ok "main can close its descendant"; else bad "main could not close its descendant"; fi
+if TMUX_PANE="$coord" "$B/tmux-dismiss" --from secondary worker >/dev/null 2>&1; then ok "the secondary can close it"; else bad "the secondary couldn't close it"; fi
 
 tmux new-window -d -c "$tmp" cat; other="$(tmux list-panes -a -F '#{pane_id}' | tail -1)"; tmux set -p -t "$other" @agent stranger
-TMUX_PANE=%0 "$B/tmux-spawn" codex --for stranger --exact --name w2 </dev/null >/dev/null 2>&1 && bad "spawned for an agent main isn't connected to" || ok "refuses an owner main isn't connected to"
+if TMUX_PANE=%0 "$B/tmux-spawn" codex --for stranger --exact --name w2 </dev/null >/dev/null 2>&1; then bad "spawned for an agent main isn't connected to"; else ok "refuses an owner main isn't connected to"; fi
 
 [ "$fail" -eq 0 ] && echo "all passed" || echo "some failed"
 exit "$fail"
