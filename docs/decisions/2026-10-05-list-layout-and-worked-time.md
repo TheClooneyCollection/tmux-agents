@@ -8,8 +8,8 @@
 - **Search matches what's shown.** fzf searches the displayed short name and the project (in the group header and on the second row), with native matching and highlighting and no extra processes. Limitation: a full hyphenated name pasted in order (`claude-tmux-agents-secondary`) won't match, because the display order and the `·` separator differ. Search with its parts instead: space-separated terms match in any order (`claude tmux secondary`).
 - **Second row.** The activity (for closed rows, the project) is cut before the STATUS column with `…`, by display width: CJK and other wide characters count 2 cells. The second row's STATUS cell shows the time in the current state and the total worked time: `12m · worked 7m`, `4m · worked 1h5m`, closed `13h · worked 1h20m`. STATUS is as wide as its widest cell.
 - **Time format.** Time in state uses one coarse unit: `45s`, `4m`, `2h`, `3d`. Worked time uses up to two units: `7m`, `1h5m`, `2d3h`.
-- **Worked time.** A turn starts when the state becomes `working` and ends when it leaves `working`. The turn's length is added to a running total, and the last turn's length and the turn count are kept. They're pane options while the agent is live, and are written into its session record when it closes. `--resume` reads them back and keeps adding. Agents started before this release count from the upgrade.
-- **Preview header.** Full name, started, age, total worked, last turn and number of turns.
+- **Worked time.** A logical turn starts when work begins after done, idle or reopening. Permission, needs-you and message waits pause its clock; returning to working continues the same turn. Done, idle or closure completes it. Checkpoint totals and state time in the session record at every completion or pause, and checkpoint the active interval start when working resumes. Reopening keeps the saved totals and starts a new turn. Agents started before this release count from their first timing event, without backfill.
+- **Preview header.** Full name, activity wrapped to preview width in three fixed lines, truncated with `…` or padded when short, started, age, total worked, last turn and number of turns. The seven-line header stays pinned while pane content follows its tail, with a dim full-width separator; closed records show saved activity when available.
 - **No new cost.** Everything comes from the existing pane snapshot and record batch: no extra processes, and `list-budget.sh` stays green.
 - **Tests.** Column widths and compaction (including CJK), the time formats, and the worked-time accounting.
 
@@ -25,3 +25,17 @@
 **Why.** Columns that never move are easier to scan, and the project is already in the group header. Time in state and worked time show at a glance which agents are stuck and which are doing the work.
 
 **Rejected.** A NAME column that grows with the longest name (the old behaviour, which moves STATUS and PARENT). Counting worked time from pane age, which counts idle hours as work. Searching the hidden full name, which fzf can't do natively: it would need a filter process per keystroke and would lose match highlighting (decided 2026-10-05).
+
+## Abrupt pane removal (2026-10-05)
+
+Isolated tmux hook checks established these limits:
+
+- `pane-died` with `remain-on-exit` keeps the pane and its options readable. Save the final interval there.
+- `pane-exited` supplies `hook_pane`, but with `remain-on-exit` off the pane and its options are already gone.
+- `after-kill-pane` runs after removal, has no `hook_pane`, and its format context can be another pane.
+- `window-unlinked` supplies `hook_window`; the removed window's panes are already gone.
+- There is no hook before a pane is killed, so a removal hook cannot reconstruct the active interval.
+
+Previously, abrupt removal could lose all increments since the last close/save, including completed turns (the entire total for a never-saved new agent). Checkpoints now preserve completed turns and banked work before pauses. At most the current unsaved working interval is lost; an unfinished logical turn is not reported as a completed turn.
+
+Store `pane=` alongside counters. The three after-removal hooks run a batch sweep with one `list-panes` snapshot and no per-record tmux calls, marking records whose pane disappeared `closed=` without adding guessed work. Read candidate bindings before the snapshot and recheck them under each record lock so concurrent resumes with a new pane are not closed by a stale snapshot. This sweep is separate from list building. Legacy records without a pane binding are left alone.

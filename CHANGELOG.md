@@ -4,7 +4,7 @@
 
 - **Long-lived members.** `tmux-spawn --member` keeps chain agents out of the default sub-agent list, ordinary chip counts and bulk cleanup, while preserving attention, ownership, subtree dismissal and resume. Only top-level callers can spawn members, with ordinary caller-based depth and limits; the agent-chain skill uses members for the secondary and worker.
 - **Stable list columns.** Names occupy 26 display cells, abbreviate their project prefix within their own group, and compact long labels in the middle. Activity text respects wide characters and stops before the status column.
-- **Worked time.** Rows show time in state and accumulated working time. Permission and message waits pause accounting; closing and reopening preserves the totals. Preview headers show the full name, complete wrapped activity, start time, age, last turn and turn count, separated from pane content by a dim line. Closing also saves the last activity. Older agents retain unknown start times and do not invent past work.
+- **Worked time.** Rows show time in state and accumulated working time. Permission and message waits pause accounting; turn completions and pauses checkpoint the totals, so abrupt pane removal loses at most the active interval. Removal hooks mark saved records closed, and reopening preserves their work. Preview headers show the full name, wrapped activity in three fixed lines, start time, age, last turn and turn count, separated from pane content by a dim line. Closing also saves the last activity. Older agents retain unknown start times and do not invent past work.
 
 ## v1.10.0 (2026-10-05)
 
