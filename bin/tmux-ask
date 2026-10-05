@@ -143,12 +143,12 @@ refresh_waiting() {
   done
   if [ -n "$oldest" ]; then
     previous="$(tmux show-options -pqv -t "$p" @msg_waiting_since 2>/dev/null || true)"
-    tmux set-option -p -t "$p" @msg_waiting_since "$oldest" 2>/dev/null || true
+    agent_set_wait "$p" message "$oldest" 2>/dev/null || true
     if [ -z "$previous" ]; then
       "$here/tmux-agents" --chip-layout on >/dev/null 2>&1 || true
     fi
   else
-    tmux set-option -pu -t "$p" @msg_waiting_since 2>/dev/null || true
+    agent_set_wait "$p" message "" 2>/dev/null || true
   fi
 }
 
@@ -333,7 +333,7 @@ if [ "${1:-}" = --retry-locked ]; then
     rm -f "$source" "${source%.undelivered}.meta"
     # Reapply receiver state without attributing this retry to its caller.
     if [ "$kind" = request ]; then
-      tmux set-option -p -t "$receiver" @state working
+      agent_set_state "$receiver" working
       tmux set-option -pu -t "$receiver" @waiting_on 2>/dev/null || true
       tmux set-option -pu -t "$receiver" @attention_since 2>/dev/null || true
     elif [ "$kind" = reply ]; then
@@ -510,10 +510,10 @@ if [ "$notice" -eq 1 ]; then
     tmux set-option -p -t "$self" @waiting_on "$(pane_name "$peer") (after a notice)"
   fi
 elif [ "$reply" -eq 1 ]; then
-  [ "$(tmux display-message -p -t "$self" '#{@parent}')" != "$peer" ] || tmux set-option -p -t "$self" @state "done"
+  [ "$(tmux display-message -p -t "$self" '#{@parent}')" != "$peer" ] || agent_set_state "$self" "done"
   remove_word "$peer" @awaiting "$from_id"
 else
-  tmux set-option -p -t "$peer" @state working
+  agent_set_state "$peer" working
   tmux set-option -pu -t "$peer" @waiting_on 2>/dev/null || true
   tmux set-option -pu -t "$peer" @attention_since 2>/dev/null || true
   add_word "$self" @awaiting "$to_id"

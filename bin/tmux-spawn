@@ -94,6 +94,13 @@ if [ "${1:-}" = "--run" ]; then
   unset TMUX_SPAWN_CODEX_HOMES
   prompt=""
   [ -z "$file" ] || { prompt="$(cat "$file")"; rm -f "$file"; }
+  # Initialize before the agent can issue hooks; the parent call is idempotent.
+  if [ "$mode" = new ]; then
+    if [ -n "$prompt" ]; then agent_start_work "$TMUX_PANE" working
+    else agent_start_work "$TMUX_PANE" idle; fi
+  else
+    agent_restore_work "$TMUX_PANE" "${6:?resume agent ID required}"
+  fi
   export PATH="$here:$PATH"
   # Test hook: put stand-in agent binaries first.
   [ -z "${TMUX_SPAWN_BIN:-}" ] || export PATH="$TMUX_SPAWN_BIN:$PATH"
@@ -289,11 +296,11 @@ if [ -n "$resume$resume_id" ]; then
   fi
   resume="$(unique_name "$resume")"
   pane="$(open_window "$(agents_session_for "$dir")" "$dir" "$resume" \
-    "'$here/tmux-spawn' --run '$kind' '' '$sid' resume" "${rdepth:-1}")"
+    "'$here/tmux-spawn' --run '$kind' '' '$sid' resume '$resume_id'" "${rdepth:-1}")"
   ensure_agent_id "$pane" "$resume_id" >/dev/null
   adopt "$pane" "$parent" "$resume"
   [ "$kind" = claude ] || tmux set-option -p -t "$pane" @codex_thread "$sid"
-  tmux set-option -p -t "$pane" @state "done"
+  agent_restore_work "$pane" "$resume_id"
   record_set "$resume_id" name "$resume"
   record_set "$resume_id" closed ""
   if [ -n "$parent" ]; then
@@ -418,7 +425,9 @@ else
 fi
 
 if [ -z "$task" ]; then
-  tmux set-option -p -t "$pane" @state idle
+  agent_start_work "$pane" idle
+else
+  agent_start_work "$pane" working
 fi
 
 if [ -n "$for_name" ]; then
