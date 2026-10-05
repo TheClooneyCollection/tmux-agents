@@ -168,7 +168,15 @@ SCOPE_REAL_TMUX="$(command -v tmux)"
 export SCOPE_REAL_TMUX SCOPE_PICK="$hidden"
 cat >"$tmp/ui/fzf" <<'STUB'
 #!/bin/sh
-if [ "${SCOPE_REAL_PICKER:-}" = 1 ]; then exec "$SCOPE_REAL_FZF" "$@"; fi
+if [ "${SCOPE_REAL_PICKER:-}" = 1 ]; then
+  if [ -z "${SCOPE_INITIAL_SELECT:-}" ]; then
+    # Observe real load/result events; prompt text can precede an async reload.
+    exec "$SCOPE_REAL_FZF" "$@" \
+      --bind 'load:execute-silent(printf "%s\n" "$FZF_PROMPT" >"$SCOPE_UI_LOG.loaded")' \
+      --bind 'result:execute-silent(printf "%s\t%s\t%s\n" "$FZF_QUERY" "$FZF_MATCH_COUNT" {1} >"$SCOPE_UI_LOG.result")'
+  fi
+  exec "$SCOPE_REAL_FZF" "$@"
+fi
 cat >/dev/null
 printf '%s\n' "$@" >"$SCOPE_UI_ARGS"
 [ "${SCOPE_UI_ABORT:-}" != 1 ] || exit 1
@@ -237,13 +245,26 @@ STUB
     -e "SCOPE_REAL_TMUX=$SCOPE_REAL_TMUX" -e "SCOPE_UI_LOG=$SCOPE_UI_LOG" \
     -e "XDG_STATE_HOME=$XDG_STATE_HOME" -e "SCOPE_BIN=$B" -e "SCOPE_CLIENT=$client" \
     -e "SCOPE_RESULT=$tmp/picker-result" -e "SCOPE_DONE=$tmp/picker-done" "$tmp/picker")"
-  check 'real picker opens local' wait_prompt 'all · this window>'
+  # Wait for explicit fzf events, not a row left visible from the old scope.
+  wait_picker_event() {
+    local i
+    for ((i=0; i<100; i++)); do
+      if [ -f "$1" ] && grep -Fxq -- "$2" "$1"; then return 0; fi
+      [ ! -f "$tmp/picker-done" ] || break
+      sleep 0.1
+    done
+    return 1
+  }
+  check 'real picker opens local'  wait_prompt 'all · this window>'
+  check 'initial real reload completes' wait_picker_event "$SCOPE_UI_LOG.loaded" 'all · this window> '
   tmux send-keys -t "$ui" C-t
   check 'real ctrl-t switches scope' wait_prompt 'all · all windows>'
+  check 'all-window reload completes' wait_picker_event "$SCOPE_UI_LOG.loaded" 'all · all windows> '
   tmux send-keys -t "$ui" C-a
   check 'real ctrl-a keeps scope' wait_prompt 'agents · all windows>'
+  check 'sub-agent reload completes' wait_picker_event "$SCOPE_UI_LOG.loaded" 'agents · all windows> '
   tmux send-keys -l -t "$ui" hidden-a
-  check 'real reload finishes before selection' wait_prompt 'hidden-a.*working.*main-a'
+  check 'real query selects the intended sole match' wait_picker_event "$SCOPE_UI_LOG.result" $'hidden-a\t1\t'"$hidden"
   tmux send-keys -t "$ui" Enter
   for ((i=0; i<100; i++)); do [ ! -f "$tmp/picker-done" ] || break; sleep 0.1; done
   check 'real picker accepts without error' test "$(cat "$tmp/picker-done" 2>/dev/null)" = 0
