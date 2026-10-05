@@ -30,12 +30,13 @@ NAME's pane (@codex_thread) for later turns.
 USAGE
 }
 
-FROM_PANE="" pane="" perm="" turn="" notify_json="" waiting=0
+FROM_PANE="" pane="" perm="" turn="" notify_json="" waiting=0 save_work=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
     --from) FROM_PANE="${2:-}"; shift 2 ;;
     --pane) pane="${2:-}"; shift 2 ;;
+    --save-work) save_work=1; shift ;;
     --perm) perm="${2:-}"; shift 2 ;;
     # Codex sub agents spawned before hooks were dropped still call this.
     --codex-hook) cat >/dev/null 2>&1; exit 0 ;;
@@ -76,8 +77,9 @@ claude_background() {
 
 turn_end() {
   local p="$1" kids awaited live="" n who waiting_on
-  tmux set-option -pu -t "$p" @perm_since 2>/dev/null || true
-  case "$(tmux show-options -pqv -t "$p" @state)" in done|idle) return 0 ;; esac
+  case "$(tmux show-options -pqv -t "$p" @state)" in
+    done|idle) agent_turn_state "$p" end ""; return 0 ;;
+  esac
   kids="$(tmux list-panes -a -F '#{pane_id} #{@parent} #{pane_dead} #{?@state,#{@state},-} #{@agent}' \
     | awk -v p="$p" '$2 == p && $3 == 0 && $4 != "done" && !seen[$1]++ { print $5 }' | tr '\n' ' ')"
   awaited="$(tmux show-options -pqv -t "$p" @awaiting)"
@@ -96,11 +98,11 @@ turn_end() {
   who="$(printf '%s' "$who" | sed 's/ /, /g')"
   [ -z "$waiting_on" ] || who="${who:+$who, }$waiting_on"
   if [ -n "$who" ]; then
-    tmux set-option -p -t "$p" @state working
+    agent_turn_state "$p" end working
     tmux set-option -p -t "$p" @activity "waiting for $who"
     tmux set-option -pu -t "$p" @attention_since 2>/dev/null || true
   else
-    tmux set-option -p -t "$p" @state needs_you
+    agent_turn_state "$p" end needs_you
     [ -n "$(tmux show-options -pqv -t "$p" @attention_since)" ] || tmux set-option -p -t "$p" @attention_since "$(date +%s)"
   fi
 }
@@ -168,6 +170,8 @@ else
   pane="$(self_pane)"
 fi
 
+[ "$save_work" -eq 0 ] || { agent_save_work "$pane"; exit 0; }
+
 case "$turn" in
   end) turn_end "$pane"; exit 0 ;;
   start)
@@ -179,20 +183,19 @@ case "$turn" in
       case "$prompt" in "[notice from "*) exit 0 ;; esac
     fi
     if [ "$(tmux show-options -pqv -t "$pane" @state)" = needs_you ]; then
-      tmux set-option -p -t "$pane" @state working
       tmux set-option -pu -t "$pane" @attention_since 2>/dev/null || true
     fi
-    tmux set-option -pu -t "$pane" @perm_since 2>/dev/null || true
+    agent_turn_state "$pane" start
     tmux set-option -pu -t "$pane" @waiting_on 2>/dev/null || true
     exit 0 ;;
 esac
 
 case "$perm" in
   on)
-    [ -n "$(tmux show-options -pqv -t "$pane" @perm_since)" ] || tmux set-option -p -t "$pane" @perm_since "$(date +%s)"
+    agent_set_wait "$pane" perm "$(date +%s)"
     exit 0 ;;
   off)
-    tmux set-option -pu -t "$pane" @perm_since 2>/dev/null || true
+    agent_set_wait "$pane" perm ""
     exit 0 ;;
 esac
 
@@ -209,7 +212,6 @@ fi
 tmux set-option -p -t "$pane" @activity "$text"
 # A report after replying ("delivered abc123") is a summary, not new work:
 # a done agent stays done. Only a new request (tmux-ask) makes it working.
-[ "$(tmux show-options -pqv -t "$pane" @state)" = "done" ] || tmux set-option -p -t "$pane" @state working
-tmux set-option -pu -t "$pane" @perm_since 2>/dev/null || true
+agent_report_state "$pane"
 tmux set-option -pu -t "$pane" @attention_since 2>/dev/null || true
 echo "reported: $text"

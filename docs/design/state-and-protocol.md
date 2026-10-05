@@ -16,6 +16,10 @@ Live state uses tmux user options on the panes (`set-option -p`); session record
 | `@member` | `1` for a long-lived member; persisted as `member=1` in its session record. |
 | `@closed` | Agent IDs of peers the user closed (set by `note_closed` before `kill-pane`), rendered as labels. |
 | `@state` | On sub agents: `idle`, `done`, `working` or `needs_you`. See [done state](sub-agents.md#done-state-and-cleanup) and [chip data](sub-agents.md#data-not-screen-scraping). |
+| `@state_since` | Epoch of the current state transition. Repeated reports in the same state do not restart its age. |
+| `@started` | Original spawn epoch, retained on resume; absent for agents whose start time is unknown. |
+| `@worked`, `@last_turn`, `@turns`, `@turn_start` | Accrued working seconds, last completed turn's working time, completed turn count, and the current active interval's start. A live total adds the active interval; absent totals mean unknown. |
+| `@turn_active`, `@turn_work` | Internal unfinished-turn flag and accrued active seconds within that turn. Waits retain them; done, idle and closure finalize and clear them. |
 | `@msg_waiting_since` | Epoch when a queued message began waiting; set after the escalation threshold and cleared on delivery. Pins the receiver in the list and highlights it in the chip. |
 | `@awaiting` | Agent IDs this pane sent requests to and hasn't had a reply from yet, rendered as labels. |
 | `@activity`, `@waiting_on`, `@perm_since` | Sub agent reports for the [status chip](sub-agents.md#status-chip). |
@@ -28,6 +32,12 @@ Why pane options:
 - **Stable ids.** Pane ids survive moving panes between windows and sessions.
 - **Automatic cleanup.** Closing a pane deletes its options. Other panes' `@peers` still list the dead id until `get_peers` prunes it on the next read.
 - **Live links are local.** `tmux show -p @peers` shows current connections. Durable queue files and session records separately retain messages and closed conversations.
+
+## Working-time accounting
+
+State writers share `agent_set_state` in `lib.sh`, so state transitions and turn counters cannot drift apart. Permission and message-waiting overlays use the same accounting path while retaining the base state. Only active `working` intervals accrue seconds. Permission, needs-you and message waits pause the same turn; returning to working resumes it. Done, idle or closure completes the turn, whose duration is the sum of its active intervals. A new turn begins when work starts after done, idle, closure or initial creation. Repeated state or wait notifications must not double count or reset an active interval.
+
+Closing persists `started`, `state_since`, `worked`, `last_turn`, `turns` and `turn_start` in the ID-keyed session record. Resume restores the historical counters and resumes counting only when work starts again. Pre-upgrade agents initialize from their first accounting event, with no historical backfill and no guessed spawn time. List rendering reads these options in its existing pane snapshot and reads saved counters in the existing record batch. Normal dismissal and the retained-pane `pane-died` hook save counters. A direct `kill-pane` that bypasses dismissal can discard unsaved pane counters before a hook can read them.
 
 ## Links
 

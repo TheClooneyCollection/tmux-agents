@@ -646,12 +646,164 @@ record_get() {
 # record_set AGENT_ID KEY VALUE: set one key (empty VALUE removes it).
 record_set() {
   valid_agent_id "$1" || return 1
-  local d f tmp
-  d="$(sessions_dir)"; f="$d/$1"
+  local d
+  d="$(sessions_dir)"
   mkdir -p "$d"
-  tmp="$(mktemp "$d/.rec.XXXXXX")"
-  { [ ! -f "$f" ] || awk -F= -v k="$2" '$1 != k && $1 != "agent_id"' "$f"; printf 'agent_id=%s\n' "$1"; [ -z "$3" ] || printf '%s=%s\n' "$2" "$3"; } > "$tmp"
-  mv -f "$tmp" "$f"
+  perl -MFcntl=:flock -e '
+    my ($dir, $id, $key, $value) = @ARGV;
+    open(my $lock, ">>", "$dir/.record-$id.lock") or die "$!";
+    flock($lock, LOCK_EX) or die "$!";
+    my %v;
+    if (open(my $in, "<", "$dir/$id")) {
+      while (<$in>) { chomp; my ($k, $v) = split /=/, $_, 2; $v{$k} = $v if defined $v }
+    }
+    $v{agent_id} = $id;
+    if (length $value) { $v{$key} = $value } else { delete $v{$key} }
+    my $tmp = "$dir/.rec-$$";
+    open(my $out, ">", $tmp) or die "$!";
+    print $out "$_=$v{$_}\n" for sort keys %v;
+    close($out) or die "$!";
+    rename($tmp, "$dir/$id") or die "$!";
+  ' "$d" "$1" "$2" "$3"
+}
+
+# Accounting is event driven, never part of the list build. A legacy pane
+# starts at its first event: missing timestamps never imply historical work.
+# @turn_start is the active interval only. @turn_work accumulates its logical
+# turn across pauses; @turn_active survives permission, message and needs-you
+# waits. Only done, idle or close completes that turn and updates last_turn.
+agent_set_state() { _agent_work "$1" state "$2" "${3:-}"; }
+agent_save_work() { _agent_work "$1" save "" "${2:-}"; }
+agent_restore_work() { _agent_work "$1" restore "$2" "${3:-}"; }
+# VALUE is an epoch marker, or empty to clear. Both overlays share the lock.
+agent_set_wait() { _agent_work "$1" "$2" "$3" "${4:-}"; }
+# Internal guarded transitions keep done/idle precedence inside the same lock.
+agent_report_state() { _agent_work "$1" report "" "${2:-}"; }
+agent_turn_state() { _agent_work "$1" "$2" "${3:-}" "${4:-}"; }
+agent_start_work() { _agent_work "$1" spawn "$2" "${3:-}"; }
+
+_agent_work() {
+  local d
+  d="$(sessions_dir)"
+  mkdir -p "$d"
+  perl -MFcntl=:flock -e '
+    use strict; use warnings;
+    my ($dir, $pane, $op, $value, $now) = @ARGV;
+    die "invalid pane" unless $pane =~ /^%[0-9]+$/;
+    die "invalid clock" if length($now) && $now !~ /^[0-9]+$/;
+    open(my $lock, ">>", "$dir/.work-$pane.lock") or die "$!";
+    flock($lock, LOCK_EX) or die "$!";
+    $now = time unless length $now;
+    my @keys = qw(state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored agent_id agent);
+    my $format = "#{pane_id}\t" . join("\t", map { "\#{\@$_}" } @keys);
+    open(my $in, "-|", "tmux", "display-message", "-p", "-t", $pane, $format) or die "$!";
+    my $row = <$in> // ""; close($in); chomp $row;
+    my ($found, @vals) = split /\t/, $row, -1;
+    exit 0 unless $found eq $pane;
+    my %v; @v{@keys} = @vals;
+    my %before = %v;
+    sub number { defined($_[0]) && $_[0] =~ /^[0-9]+$/ }
+    sub effective {
+      return "closed" if $v{work_closed};
+      return "permission" if $v{perm_since};
+      return "message" if $v{msg_waiting_since};
+      return $v{state} || "working";
+    }
+    my $old = effective();
+    exit 0 if $op eq "spawn" && number($v{started});
+    # Never infer an interval from a legacy working state without turn_start.
+    if ($op eq "restore") {
+      die "invalid agent id" unless $value =~ /^a[0-9a-f]{12}$/;
+      exit 0 if ($v{work_restored} // "") eq $value;
+      $v{work_restored} = $value;
+      if (open(my $rec, "<", "$dir/$value")) {
+        my %r;
+        while (<$rec>) { chomp; my ($k, $val) = split /=/, $_, 2; $r{$k} = $val if defined $val }
+        for (qw(started worked last_turn turns)) { $v{$_} = number($r{$_}) ? $r{$_} : "" }
+      }
+      $v{state} = "done"; $v{state_since} = $now;
+      $v{turn_start} = $v{turn_work} = $v{turn_active} = "";
+      $v{work_closed} = $v{perm_since} = $v{msg_waiting_since} = "";
+    } else {
+      if ($op eq "state") { $v{state} = $value }
+      elsif ($op eq "spawn") {
+        $v{started} = $now; $v{worked} = $v{turns} = 0;
+        $v{state} = $value;
+      }
+      elsif ($op eq "report") {
+        $v{state} = "working" unless $v{state} eq "done";
+        $v{perm_since} = "";
+      }
+      elsif ($op eq "start") {
+        $v{state} = "working" if $v{state} eq "needs_you";
+        $v{perm_since} = "";
+      }
+      elsif ($op eq "end") {
+        $v{state} = $value if length($value) && $v{state} !~ /^(done|idle)$/;
+        $v{perm_since} = "";
+      }
+      elsif ($op eq "perm" || $op eq "message") {
+        my $key = $op eq "perm" ? "perm_since" : "msg_waiting_since";
+        die "invalid wait timestamp" if length($value) && !number($value);
+        # Permission on repeats must not reset its attention timestamp.
+        $v{$key} = $op eq "perm" && length($value) && $v{$key} ? $v{$key} : $value;
+      }
+      elsif ($op eq "save") { $v{work_closed} = 1 }
+      else { die "unknown accounting operation" }
+      my $new = effective();
+      if (number($v{turn_start}) && $new ne "working") {
+        my $elapsed = $now - $v{turn_start}; $elapsed = 0 if $elapsed < 0;
+        $v{worked} = (number($v{worked}) ? $v{worked} : 0) + $elapsed;
+        $v{turn_work} = (number($v{turn_work}) ? $v{turn_work} : 0) + $elapsed;
+        $v{turn_active} = 1;
+        $v{turn_start} = "";
+      }
+      # A terminal semantic state completes the turn even under an overlay.
+      if ($v{turn_active} && ($v{work_closed} || $v{state} =~ /^(done|idle)$/)) {
+        $v{last_turn} = number($v{turn_work}) ? $v{turn_work} : 0;
+        $v{turns} = (number($v{turns}) ? $v{turns} : 0) + 1;
+        $v{turn_work} = $v{turn_active} = "";
+      }
+      if ($new eq "working" && !number($v{turn_start})) {
+        unless ($v{turn_active}) {
+          $v{turn_active} = 1; $v{turn_work} = 0;
+        }
+        $v{worked} = 0 unless number($v{worked});
+        $v{turns} = 0 unless number($v{turns});
+        $v{turn_start} = $now;
+      }
+      $v{state_since} = $now if $old ne $new || !number($v{state_since});
+    }
+    my @cmd;
+    for my $key (@keys) {
+      next if ($v{$key} // "") eq ($before{$key} // "");
+      push @cmd, ";" if @cmd;
+      push @cmd, "set-option", (length($v{$key} // "") ? "-p" : "-pu"), "-t", $pane, "\@$key";
+      push @cmd, $v{$key} if length($v{$key} // "");
+    }
+    system("tmux", @cmd) == 0 or die "accounting update failed" if @cmd;
+    if ($op eq "save") {
+      my $id = $v{agent_id};
+      exit 0 unless defined($id) && $id =~ /^a[0-9a-f]{12}$/;
+      open(my $rl, ">>", "$dir/.record-$id.lock") or die "$!";
+      flock($rl, LOCK_EX) or die "$!";
+      my %r;
+      if (open(my $rec, "<", "$dir/$id")) {
+        while (<$rec>) { chomp; my ($k, $val) = split /=/, $_, 2; $r{$k} = $val if defined $val }
+        close $rec;
+      }
+      $r{agent_id} = $id;
+      $r{name} = $v{agent} if length($v{agent} // "");
+      for (qw(state_since worked last_turn turns turn_start started)) {
+        if (number($v{$_})) { $r{$_} = $v{$_} } else { delete $r{$_} }
+      }
+      $r{closed} = $now unless $r{closed};
+      my $tmp = "$dir/.rec-$$";
+      open(my $out, ">", $tmp) or die "$!";
+      print $out "$_=$r{$_}\n" for sort keys %r;
+      close($out) or die "$!"; rename($tmp, "$dir/$id") or die "$!";
+    }
+  ' "$d" "$1" "$2" "$3" "$4"
 }
 
 # Mark the sub agent in pane $1 closed, if it has a record.
@@ -659,7 +811,7 @@ record_closed() {
   local name
   name="$(pane_agent_id "$1")"
   [ -n "$name" ] && [ -f "$(sessions_dir)/$name" ] || return 0
-  record_set "$name" closed "$(date +%s)"
+  agent_save_work "$1"
 }
 
 # Strict ancestry: only live, exact pane IDs participate. Reject cycles,
