@@ -1,5 +1,16 @@
 # One pane snapshot and one record batch; all graph walks stay in memory.
 BEGIN { FS = "\t"; OFS = "\t"; prefix = ENVIRON["LIST_PREFIX"] "-"; now = ENVIRON["LIST_NOW"] + 0; for (i=1;i<256;i++) byte[sprintf("%c",i)]=i }
+# Preview activity is the final field and can contain tabs or multiple lines.
+# Handle the whole preview stream before interpreting list protocol tags.
+ENVIRON["LIST_PREVIEW"]=="1" {
+    if (NR==1) {
+        preview_name=$2; preview_start=$3; work=$4; preview_last=$5; preview_turns=$6
+        if (numeric(work) && numeric($7) && $8=="working" && $9=="" && $10=="" && $11!=1) work+=now>$7 ? now-$7 : 0
+        preview_activity=$12
+        for (i=13;i<=NF;i++) preview_activity=preview_activity " " $i
+    } else preview_activity=preview_activity "\n" $0
+    next
+}
 $1 == "P" {
     p = $2
     if (p in name) next
@@ -12,12 +23,6 @@ $1 == "P" {
     next
 }
 $1 == "R" { record[$2]=1; rid[$2]=$3; closed[$2]=$4; owner[$2]=$5; dir[$2]=$6; label[$2]=$7; parentlabel[$2]=$8; saved_since[$2]=$9; saved_worked[$2]=$10; saved_last[$2]=$11; saved_turns[$2]=$12; saved_start[$2]=$14; recordmember[$2]=($15==1); next }
-$1 == "V" {
-    work=$4
-    if (numeric(work) && numeric($7) && $8=="working" && $9=="" && $10=="" && $11!=1) work+=now>$7 ? now-$7 : 0
-    preview=metadata($2,$3,work,$5,$6)
-    next
-}
 $1 == "D" { project[$2]=$3; next }
 # Walk to the first visible live ancestor, with the original pane as fallback.
 function visible(p, original, visited) {
@@ -119,8 +124,18 @@ function duration(n, a, b) {
 function timecell(since, work) {
     return (numeric(since) ? elapsed(now-since) : "?") (numeric(work) ? " · worked " duration(work) : "")
 }
+function wrapped(s, width, at, used, w, ch, out) {
+    gsub(/\r/, "", s); gsub(/\t/, " ", s)
+    for (at=1;at<=length(s);at+=bytes) {
+        w=decode(s,at); ch=substr(s,at,bytes)
+        if (ch=="\n") { out=out ch; used=0; continue }
+        if (used+w>width && used>0) { out=out "\n"; used=0 }
+        out=out ch; used+=w
+    }
+    return out
+}
 function metadata(full, start, work, last, count) {
-    return full "\nstarted " (numeric(start) ? start : "?") " · age " (numeric(start) ? elapsed(now-start) : "?") "\nworked " (numeric(work) ? duration(work) : "?") " · last turn " (numeric(last) ? duration(last) : "?") " · turns " (numeric(count) ? count : "?")
+    return full (preview_activity!="" ? "\n" wrapped(preview_activity,preview_width) : "") "\nstarted " (numeric(start) ? start : "?") " · age " (numeric(start) ? elapsed(now-start) : "?") "\nworked " (numeric(work) ? duration(work) : "?") " · last turn " (numeric(last) ? duration(last) : "?") " · turns " (numeric(count) ? count : "?")
 }
 function add(rank, section, id, label, status, ownername, report, timing) {
     nr++; ranks[nr]=rank; sections[nr]=section; ids[nr]=id; labels[nr]=label
@@ -147,7 +162,15 @@ function color(s) {
     return "\033[38;5;240m" s "\033[0m"
 }
 END {
-    if (ENVIRON["LIST_PREVIEW"]=="1") { print preview; exit }
+    if (ENVIRON["LIST_PREVIEW"]=="1") {
+        preview_width=ENVIRON["FZF_PREVIEW_COLUMNS"]
+        if (!numeric(preview_width) || preview_width<2) preview_width=40
+        print metadata(preview_name,preview_start,work,preview_last,preview_turns)
+        printf "\033[2m"
+        for (i=0;i<preview_width;i++) printf "─"
+        printf "\033[0m\n"
+        exit
+    }
     target=ENVIRON["LIST_WINDOW"]
     if (target=="") target=window[ENVIRON["TMUX_PANE"]]
     scope=ENVIRON["LIST_SCOPE"]; mode=ENVIRON["LIST_MODE"]

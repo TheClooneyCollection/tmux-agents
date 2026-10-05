@@ -694,11 +694,11 @@ _agent_work() {
     open(my $lock, ">>", "$dir/.work-$pane.lock") or die "$!";
     flock($lock, LOCK_EX) or die "$!";
     $now = time unless length $now;
-    my @keys = qw(state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored agent_id agent);
+    my @keys = qw(state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored agent_id agent activity);
     my $format = "#{pane_id}\t" . join("\t", map { "\#{\@$_}" } @keys);
     open(my $in, "-|", "tmux", "display-message", "-p", "-t", $pane, $format) or die "$!";
-    my $row = <$in> // ""; close($in); chomp $row;
-    my ($found, @vals) = split /\t/, $row, -1;
+    my $row = do { local $/; <$in> } // ""; close($in); chomp $row;
+    my ($found, @vals) = split /\t/, $row, scalar(@keys)+1;
     exit 0 unless $found eq $pane;
     my %v; @v{@keys} = @vals;
     my %before = %v;
@@ -794,6 +794,10 @@ _agent_work() {
       }
       $r{agent_id} = $id;
       $r{name} = $v{agent} if length($v{agent} // "");
+      # Records split only at the first =; flatten line breaks to prevent keys
+      # in activity text from becoming record entries. Preserve literal equals.
+      my $activity = $v{activity} // ""; $activity =~ s/[\r\n\t]/ /g;
+      if (length $activity) { $r{activity} = $activity } else { delete $r{activity} }
       for (qw(state_since worked last_turn turns turn_start started)) {
         if (number($v{$_})) { $r{$_} = $v{$_} } else { delete $r{$_} }
       }

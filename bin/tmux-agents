@@ -380,8 +380,7 @@ case "${1:-}" in
     exit 0
     ;;
   --preview-info)
-    tmux display-message -p -t "$2" 'V	#{@agent}	#{@started}	#{@worked}	#{@last_turn}	#{@turns}	#{@turn_start}	#{@state}	#{@perm_since}	#{@msg_waiting_since}	#{pane_dead}' | preview_header
-    printf '\n'
+    tmux display-message -p -t "$2" 'V	#{@agent}	#{@started}	#{@worked}	#{@last_turn}	#{@turns}	#{@turn_start}	#{@state}	#{@perm_since}	#{@msg_waiting_since}	#{pane_dead}	#{@activity}' | preview_header
     tmux capture-pane -ep -J -t "$2" -S -300
     exit 0
     ;;
@@ -394,9 +393,9 @@ case "${1:-}" in
     valid_agent_id "$n" || die "invalid agent id: $n"
     parent="$(agent_name_by_id "$(record_get "$n" parent)")"
     [ -n "$parent" ] || parent="$(record_get "$n" parent_name)"
-    printf 'V\t%s\t%s\t%s\t%s\t%s\n' "$(record_get "$n" name)" \
+    printf 'V\t%s\t%s\t%s\t%s\t%s\t\t\t\t\t\t%s\n' "$(record_get "$n" name)" \
       "$(record_get "$n" started)" "$(record_get "$n" worked)" \
-      "$(record_get "$n" last_turn)" "$(record_get "$n" turns)" | preview_header
+      "$(record_get "$n" last_turn)" "$(record_get "$n" turns)" "$(record_get "$n" activity)" | preview_header
     printf 'closed, can be reopened\n\n'
     printf '  ID       %s\n' "$n"
     printf '  agent    %s\n  dir      %s\n  parent   %s\n  session  %s\n\n' \
