@@ -122,7 +122,7 @@ function duration(n, a, b) {
     a=int(n/86400) "d"; b=int(n%86400/3600); return a (b ? b "h" : "")
 }
 function timecell(since, work) {
-    return (numeric(since) ? elapsed(now-since) : "?") (numeric(work) ? " · worked " duration(work) : "")
+    return (numeric(since) ? elapsed(now-since) : "") (numeric(work) ? (numeric(since) ? " · " : "") "worked " duration(work) : "")
 }
 function wrapped(s, width, at, used, w, ch, out) {
     gsub(/\r/, "", s); gsub(/\t/, " ", s)
@@ -134,8 +134,18 @@ function wrapped(s, width, at, used, w, ch, out) {
     }
     return out
 }
+# fzf ~7 pins a fixed name/activity/timing/separator header. Keep exactly
+# three activity lines even for older records with no activity.
+function preview_lines(s, width, lines, n, j, out) {
+    n=split(wrapped(s,width),lines,"\n")
+    for (j=1;j<=3;j++) {
+        if (j>1) out=out "\n"
+        out=out (j==3 && n>3 ? head(lines[j],width-1) "…" : lines[j])
+    }
+    return out
+}
 function metadata(full, start, work, last, count) {
-    return full (preview_activity!="" ? "\n" wrapped(preview_activity,preview_width) : "") "\nstarted " (numeric(start) ? start : "?") " · age " (numeric(start) ? elapsed(now-start) : "?") "\nworked " (numeric(work) ? duration(work) : "?") " · last turn " (numeric(last) ? duration(last) : "?") " · turns " (numeric(count) ? count : "?")
+    return full "\n" preview_lines(preview_activity,preview_width) "\nstarted " (numeric(start) ? start : "?") " · age " (numeric(start) ? elapsed(now-start) : "?") "\nworked " (numeric(work) ? duration(work) : "?") " · last turn " (numeric(last) ? duration(last) : "?") " · turns " (numeric(count) ? count : "?")
 }
 function add(rank, section, id, label, status, ownername, report, timing) {
     nr++; ranks[nr]=rank; sections[nr]=section; ids[nr]=id; labels[nr]=label

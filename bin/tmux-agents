@@ -508,7 +508,7 @@ out="$(fzf </dev/null --read0 --ansi --reverse --no-sort --no-hscroll --header-l
   --listen --bind "start:reload('$self' --initial-list)" \
   --bind "focus:execute-silent('$self' --preview-loop >/dev/null 2>&1 &)+unbind(focus)" \
   --footer=$'enter open · ^o jump (prefix+L back) · ^x dismiss\n^d clean done · ^a all/sub · ^t this/all windows · ^r refresh · prefix+d close' --footer-border=rounded \
-  --preview "case {1} in closed:*) '$self' --closed-info {1} ;; *) '$self' --preview-info {1} ;; esac" --preview-window='right,55%,follow' \
+  --preview "case {1} in closed:*) '$self' --closed-info {1} ;; *) '$self' --preview-info {1} ;; esac" --preview-window='right,55%,follow,~7' \
   --bind "ctrl-x:execute-silent('$self' --dismiss {1})+reload('$self' --list)" \
   --bind "ctrl-r:reload('$self' --list)" \
   --bind "ctrl-d:execute('$here/tmux-dismiss' --done)+reload('$self' --list)" \
