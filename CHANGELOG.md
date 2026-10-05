@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Preview scrolling.** Manual scrolling pauses follow across refreshes; `ctrl-f` or selecting another agent restores it. The fixed seven-line header stays visible over long captures.
+- **Preview scrolling.** Mouse-wheel and Shift/Alt-arrow preview scrolling pause follow and automatic refresh, keeping the exact content and offset fixed; `ctrl-f` or selecting another agent refreshes and resumes follow. PageUp/PageDown retain normal list paging. The fixed seven-line header stays visible over long captures.
 
 - **Long-lived members.** `tmux-spawn --member` keeps chain agents out of the default sub-agent list, ordinary chip counts and bulk cleanup, while preserving attention, ownership, subtree dismissal and resume. Only top-level callers can spawn members, with ordinary caller-based depth and limits; the agent-chain skill uses members for the secondary and worker.
 - **Stable list columns.** Names occupy 26 display cells, abbreviate their project prefix within their own group, and compact long labels in the middle. Activity text respects wide characters and stops before the status column.

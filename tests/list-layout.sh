@@ -226,3 +226,38 @@ if failures:
     print(str(len(failures))+' checks failed'); sys.exit(1)
 print('all passed')
 PY
+
+# Membership and timing append distinct protocol fields. Render the owner name
+# before adding "member of ", so the prefix cannot break local-name compaction.
+# Restore a normal list activity after the multiline preview-protocol fixture.
+tmux set -p -t "$child" @activity member-layout-fixture
+tmux set -p -t "$child" @member 1
+owner_full="claude-$project-extremely-long-secondary-owner-tail"
+tmux set -p -t "$parent" @agent "$owner_full"
+record_set "$closed" member 1
+FZF_PROMPT='agents · all windows> ' TMUX_AGENTS_LIST_FIELDS=1 "$B/tmux-agents" --list >"$tmp/members-sub"
+FZF_PROMPT='all · all windows> ' TMUX_AGENTS_LIST_FIELDS=1 "$B/tmux-agents" --list >"$tmp/members-all"
+python3 - "$tmp" "$child" "$closed" "$owner_full" "$project" <<'PYMEMBER'
+import pathlib,re,sys
+root,child,closed,owner,project=sys.argv[1:]
+root=pathlib.Path(root)
+def rows(file):
+    result={}
+    for record in root.joinpath(file).read_text().split('\0')[1:]:
+        if not record: continue
+        fields=record.split('\x1f')
+        text=re.sub(r'\x1b\[[0-9;]*m','',''.join(fields[2:]))
+        result[fields[0].strip()]=[line for line in text.splitlines() if not line.startswith('▸ ')]
+    return result
+def compact(label): return label if len(label)<=26 else label[:11]+'…'+label[-14:]
+sub,allrows=rows('members-sub'),rows('members-all')
+assert child not in sub and child in allrows,(sub,allrows)
+localowner=owner.replace('claude-'+project+'-','claude·',1)
+assert allrows[child][0].endswith('member of '+compact(localowner)),allrows[child]
+assert '45s · worked 1h5m' in allrows[child][1],allrows[child]
+for data in (sub,allrows):
+    row=data['closed:'+closed]
+    assert row[0].endswith('member of '+compact(owner)),row
+    assert '13h · worked 1h20m' in row[1],row
+print('ok member visibility, compacted owner labels and independent live/saved timing fields')
+PYMEMBER
