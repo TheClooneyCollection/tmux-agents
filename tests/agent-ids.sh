@@ -104,6 +104,8 @@ STUB
 chmod +x "$state/bin/tmux"
 export REAL_TMUX="$real_tmux" FAIL_ID_MIGRATION="$state/fail"
 printf '0\n' > "$FAIL_ID_MIGRATION"
+# The sourced launch builder changes PATH only when called; this test never calls it.
+# shellcheck disable=SC2031
 if PATH="$state/bin:$PATH" ensure_agent_ids "$q"; then echo 'expected injected failure' >&2; exit 1; fi
 check test ! -f "$d/.ids-v1"
 check test -f "$d/.ids-journal"
@@ -117,6 +119,8 @@ check test "$shape_id" != a111111111111
 check test "$(record_get "$child_id" parent)" = "$parent_id"
 # A second interruption occurs after ID and awaiting were already converted.
 printf '2\n' > "$FAIL_ID_MIGRATION"
+# The sourced launch builder changes PATH only when called; this test never calls it.
+# shellcheck disable=SC2031
 if PATH="$state/bin:$PATH" ensure_agent_ids "$q"; then exit 1; fi
 check test "$(tmux show-options -pqv -t %0 @awaiting)" = "$child_id $parent_id"
 check test ! -f "$d/.ids-v1"

@@ -39,13 +39,13 @@ project="project-with-a-long-name"
 parent="$(tmux new-session -d -s "agents-$project" -c "$tmp/$project" -P -F '#{pane_id}' cat </dev/null)"
 tmux set -p -t "$parent" @agent "claude-$project-secondary"
 tmux set -p -t "$parent" @parent %0
-tmux set -p -t "$parent" @state idle
+tmux set -p -t "$parent" @tracked 1; tmux set -p -t "$parent" @state idle
 tmux set -p -t "$parent" @state_since "$((LAYOUT_NOW-245))"
 child="$(tmux new-window -d -t "agents-$project" -c "$tmp/$project" -P -F '#{pane_id}' cat </dev/null)"
 full="codex-$project-investigate-extremely-long-middle-part-tail"
 tmux set -p -t "$child" @agent "$full"
 tmux set -p -t "$child" @parent "$parent"
-tmux set -p -t "$child" @state working
+tmux set -p -t "$child" @tracked 1; tmux set -p -t "$child" @state working
 tmux set -p -t "$child" @state_since "$((LAYOUT_NOW-45))"
 tmux set -p -t "$child" @worked 3855
 tmux set -p -t "$child" @turn_start "$((LAYOUT_NOW-45))"
@@ -56,7 +56,7 @@ tmux set -p -t "$child" @activity '汉字宽度 ééé 界界界界界界界�
 pinned="$(tmux new-window -d -t "agents-$project" -c "$tmp/$project" -P -F '#{pane_id}' cat </dev/null)"
 tmux set -p -t "$pinned" @agent "codex-$project-pinned-tail"
 tmux set -p -t "$pinned" @parent "$parent"
-tmux set -p -t "$pinned" @state needs_you
+tmux set -p -t "$pinned" @tracked 1; tmux set -p -t "$pinned" @state needs_you
 tmux set -p -t "$pinned" @state_since "$((LAYOUT_NOW-7500))"
 tmux set -p -t "$pinned" @attention_since "$((LAYOUT_NOW-7500))"
 tmux set -p -t "$pinned" @worked 183600

@@ -33,7 +33,7 @@ chmod +x "$tmp/long"
 long="$(tmux new-window -d -P -F '#{pane_id}' "$tmp/long")"
 short="$(tmux new-window -d -P -F '#{pane_id}' "printf 'SHORT-TAIL\n'; exec cat")"
 tmux set -p -t "$long" @agent preview-long-agent
-tmux set -p -t "$long" @state working
+tmux set -p -t "$long" @tracked 1; tmux set -p -t "$long" @state working
 tmux set -p -t "$long" @worked 0
 tmux set -p -t "$long" @turn_start "$(date +%s)"
 tmux set -p -t "$long" @activity '长活动 needs to stay visible while the pane output follows its last line'

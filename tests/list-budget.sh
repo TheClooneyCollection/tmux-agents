@@ -33,9 +33,9 @@ for ((i=1; i<=49; i++)); do
     tmux set -p -t "$p" @parent "$parent"
   fi
   case "$((i%6))" in
-    0) tmux set -p -t "$p" @state needs_you; tmux set -p -t "$p" @attention_since "$((now-i*10))" ;;
+    0) tmux set -p -t "$p" @tracked 1; tmux set -p -t "$p" @state needs_you; tmux set -p -t "$p" @attention_since "$((now-i*10))" ;;
     1) tmux set -p -t "$p" @msg_waiting_since "$((now-i*10))" ;;
-    2) tmux set -p -t "$p" @state idle ;;
+    2) tmux set -p -t "$p" @tracked 1; tmux set -p -t "$p" @state idle ;;
   esac
 done
 records="$XDG_STATE_HOME/tmux-agents/${S##*/}/sessions"

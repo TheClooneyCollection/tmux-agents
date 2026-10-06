@@ -43,7 +43,7 @@ reset() {
   for p in %0 %1; do
     for o in @attention_since @waiting_on @awaiting @activity @codex_thread; do tmux set -pu -t "$p" "$o" 2>/dev/null; done
   done
-  tmux set -p -t %1 @state working
+  tmux set -p -t %1 @tracked 1; tmux set -p -t %1 @state working
 }
 # Claude hooks for kid; $1 is the prompt that started the turn.
 turn_start() { printf '{"prompt":%s}' "$(printf '%s' "$1" | /usr/bin/perl -MJSON::PP -0777 -ne 'print JSON::PP->new->encode($_)')" | "$B/tmux-agent-report" --pane %1 --turn-start; }
@@ -61,14 +61,14 @@ expect() {  # name, wanted kid state
 echo "Normal workflows: never needs you"
 
 reset
-tmux set -p -t %1 @state idle
+tmux set -p -t %1 @tracked 1; tmux set -p -t %1 @state idle
 turn_end
 expect "idle without a task stays idle at turn end" idle
 "$B/tmux-agent-report" --pane %1 "starting work" >/dev/null
 expect "progress report starts idle agent working" working
 
 reset
-tmux set -p -t %1 @state idle
+tmux set -p -t %1 @tracked 1; tmux set -p -t %1 @state idle
 ask %0 kid "first task"
 expect "first request starts idle agent working" working
 
@@ -89,7 +89,7 @@ expect "done, then gets a notice" "done"
 
 reset
 tmux new-window -d cat; gk="$(tmux list-panes -a -F '#{pane_id}' | tail -1)"
-tmux set -p -t "$gk" @agent grandkid; tmux set -p -t "$gk" @parent %1; tmux set -p -t "$gk" @state working
+tmux set -p -t "$gk" @agent grandkid; tmux set -p -t "$gk" @parent %1; tmux set -p -t "$gk" @tracked 1; tmux set -p -t "$gk" @state working
 turn_end
 expect "waits for its own sub agent" working
 tmux kill-pane -t "$gk"
@@ -144,7 +144,7 @@ expect "Codex names its session (title thread)" working
 [ "$(st %1 @codex_thread)" = main-thread ] || { echo "FAIL  the title thread replaced @codex_thread"; fail=1; }
 
 reset
-tmux set -p -t %1 @codex_thread main-thread; tmux set -p -t %1 @state "done"
+tmux set -p -t %1 @codex_thread main-thread; tmux set -p -t %1 @tracked 1; tmux set -p -t %1 @state "done"
 notify main-thread "done, standing by" "anything"
 expect "Codex, done, another turn end" "done"
 
@@ -189,7 +189,7 @@ turn_start "[request from boss to kid via tmux-ask] new task"; turn_end
 expect "a new request ends the old wait; no reply" needs_you
 
 reset
-tmux set -p -t %1 @state "done"
+tmux set -p -t %1 @tracked 1; tmux set -p -t %1 @state "done"
 ask %0 kid "no reply needed, don't restart"
 turn_start "[request from boss to kid via tmux-ask] no reply needed"; turn_end
 expect "a request (not a notice) answered only locally" needs_you

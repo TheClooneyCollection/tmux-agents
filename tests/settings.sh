@@ -75,7 +75,7 @@ tmux set -p -t %0 @agent main
 child="$(tmux new-window -d -t work -c "$tmp" -P -F '#{pane_id}' /bin/cat)"
 tmux set -p -t "$child" @agent child
 tmux set -p -t "$child" @parent %0
-tmux set -p -t "$child" @state needs_you
+tmux set -p -t "$child" @tracked 1; tmux set -p -t "$child" @state needs_you
 tmux set -p -t "$child" @attention_since "$(( $(date +%s) - 120 ))"
 tmux set -g @tmux_agents_blink_secs 999
 "$B/tmux-agents" --chip >"$tmp/chip"

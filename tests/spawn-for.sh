@@ -66,10 +66,10 @@ listing="$(FZF_PROMPT='agents · all windows> ' "$B/tmux-agents" --list | tr '\0
 case "$listing" in *"worker"*"○ idle"*) ok "list shows worker idle" ;; *) bad "list did not show worker idle" ;; esac
 
 if [ "$(printf '%s\n' "$listing" | awk '/^%/ {print $1; exit}')" = "$coord" ]; then ok "working sorts before idle"; else bad "idle sorted before working"; fi
-tmux set -p -t "$coord" @state "done"
+tmux set -p -t "$coord" @tracked 1; tmux set -p -t "$coord" @state "done"
 listing="$(FZF_PROMPT='agents · all windows> ' "$B/tmux-agents" --list | tr '\0' '\n')"
 if [ "$(printf '%s\n' "$listing" | awk '/^%/ {print $1; exit}')" = "$w" ]; then ok "idle sorts before done"; else bad "done sorted before idle"; fi
-tmux set -p -t "$coord" @state working
+tmux set -p -t "$coord" @tracked 1; tmux set -p -t "$coord" @state working
 
 # With the worker as the only sub agent, chip focus and counts are deterministic.
 tmux set -pu -t "$coord" @parent
