@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- **Tracked top-level launches.** `tmux-agents start claude|codex|PROFILE` supplies identity pins and turn hooks without editing global agent config. Optional names, independent right/below splits and agent arguments are supported; exit saves work, clears pane state and returns to the shell. Agent permission defaults are preserved.
+- **Sub-agent permission preference.** `@tmux_agents_sub_auto` / `TMUX_AGENTS_SUB_AUTO` defaults to `on`; `off` omits auto permission flags for new and resumed agents, including members, and uses agent defaults. Top-level `start` keeps agent defaults regardless of this setting.
+- **Tracked top-level launches.** `tmux-agents start claude|codex|PROFILE` supplies identity pins and turn hooks without editing global agent config. It runs in the current pane with optional names and agent arguments; exit saves work, clears pane state and returns to the shell. Agent permission defaults are preserved.
 - **Start a chain from the shell.** `tmux-agents start chain [DIR] [--worker AGENT]` opens a window in the chosen directory and gives Claude the initial prompt to create the chain.
 - **Honest untracked status.** Agents without hooks show `-`, without worked time or inferred needs-you state; messaging still works. Codex wrappers remain optional identity-only helpers; setup recommends `tmux-agents start`.
 

@@ -41,7 +41,7 @@ Verified live: a Codex on a second account, restarted through the wrapper, saw `
 
 ## Top-level launch and tracking
 
-`tmux-agents start` runs the agent as a child and keeps its own permission defaults. It passes Claude settings hooks or Codex notify per process, with no global settings edits. On exit it saves the session/work record and clears the pane's agent state so the shell can be reused. Records have no parent and are excluded from resumable sub-agent lists. Splits create independent top-level agents with no implicit connection.
+`tmux-agents start` runs the agent as a child in the current pane and keeps its own permission defaults. It passes Claude settings hooks or Codex notify per process, with no global settings edits. On exit it saves the session/work record and clears the pane's agent state so the shell can be reused. Records have no parent and are excluded from resumable sub-agent lists. Users can split panes manually before launching another independent agent, or ask an agent to use `tmux-spawn --split` for a connected sub agent.
 
 `@tracked=1` is set before start/spawn launches and by the first turn-start, turn-end or notify report. This also recognizes externally configured hooks. Requests only mark tracked receivers working; untracked panes show `-`, omit worked time and cannot become needs-you from a missing turn end. Messaging remains available. See the [launcher decision](../decisions/2026-10-06-launcher.md).
 

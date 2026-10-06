@@ -119,7 +119,7 @@ See [Configuration](docs/configuration.md) for tmux settings, defaults and envir
 4. Press `prefix + a` to watch it. Enter opens it in a popup, `prefix + d` goes back.
 5. Tell your original agent: "start the chain". It becomes the main agent you talk to, with a secondary that coordinates and a Codex worker that implements, side by side in your window (the `agent-chain` skill).
 
-From a shell, `tmux-agents start chain [DIR] [--worker AGENT]` opens a new window in DIR (default: the current directory), named after its basename, and starts Claude with the initial prompt "start the chain" and your worker choice. Or use `tmux-agents start codex --split right` for an independent agent, then ask either agent to connect them. See [Starting agents](docs/guide.md#starting-agents) for names, profiles, arguments and exit behavior.
+From a shell, `tmux-agents start chain [DIR] [--worker AGENT]` opens a new window in DIR (default: the current directory), named after its basename, and starts Claude with the initial prompt "start the chain" and your worker choice. For another independent agent, split the pane manually and run `tmux-agents start codex` in the new pane, then ask either agent to connect them. See [Starting agents](docs/guide.md#starting-agents) for names, profiles, arguments and exit behavior.
 
 Or let your agent show you: say "tmux-agents quick start".
 
