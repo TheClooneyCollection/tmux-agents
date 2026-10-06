@@ -50,8 +50,8 @@ for p in "$member" "$helper"; do
   tmux capture-pane -p -t "$p" | grep -q MEMBER_UI_STUB || { echo 'ABORT: stub not ready'; exit 1; }
 done
 for state in running idle "done"; do
-  tmux set -p -t "$member" @state "$state"
-  tmux set -p -t "$helper" @state "$state"
+  tmux set -p -t "$member" @tracked 1; tmux set -p -t "$member" @state "$state"
+  tmux set -p -t "$helper" @tracked 1; tmux set -p -t "$helper" @state "$state"
   for scope in 'this window' 'all windows'; do
     list "agents · $scope> "
     check "$state member excluded from sub $scope" lacks "$tmp/list" "$member"
@@ -75,9 +75,9 @@ agent "$other" other
 tmux set -p -t "$member" @parent "$other"
 now="$(date +%s)"
 for attention in needs permission message; do
-  tmux set -p -t "$member" @state running
+  tmux set -p -t "$member" @tracked 1; tmux set -p -t "$member" @state running
   case "$attention" in
-    needs) tmux set -p -t "$member" @state needs_you; tmux set -p -t "$member" @attention_since "$now"; label='◆ needs you'; focus='◆ member: NEEDS YOU'; counter=' ◆ 1 ';;
+    needs) tmux set -p -t "$member" @tracked 1; tmux set -p -t "$member" @state needs_you; tmux set -p -t "$member" @attention_since "$now"; label='◆ needs you'; focus='◆ member: NEEDS YOU'; counter=' ◆ 1 ';;
     permission) tmux set -p -t "$member" @perm_since "$now"; label='⚠ permission'; focus='⚠ member: NEEDS PERMISSION'; counter=' ⚠ 1 ';;
     message) tmux set -p -t "$member" @msg_waiting_since "$now"; label='✉ message waiting'; focus='✉ member: message waiting'; counter=' ✉ 1 ';;
   esac
@@ -96,7 +96,7 @@ for attention in needs permission message; do
   tmux set -pu -t "$member" @perm_since
   tmux set -pu -t "$member" @msg_waiting_since
 done
-tmux set -p -t "$member" @state running
+tmux set -p -t "$member" @tracked 1; tmux set -p -t "$member" @state running
 tmux kill-pane -t "$helper"
 chip
 check 'member alone does not keep chip visible' test ! -s "$tmp/chip"

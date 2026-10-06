@@ -20,7 +20,7 @@ trap cleanup EXIT
 tmux set -g default-shell /bin/sh
 fail=0
 check() { local label="$1"; shift; if "$@"; then echo "ok    $label"; else echo "FAIL  $label"; fail=1; fi; }
-agent() { tmux set -p -t "$1" @agent "$2"; [ -z "${3:-}" ] || tmux set -p -t "$1" @parent "$3"; }
+agent() { tmux set -p -t "$1" @tracked 1; tmux set -p -t "$1" @agent "$2"; [ -z "${3:-}" ] || tmux set -p -t "$1" @parent "$3"; }
 fixture_id() { printf 'a%012x' "$(printf %s "$1" | cksum | awk '{print $1}')"; }
 # Invoked indirectly by test helpers or by commands under test.
 # shellcheck disable=SC2329
@@ -38,7 +38,7 @@ other="$(tmux new-session -d -s agents-project-b -c "$tmp" -P -F '#{pane_id}' ca
 need="$(tmux new-window -d -t agents-project-b -c "$tmp" -P -F '#{pane_id}' cat)"; agent "$need" needs-b "$other"
 perm="$(tmux new-window -d -t agents-project-b -c "$tmp" -P -F '#{pane_id}' cat)"; agent "$perm" permission-b "$main_b"
 now="$(date +%s)"
-tmux set -p -t "$need" @state needs_you; tmux set -p -t "$need" @attention_since "$((now-300))"
+tmux set -p -t "$need" @tracked 1; tmux set -p -t "$need" @state needs_you; tmux set -p -t "$need" @attention_since "$((now-300))"
 tmux set -p -t "$perm" @perm_since "$((now-100))"
 tmux set -p -t "$need" @activity 'waiting for a decision'
 # A real client supplies its active window, while reloads run in a hidden pane.
@@ -67,7 +67,7 @@ location="$(tmux display-message -p -t "$main_b" '#{session_name}:#{window_index
 check 'hidden grandchild shows visible ancestor window and project before truncation' grep -Fq "$location · project-b ·" "$tmp/local"
 check 'pinned agent appears only once' test "$(grep -c "^$need " "$tmp/local")" = 1
 # Visible splits use their own window, even with a parent elsewhere.
-tmux set -p -t "$split" @state needs_you; tmux set -p -t "$split" @activity split-wait
+tmux set -p -t "$split" @tracked 1; tmux set -p -t "$split" @state needs_you; tmux set -p -t "$split" @activity split-wait
 tmux set -p -t "$split" @parent "$main_b"
 list 'agents · this window> ' "$tmp/split-pin"
 split_location="$(tmux display-message -p -t "$split" '#{session_name}:#{window_index}')"

@@ -22,7 +22,7 @@ has() { grep -q "^$2 " "$1"; }
 lacks() { ! has "$@"; }
 contains() { grep -Fq -- "$2" "$1"; }
 absent() { ! contains "$@"; }
-agent() { tmux set -p -t "$1" @agent "$2"; [ -z "${3:-}" ] || tmux set -p -t "$1" @parent "$3"; }
+agent() { tmux set -p -t "$1" @tracked 1; tmux set -p -t "$1" @agent "$2"; [ -z "${3:-}" ] || tmux set -p -t "$1" @parent "$3"; }
 list() { FZF_PROMPT="$1" "$B/tmux-agents" --list | tr '\0' '\n' >"$tmp/list"; }
 chip() { CHIP_SPIN=SPIN "$B/tmux-agents" --chip >"$tmp/chip"; }
 agent %0 main
@@ -38,7 +38,7 @@ tmux set -p -t "$receiver" @msg_waiting_since "$((now-300))"
 tmux set -p -t "$receiver" @activity receiving
 # A receiver need not have either a name or a parent.
 tmux set -p -t "$unnamed" @msg_waiting_since "$((now-100))"
-tmux set -p -t "$need" @state needs_you
+tmux set -p -t "$need" @tracked 1; tmux set -p -t "$need" @state needs_you
 tmux set -p -t "$need" @attention_since "$((now-400))"
 tmux set -p -t "$perm" @perm_since "$((now-200))"
 for prompt in 'agents · this window> ' 'agents · all windows> ' 'all · this window> ' 'all · all windows> '; do
@@ -59,7 +59,7 @@ check 'needs-you count unchanged' contains "$tmp/chip" '#[fg=black,bg=colour214,
 tmux set -pu -t "$unnamed" @msg_waiting_since
 tmux set -pu -t "$need" @state
 tmux set -pu -t "$perm" @perm_since
-tmux set -p -t "$receiver" @state "done"
+tmux set -p -t "$receiver" @tracked 1; tmux set -p -t "$receiver" @state "done"
 chip
 check 'waiting focus overrides done and blinks after threshold' contains "$tmp/chip" '#[fg=black,bg=colour214,bold,blink] ✉ receiver: message waiting #[default]'
 check 'receiver counted once' contains "$tmp/chip" ' ✉ 1 '
@@ -68,7 +68,7 @@ tmux set -p -t "$receiver" @msg_waiting_since "$(date +%s)"
 chip
 check 'fresh marker does not blink' contains "$tmp/chip" '#[fg=black,bg=colour214,bold] ✉ receiver: message waiting #[default]'
 check 'fresh marker has no blink style' absent "$tmp/chip" ',blink'
-tmux set -p -t "$receiver" @state needs_you
+tmux set -p -t "$receiver" @tracked 1; tmux set -p -t "$receiver" @state needs_you
 tmux set -p -t "$receiver" @attention_since "$((now-500))"
 chip
 check 'waiting timestamp wins over stale needs-you timestamp' absent "$tmp/chip" ',blink'
@@ -90,8 +90,8 @@ chip
 check 'cleared receiver disappears from chip' absent "$tmp/chip" 'receiver'
 check 'cleared marker removes waiting counts' absent "$tmp/chip" '✉'
 # Ordinary agent states remain intact, including restored state after delivery.
-tmux set -p -t "$local_agent" @state idle
-tmux set -p -t "$need" @state "done"
+tmux set -p -t "$local_agent" @tracked 1; tmux set -p -t "$local_agent" @state idle
+tmux set -p -t "$need" @tracked 1; tmux set -p -t "$need" @state "done"
 tmux set -p -t "$perm" @activity running
 chip
 check 'ordinary idle count preserved' contains "$tmp/chip" '#[fg=colour244]○ 1'

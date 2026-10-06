@@ -96,8 +96,8 @@ check "$B/tmux-rename" parent reserved --exact
 check "$B/tmux-rename" reserved parent --exact
 tmux set -p -t %2 @awaiting "$parent_id parent-tail"
 tmux set -p -t %2 @closed "parent-tail $parent_id"
-tmux set -p -t %0 @state "done"
-tmux set -p -t %2 @state idle
+tmux set -p -t %0 @tracked 1; tmux set -p -t %0 @state "done"
+tmux set -p -t %2 @tracked 1; tmux set -p -t %2 @state idle
 tmux copy-mode -t %0
 tmux copy-mode -t %2
 mkdir -p "$Q" "$other"

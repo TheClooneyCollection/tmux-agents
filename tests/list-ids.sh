@@ -91,6 +91,9 @@ for aid in "$main_id" "$other_id" a000000000001 a000000000002; do check "peers -
 # Run the real picker acceptance path with a deterministic fzf selection.
 LIST_IDS_REAL_TMUX="$(command -v tmux)"
 export LIST_IDS_REAL_TMUX LIST_IDS_UI_LOG="$tmp/ui-log"
+# New tmux sessions inherit the shim PATH; give them its required variables.
+tmux set-environment -g LIST_IDS_REAL_TMUX "$LIST_IDS_REAL_TMUX"
+tmux set-environment -g LIST_IDS_UI_LOG "$LIST_IDS_UI_LOG"
 cat >"$tmp/ui/fzf" <<'STUB'
 #!/bin/sh
 printf '%s\n' "$@" >"$LIST_IDS_UI_LOG.args"

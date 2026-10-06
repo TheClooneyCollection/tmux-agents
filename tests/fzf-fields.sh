@@ -24,7 +24,7 @@ tmux set -p -t %0 @agent stoneage
 pane="$(tmux new-session -d -s agents-garden -c "$tmp" -P -F '#{pane_id}' cat)"
 tmux set -p -t "$pane" @agent codex-garden-worker
 tmux set -p -t "$pane" @parent %0
-tmux set -p -t "$pane" @state needs_you
+tmux set -p -t "$pane" @tracked 1; tmux set -p -t "$pane" @state needs_you
 tmux set -p -t "$pane" @activity activity-secret
 # shellcheck source=bin/lib.sh
 . "$here/bin/lib.sh"
