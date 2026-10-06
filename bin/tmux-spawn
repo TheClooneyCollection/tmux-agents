@@ -19,7 +19,8 @@ By default, starts a sub agent in its own window of the project's hidden session
 the task (arguments, or stdin if none) as a tmux-ask request. It
 replies with tmux-ask --reply when done. The agent defaults to the
 same kind as the caller, in auto mode (Claude --permission-mode auto,
-Codex approvals_reviewer=auto_review).
+Codex approvals_reviewer=auto_review). Set @tmux_agents_sub_auto or
+TMUX_AGENTS_SUB_AUTO to off to keep the agent's permission defaults.
 
   --from ME     your own name (needed where $TMUX_PANE is wrong, e.g. Codex)
   --name NAME   short task name, e.g. auth-review, becomes <agent>-<dir>-NAME;
@@ -157,6 +158,7 @@ adopt() {
 open_window() {
   local env_args=(-e "TMUX_AGENTS_DEPTH=$5" -e "TMUX_SPAWN_CODEX_HOMES=$codex_homes")
   [ -z "${TMUX_SPAWN_BIN:-}" ] || env_args+=(-e "TMUX_SPAWN_BIN=$TMUX_SPAWN_BIN")
+  [ -z "${TMUX_AGENTS_SUB_AUTO:-}" ] || env_args+=(-e "TMUX_AGENTS_SUB_AUTO=$TMUX_AGENTS_SUB_AUTO")
   [ -z "${TMUX_AGENTS_CODEX_HOMES:-}" ] || env_args+=(-e "TMUX_AGENTS_CODEX_HOMES=$TMUX_AGENTS_CODEX_HOMES")
   if tmux has-session -t "=$1" 2>/dev/null; then
     tmux new-window -d -t "=$1:" -n "$3" -c "$2" "${env_args[@]}" -P -F '#{pane_id}' "$4"
@@ -171,6 +173,7 @@ open_split() {
   local direction=-h env_args=(-e "TMUX_AGENTS_DEPTH=$4" -e "TMUX_SPAWN_CODEX_HOMES=$codex_homes")
   [ "$split_direction" != --below ] || direction=-v
   [ -z "${TMUX_SPAWN_BIN:-}" ] || env_args+=(-e "TMUX_SPAWN_BIN=$TMUX_SPAWN_BIN")
+  [ -z "${TMUX_AGENTS_SUB_AUTO:-}" ] || env_args+=(-e "TMUX_AGENTS_SUB_AUTO=$TMUX_AGENTS_SUB_AUTO")
   [ -z "${TMUX_AGENTS_CODEX_HOMES:-}" ] || env_args+=(-e "TMUX_AGENTS_CODEX_HOMES=$TMUX_AGENTS_CODEX_HOMES")
   tmux split-window -d "$direction" -l "$split_size" -t "$1" -c "$2" "${env_args[@]}" -P -F '#{pane_id}' "$3"
 }
