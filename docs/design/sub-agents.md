@@ -53,7 +53,7 @@ What `--run` sets up (hooks, pins and profile setup are shared with `tmux-agents
 
 ## Done state and cleanup
 
-- **Idle.** Spawning without task text (including `--for`) sets `@state idle`, displayed as grey `○ idle` between working and done. Requests and progress reports start work; turn end leaves idle alone. Reopening a previously completed session retains the existing done state.
+- **Idle.** Spawning without task text (including `--for`) sets `@state idle`, displayed as grey `○ idle` between working and done. Requests, real turn-start hooks and progress reports start work; turn end leaves idle alone. Plain top-level launches also start idle, while the known initial task from `start chain` starts working. Reopening a previously completed session retains the existing done state.
 - **Marking.** `tmux-ask` sets `@state done` on the sender when it replies to its own `@parent`, and `@state working` on the tracked receiver of a request. Untracked receivers retain `-`.
 - **Cleanup.** `tmux-dismiss --done` considers done and exited sub agents, skips members and any subtree containing a member or unfinished descendants with a note, asks y/N on the terminal, and closes eligible subtrees deepest first. The switcher runs it with fzf `execute` on `ctrl-d`, then reloads.
 - **Reports don't reopen work.** `tmux-agent-report` sets `working`, except on a `done` agent: a report right after replying ("delivered abc123") is a summary. Seen live: spirit-fire replied, then reported, and the turn end that followed marked it needs you. Only a new request sets a done agent back to working.

@@ -735,7 +735,7 @@ _agent_work() {
         $v{perm_since} = "";
       }
       elsif ($op eq "start") {
-        $v{state} = "working" if $v{state} eq "needs_you";
+        $v{state} = "working" if $v{state} =~ /^(needs_you|idle)$/;
         $v{perm_since} = "";
       }
       elsif ($op eq "end") {

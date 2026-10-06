@@ -16,13 +16,14 @@ printf '%s\0' "$@" > "$TEST_LOG/$TMUX_PANE.args"
 printf '%s\n' "${CODEX_HOME:-}" > "$TEST_LOG/$TMUX_PANE.home"
 printf '%s\n' "${TMUX_AGENTS_NAME_FORMAT-unset}" > "$TEST_LOG/$TMUX_PANE.name-format"
 printf '%s\n' "${TMUX_START_NAME_EXACT-unset}" > "$TEST_LOG/$TMUX_PANE.name-marker"
+printf '%s\n' "${TMUX_START_CHAIN_WORK-unset}" > "$TEST_LOG/$TMUX_PANE.chain-marker"
 tmux display -p -t "$TMUX_PANE" '#{@tracked} #{@agent_id} #{@started}' > "$TEST_LOG/$TMUX_PANE.init"
 while IFS= read -r line; do [ "$line" != exit ] || exit 7; done
 STUB
   chmod +x "$tmp/bin/$a"
 done
 unset TMUX TMUX_PANE CLAUDECODE TMUX_AGENTS_KIND TMUX_AGENTS_PINNED TMUX_AGENTS_DEPTH
-unset TMUX_AGENTS_NAME_FORMAT TMUX_START_NAME_EXACT
+unset TMUX_AGENTS_NAME_FORMAT TMUX_START_NAME_EXACT TMUX_START_CHAIN_WORK
 export XDG_STATE_HOME="$tmp/state" TMUX_SPAWN_BIN="$tmp/bin" TEST_LOG="$tmp"
 export TMUX_AGENTS_CODEX_HOMES="extra=$tmp/profile"
 tmux -L "$sock" -f /dev/null new-session -d -s work -x 180 -y 70 -c "$tmp" cat
@@ -42,7 +43,14 @@ check() { local label="$1"; shift; if "$@"; then echo "ok    $label"; else echo 
 wait_file() { local i; for ((i=0;i<100;i++)); do [ ! -s "$1" ] || return 0; sleep .05; done; return 1; }
 info() { tmux display -p -t "$1" "#{@$2}"; }
 # Current-pane invocation returns to its calling shell even on agent failure.
-printf -v cmd '%q ' env TMUX_AGENTS_NAME_FORMAT=exact "$B/tmux-agents-start" claude --name exactness -- 'space here' '' 'quote" $value; *' $'line\nbreak'
+# The test server uses /bin/sh (dash on Linux), so Bash %q is not portable.
+cmd="$(python3 - "$B/tmux-agents-start" <<'PYARGV'
+import shlex, sys
+print(shlex.join(['env', 'TMUX_AGENTS_NAME_FORMAT=exact', sys.argv[1],
+                  'claude', '--name', 'exactness', '--', 'space here', '',
+                  'quote" $value; *', 'line\nbreak']))
+PYARGV
+)"
 new="$(tmux new-window -d -P -F '#{pane_id}' -c "$tmp" "$cmd; echo SHELL_RETURN; exec cat")"
 wait_file "$tmp/$new.init"
 check 'current pane preserves genuine user name-format environment' test "$(cat "$tmp/$new.name-format")" = exact
@@ -57,6 +65,15 @@ assert b'--permission-mode' not in args
 hooks=json.loads(args[args.index(b'--settings')+1]); assert set(hooks['hooks'])=={'Notification','PostToolUse','UserPromptSubmit','Stop'}
 PY
 check 'Claude argv exactness, hooks and default permission mode' test "$?" = 0
+check 'plain Claude with opaque arguments begins idle' test "$(info "$new" state)" = idle
+check 'plain Claude has no active clock' test -z "$(info "$new" turn_start)"
+check 'plain Claude starts with zero work' test "$(info "$new" worked)" = 0
+printf '%s\n' '{"prompt":"[notice from parent to agent via tmux-ask] information"}' | "$B/tmux-agent-report" --pane "$new" --turn-start
+check 'notice hook keeps idle launcher idle' test "$(info "$new" state)" = idle
+check 'notice hook does not start clock' test -z "$(info "$new" turn_start)"
+printf '%s\n' '{"prompt":"perform the task"}' | "$B/tmux-agent-report" --pane "$new" --turn-start
+check 'real turn-start wakes idle launcher' test "$(info "$new" state)" = working
+check 'real turn-start starts clock' test -n "$(info "$new" turn_start)"
 aid="$(info "$new" agent_id)"
 tmux set-option -p -t "$new" @turn_start 100
 agent_save_work "$new" 105
@@ -85,6 +102,9 @@ check 'default split keeps preformatted name' test "$(info "$pane" agent)" = "co
 check 'default split does not force agent name-format environment' test "$(cat "$tmp/$pane.name-format")" = unset
 check 'default split consumes internal name marker' test "$(cat "$tmp/$pane.name-marker")" = unset
 check 'Codex stub marker' bash -c 'tmux capture-pane -p -t "$1" | grep -q "FAKE codex"' _ "$pane"
+check 'plain profile with opaque arguments begins idle' test "$(info "$pane" state)" = idle
+check 'plain profile has no active clock' test -z "$(info "$pane" turn_start)"
+check 'plain split consumes chain marker' test "$(cat "$tmp/$pane.chain-marker")" = unset
 check 'profile CODEX_HOME' test "$(cat "$tmp/$pane.home")" = "$tmp/profile"
 check 'split independent parent' test -z "$(info "$pane" parent)"
 check 'split independent peers' test -z "$(info "$pane" peers)"
@@ -108,7 +128,9 @@ args=open(sys.argv[1],'rb').read().split(b'\0')[:-1]
 notify=json.loads(next(a for a in args if a.startswith(b'notify=')).split(b'=',1)[1])
 subprocess.run(notify+[json.dumps({'type':'agent-turn-complete','thread-id':'launcher-first-thread','input-messages':['plain user prompt'],'last-assistant-message':'Finished'})],check=True)
 PYTEST
-check 'actual launcher notify closes first plain turn' test "$(info "$pane" state)" = needs_you
+check 'notify before work leaves idle launcher idle' test "$(info "$pane" state)" = idle
+check 'notify before work never charges idle time' test "$(info "$pane" worked)" = 0
+check 'notify before work never starts clock' test -z "$(info "$pane" turn_start)"
 check 'actual launcher notify saves conversation' test "$(record_get "$(info "$pane" agent_id)" id)" = launcher-first-thread
 TMUX_PANE=%0 "$B/tmux-agents-start" chain "$tmp" --worker extra
 chain="$(tmux display -p '#{pane_id}')"
@@ -116,6 +138,9 @@ wait_file "$tmp/$chain.init"
 check 'chain does not force agent name-format environment' test "$(cat "$tmp/$chain.name-format")" = unset
 check 'chain consumes internal name marker' test "$(cat "$tmp/$chain.name-marker")" = unset
 check 'chain window basename' test "$(tmux display -p -t "$chain" '#{window_name}')" = "${tmp##*/}"
+check 'chain initial prompt begins working' test "$(info "$chain" state)" = working
+check 'chain initial prompt starts clock' test -n "$(info "$chain" turn_start)"
+check 'chain consumes its internal work marker' test "$(cat "$tmp/$chain.chain-marker")" = unset
 check 'chain starts Claude' bash -c 'tmux capture-pane -p -t "$1" | grep -q "FAKE claude"' _ "$chain"
 python3 - "$tmp/$chain.args" <<'PY'
 import sys
@@ -150,6 +175,8 @@ wait_file "$tmp/$below.init"
 check 'explicit exact split does not leak one-call naming override' test "$(cat "$tmp/$below.name-format")" = unset
 check 'explicit exact split consumes internal name marker' test "$(cat "$tmp/$below.name-marker")" = unset
 check 'split retains caller exact name setting' test "$(info "$below" agent)" = literal-label
+check 'plain Codex with opaque arguments begins idle' test "$(info "$below" state)" = idle
+check 'plain Codex has no active clock' test -z "$(info "$below" turn_start)"
 check 'below split placement' test "$(tmux display -p -t "$below" '#{pane_top}')" -gt "$(tmux display -p -t "$chain" '#{pane_top}')"
 python3 - "$tmp/$below.args" <<'PYTEST'
 import sys
