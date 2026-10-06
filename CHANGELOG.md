@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.12.0 (2026-10-06)
 
 - **Sub-agent permission preference.** `@tmux_agents_sub_auto` / `TMUX_AGENTS_SUB_AUTO` defaults to `on`; `off` omits auto permission flags for new and resumed agents, including members, and uses agent defaults. Top-level `start` keeps agent defaults regardless of this setting.
 - **Tracked top-level launches.** `tmux-agents start claude|codex|PROFILE` supplies identity pins and turn hooks without editing global agent config. It runs in the current pane with optional names and agent arguments; exit saves work, clears pane state and returns to the shell. Agent permission defaults are preserved.
