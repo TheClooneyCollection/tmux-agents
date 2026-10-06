@@ -95,19 +95,24 @@ check 'record tagged top-level' test "$(record_get "$aid" launcher)" = 1
 check 'top-level omitted from resumable subagents' bash -c '! "$1/tmux-spawn" --list-closed | grep -q "$2"' _ "$B" "$aid"
 for ((i=0;i<100;i++)); do tmux capture-pane -p -t "$new" | grep -q SHELL_RETURN && break; sleep .05; done
 check 'caller resumes after child exit' bash -c 'tmux capture-pane -p -t "$1" | grep -q SHELL_RETURN' _ "$new"
-TMUX_PANE=%0 "$B/tmux-agents-start" extra --split right --name profile -- --resume 'thread with spaces'
-pane="$(tmux display -p '#{pane_id}')"
+cmd="$(python3 - "$B/tmux-agents-start" <<'PYARGV'
+import shlex, sys
+print(shlex.join([sys.argv[1], 'extra', '--name', 'profile', '--',
+                  '--resume', 'thread with spaces']))
+PYARGV
+)"
+pane="$(tmux new-window -d -P -F '#{pane_id}' -c "$tmp" "$cmd; exec cat")"
 wait_file "$tmp/$pane.init"
-check 'default split keeps preformatted name' test "$(info "$pane" agent)" = "codex-${PWD##*/}-profile"
-check 'default split does not force agent name-format environment' test "$(cat "$tmp/$pane.name-format")" = unset
-check 'default split consumes internal name marker' test "$(cat "$tmp/$pane.name-marker")" = unset
+check 'current pane formats profile name' test "$(info "$pane" agent)" = "codex-${tmp##*/}-profile"
+check 'profile preserves default name-format environment' test "$(cat "$tmp/$pane.name-format")" = unset
+check 'profile has no internal name marker' test "$(cat "$tmp/$pane.name-marker")" = unset
 check 'Codex stub marker' bash -c 'tmux capture-pane -p -t "$1" | grep -q "FAKE codex"' _ "$pane"
 check 'plain profile with opaque arguments begins idle' test "$(info "$pane" state)" = idle
 check 'plain profile has no active clock' test -z "$(info "$pane" turn_start)"
-check 'plain split consumes chain marker' test "$(cat "$tmp/$pane.chain-marker")" = unset
+check 'profile has no internal chain marker' test "$(cat "$tmp/$pane.chain-marker")" = unset
 check 'profile CODEX_HOME' test "$(cat "$tmp/$pane.home")" = "$tmp/profile"
-check 'split independent parent' test -z "$(info "$pane" parent)"
-check 'split independent peers' test -z "$(info "$pane" peers)"
+check 'profile independent parent' test -z "$(info "$pane" parent)"
+check 'profile independent peers' test -z "$(info "$pane" peers)"
 python3 - "$tmp/$pane.args" "$pane" <<'PY'
 import sys,json
 args=open(sys.argv[1],'rb').read().split(b'\0')[:-1]
@@ -169,27 +174,41 @@ assert b[:2]==[b'codex',b'resume']
 assert b'approvals_reviewer="auto_review"' in b and b[-1]==b'thread-test'
 PYTEST
 check 'shared builder preserves spawn auto and resume' test "$?" = 0
-TMUX_PANE="$chain" TMUX_AGENTS_NAME_FORMAT=exact "$B/tmux-agents-start" codex --name literal-label --split below -- "quote' and \$d; *" '' $'two\nlines'
-below="$(tmux display -p '#{pane_id}')"
-wait_file "$tmp/$below.init"
-check 'explicit exact split does not leak one-call naming override' test "$(cat "$tmp/$below.name-format")" = unset
-check 'explicit exact split consumes internal name marker' test "$(cat "$tmp/$below.name-marker")" = unset
-check 'split retains caller exact name setting' test "$(info "$below" agent)" = literal-label
-check 'plain Codex with opaque arguments begins idle' test "$(info "$below" state)" = idle
-check 'plain Codex has no active clock' test -z "$(info "$below" turn_start)"
-check 'below split placement' test "$(tmux display -p -t "$below" '#{pane_top}')" -gt "$(tmux display -p -t "$chain" '#{pane_top}')"
-python3 - "$tmp/$below.args" <<'PYTEST'
+# Agent arguments after -- remain opaque, including removed launcher options.
+cmd="$(python3 - "$B/tmux-agents-start" <<'PYARGV'
+import shlex, sys
+print(shlex.join(['env', 'TMUX_AGENTS_NAME_FORMAT=exact', sys.argv[1],
+                  'codex', '--name', 'literal-label', '--',
+                  "quote' and $d; *", '', 'two\nlines', '--split', 'below']))
+PYARGV
+)"
+plain="$(tmux new-window -d -P -F '#{pane_id}' -c "$tmp" "$cmd; exec cat")"
+wait_file "$tmp/$plain.init"
+check 'plain Codex stub marker' bash -c 'tmux capture-pane -p -t "$1" | grep -q "FAKE codex"' _ "$plain"
+check 'plain Codex retains caller exact name setting' test "$(info "$plain" agent)" = literal-label
+check 'plain Codex with opaque arguments begins idle' test "$(info "$plain" state)" = idle
+check 'plain Codex has no active clock' test -z "$(info "$plain" turn_start)"
+python3 - "$tmp/$plain.args" <<'PYTEST'
 import sys
 args=open(sys.argv[1],'rb').read().split(b'\0')[:-1]
-assert args[-3:]==[b"quote' and $d; *",b'',b'two\nlines'],args[-3:]
+assert args[-5:]==[b"quote' and $d; *",b'',b'two\nlines',b'--split',b'below'],args[-5:]
 PYTEST
-check 'split argv retains quotes empty and newline' test "$?" = 0
+check 'current-pane argv retains quotes empty newline and opaque --split' test "$?" = 0
 before="$(tmux list-panes -a -F '#{pane_id}')"
 before_identity="$(info %0 agent_id)"
-if TMUX_PANE=%0 TMUX_AGENTS_NAME_FORMAT=exact "$B/tmux-agents-start" claude --name 'invalid name' --split right >"$tmp/error" 2>&1; then
+if TMUX_PANE=%0 TMUX_AGENTS_NAME_FORMAT=exact "$B/tmux-agents-start" claude --name 'invalid name' >"$tmp/error" 2>&1; then
   echo 'FAIL invalid name accepted'; fail=1
 fi
-check 'invalid name allocates no split' test "$(tmux list-panes -a -F '#{pane_id}')" = "$before"
+check 'invalid name allocates no pane' test "$(tmux list-panes -a -F '#{pane_id}')" = "$before"
 check 'invalid name preserves pane identity' test "$(info %0 agent_id)" = "$before_identity"
 check 'invalid name leaves no agent state' test -z "$(info %0 agent)$(info %0 tracked)"
+for direction in right below; do
+  if TMUX_PANE=%0 "$B/tmux-agents-start" codex --split "$direction" >"$tmp/error" 2>&1; then
+    echo "FAIL --split $direction accepted"; fail=1
+  fi
+  check "--split $direction rejected as unknown launcher argument" grep -q "unknown launcher argument '--split'" "$tmp/error"
+done
+check 'rejected split allocates no pane' test "$(tmux list-panes -a -F '#{pane_id}')" = "$before"
+check 'rejected split leaves no agent state' test -z "$(info %0 agent_id)$(info %0 agent)$(info %0 tracked)"
+check 'launcher help omits --split' bash -c '! "$1/tmux-agents-start" --help | grep -q -- --split' _ "$B"
 exit "$fail"

@@ -4,7 +4,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 . "$here/lib.sh"
 usage() {
-  echo 'usage: tmux-agents start claude|codex|PROFILE [--name NAME] [--split right|below] [-- ARGS...]'
+  echo 'usage: tmux-agents start claude|codex|PROFILE [--name NAME] [-- ARGS...]'
   echo '       tmux-agents start chain [DIR] [--worker AGENT]'
 }
 case "${1:-}" in -h|--help) usage; exit 0 ;; '') usage >&2; exit 1 ;; esac
@@ -23,7 +23,7 @@ start_chain_work=0
 [ "${TMUX_START_CHAIN_WORK:-}" != 1 ] || start_chain_work=1
 unset TMUX_START_CHAIN_WORK
 kind="$1"; shift
-name="" split="" window="" dir="$PWD"
+name="" window="" dir="$PWD"
 if [ "$kind" = chain ]; then
   worker=""
   if [ $# -gt 0 ] && [[ $1 != -* ]]; then dir="$1"; shift; fi
@@ -48,8 +48,6 @@ else
   while [ $# -gt 0 ]; do
     case "$1" in
       --name) [ -n "${2:-}" ] || die '--name needs a name'; name="$2"; shift 2 ;;
-      --split) [ -n "${2:-}" ] || die '--split needs right or below'; split="$2"; shift 2
-        case "$split" in right|below) ;; *) die '--split needs right or below' ;; esac ;;
       --) shift; break ;;
       *) die "unknown launcher argument '$1' (agent arguments follow --)" ;;
     esac
@@ -61,7 +59,7 @@ if [ -n "$name" ]; then
   name="$(format_given_name "$prefix" "$dir" "$name" "$start_name_exact")"
 fi
 pane="$(self_pane)"
-if [ -n "$split$window" ]; then
+if [ -n "$window" ]; then
   # tmux executes its command through a shell; quote each argument once.
   # The new pane then runs a child agent and returns to its own shell.
   args=(env TMUX_START_NAME_EXACT=1 "TMUX_START_CHAIN_WORK=$start_chain_work" "TMUX_START_CODEX_HOMES=$codex_homes" "TMUX_SPAWN_BIN=${TMUX_SPAWN_BIN:-}" "XDG_STATE_HOME=${XDG_STATE_HOME:-$HOME/.local/state}" "$here/tmux-agents-start" "$kind")
@@ -76,15 +74,10 @@ if [ -n "$split$window" ]; then
   shell="$(tmux show-options -gv default-shell)"
   shell_command="'${shell//\'/$quote_escape}'"
   command="$command; exec $shell_command"
-  if [ -n "$window" ]; then
-    tmux new-window -t "$(tmux display -p -t "$pane" '#{session_id}'):" -n "$window" -c "$dir" "$command"
-  else
-    direction=-h; [ "$split" != below ] || direction=-v
-    tmux split-window "$direction" -t "$pane" -c "$dir" "$command"
-  fi
+  tmux new-window -t "$(tmux display -p -t "$pane" '#{session_id}'):" -n "$window" -c "$dir" "$command"
   exit 0
 fi
-[ -z "$(pane_name "$pane")" ] || die 'this pane already has an agent; use --split or a fresh shell pane'
+[ -z "$(pane_name "$pane")" ] || die 'this pane already has an agent; use a fresh shell pane'
 ensure_agent_ids
 export TMUX_AGENTS_DEPTH=0 TMUX_AGENTS_KIND="$kind" TMUX_AGENTS_PINNED=1
 agent_id="$(new_agent_id)"
