@@ -119,7 +119,7 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 4. 按 `prefix + a` 查看它。按 Enter 用 popup 打开，按 `prefix + d` 返回。
 5. 对原来的 agent 说："start the chain"。它会成为和你对话的 main agent，再开一个负责协调的 secondary 和一个负责实现的 Codex worker，三个并排在你的窗口里（`agent-chain` skill）。
 
-在 shell 中运行 `tmux-agents start chain [DIR] [--worker AGENT]`，会在 DIR（默认当前目录）中新开窗口，以目录 basename 命名，并把 "start the chain" 和 worker 选择作为 Claude 的初始提示。也可以用 `tmux-agents start codex --split right` 打开一个独立 agent，再让任一 agent 连接对方。名称、profile、参数和退出行为见[启动 agent](docs/guide.md#starting-agents)。
+在 shell 中运行 `tmux-agents start chain [DIR] [--worker AGENT]`，会在 DIR（默认当前目录）中新开窗口，以目录 basename 命名，并把 "start the chain" 和 worker 选择作为 Claude 的初始提示。要再开一个独立 agent，可以手动分屏，在新 pane 中运行 `tmux-agents start codex`，再让任一 agent 连接对方。名称、profile、参数和退出行为见[启动 agent](docs/guide.md#starting-agents)。
 
 也可以让 agent 带你走一遍：对它说 "tmux-agents quick start"。
 

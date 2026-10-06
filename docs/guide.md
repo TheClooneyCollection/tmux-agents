@@ -21,14 +21,14 @@ See [Configuration](configuration.md) for the settings table, `tmux.conf` instru
 In a tmux shell:
 
 ```sh
-tmux-agents start claude|codex|PROFILE [--name NAME] [--split right|below] [-- AGENT ARGS]
+tmux-agents start claude|codex|PROFILE [--name NAME] [-- AGENT ARGS]
 ```
 
 Choose one agent kind or configured Codex profile. The launcher names the pane using the usual given-name rules, pins its identity and profile, and passes the same turn hooks as `tmux-spawn`. Arguments after `--` go to the agent unchanged, for example `tmux-agents start claude -- --resume`. Hooks apply to that process; global Claude settings and Codex config are not edited.
 
 A plain launch starts idle and does not count time waiting at the prompt. A turn-start hook or incoming request starts the clock; arguments after `--` stay opaque and do not change the initial state. `start chain` starts working because the launcher supplies its initial task.
 
-The agent runs as a child: exiting returns to the shell, saves its work and clears the pane's agent state. It is an independent top-level agent with no owner or membership, and keeps the agent's own permission defaults. To choose a permission mode, pass the agent's option after `--`. `--split right` or `--split below` opens beside the current pane without connecting the two agents; use `tmux-connect` when you want a connection.
+The agent runs as a child in the current pane: exiting returns to the shell, saves its work and clears the pane's agent state. It is an independent top-level agent with no owner or membership, and keeps the agent's own permission defaults. To choose a permission mode, pass the agent's option after `--`. To place another independent agent beside it, split the pane manually and run `tmux-agents start` in the new pane; use `tmux-connect` when you want a connection. For a connected sub agent, ask the running agent to use `tmux-spawn --split`.
 
 An agent ID and session record retain its kind, directory, conversation ID and worked time, including checkpoints when a pane is killed. A top-level record is not a resumable sub agent; resume with the agent's own arguments after `--`.
 
@@ -107,7 +107,7 @@ claude-<dir>-auth-review:  ...works, then tmux-ask --reply back to the caller
 - **Reopening.** The list retains closed agents for 7 days by default (`@tmux_agents_resume_days`). In its `closed` section, `enter` reopens the selected conversation connected to its old parent, `ctrl-o` reopens and jumps there, and `ctrl-x` forgets it. Same-named records show their closed time, parent and project; rows never show IDs, though the right preview may. `tmux-spawn --resume <name>` reopens the unique closed match. If several match, it refuses and lists them; use `tmux-spawn --list-closed` and `tmux-spawn --resume-id <id>` to select the intended conversation. The reopened agent keeps its ID and gets a `-2`, `-3` suffix if its label is already live. A Codex agent needs to have finished a turn so its conversation ID is recorded.
 - **Stable identity.** Connect, message, peek, rename and dismiss live agents by name as before; only `--resume-id` requires an ID. `tmux-peers --ids` exposes IDs to agents and scripts. Reusing a closed label creates a different identity, preserving the closed conversation and its children. Saved messages follow the original ID when it reopens, not a new agent with the same label. Existing records migrate automatically on the first command that needs them; conversation IDs and parent relationships are retained.
 - **Migration backup.** Before the first rewrite, original record files are copied once to `sessions/.pre-ids-v1/` under `${XDG_STATE_HOME:-~/.local/state}/tmux-agents/<server>/`. This backup is retained and never replaced by later runs. To recover the old records, preserve a separate copy of the backup, stop that tmux server and use the previous version with the backup files restored into a clean sessions directory. Do not overlay old records or remove the migration marker while the server is running. The backup covers session records, not live pane state or message queues. Only this server's queue directory is migrated; shared flat-root legacy files remain untouched.
-- **Same kind by default, in auto mode.** Claude spawns Claude, Codex spawns Codex, and a Codex on another account spawns on that account. Sub agents start with Claude's `--permission-mode auto` or Codex's `approvals_reviewer="auto_review"`.
+- **Same kind and auto mode by default.** Claude spawns Claude, Codex spawns Codex, and a Codex on another account spawns on that account. By default, sub agents start with Claude's `--permission-mode auto` or Codex's `approvals_reviewer="auto_review"`. Set `@tmux_agents_sub_auto off` or `TMUX_AGENTS_SUB_AUTO=off` to use agent defaults for new and resumed agents, including members. This does not affect `tmux-agents start`.
 - **Depth limit.** At most two levels (`TMUX_AGENTS_MAX_DEPTH`). Every new sub agent or member uses the caller's depth plus one, including with `--for`, and the normal limit applies to both. Helpers do not inherit membership.
 - **Visible layout.** When you want sub agents in the same window, use `--split <name-or-pane-id>`: `--right` (default) places the new pane to the right, `--below` beneath it, and `--size N%` sets its share (default 50%). Splits stay detached, use the caller's directory, and keep the same ownership, depth, records and status chip. Enter in the agent list jumps to a visible split; `tmux-dismiss` closes its pane and descendant panes, leaving unrelated panes intact. Without `--split`, sub agents open hidden as before.
 
@@ -127,7 +127,7 @@ claude-<dir>-auth-review:  ...works, then tmux-ask --reply back to the caller
 
 | Command | What it does |
 | --- | --- |
-| `tmux-agents start claude\|codex\|PROFILE [--name NAME] [--split right\|below] [-- AGENT ARGS]` | Start an independent tracked agent; exits back to the shell. |
+| `tmux-agents start claude\|codex\|PROFILE [--name NAME] [-- AGENT ARGS]` | Start an independent tracked agent in the current pane; exits back to the shell. |
 | `tmux-agents start chain [DIR] [--worker AGENT]` | Open a new window and ask its Claude main to start the chain. |
 | `tmux-connect [target] [--as NAME] [--all]`, `tmux-connect --from ME codex\|claude\|NAME` | Name this pane and link it to `target` (name, `%id`, or `1.0`). No target opens a picker of panes in this window (`--all`: every window); the pane under the cursor is tinted. Unnamed panes get asked for a name. With `--from` (agents) it never prompts: `codex`/`claude` picks that agent's pane in this window, and names are generated. |
 | `tmux-rename [--from ME] <agent> <new> [--exact]` | Change an agent's label, keeping its ID. With `--from`, yourself or descendants only. |
