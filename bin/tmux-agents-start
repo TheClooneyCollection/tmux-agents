@@ -77,28 +77,44 @@ if [ -n "$window" ]; then
   tmux new-window -t "$(tmux display -p -t "$pane" '#{session_id}'):" -n "$window" -c "$dir" "$command"
   exit 0
 fi
-[ -z "$(pane_name "$pane")" ] || die 'this pane already has an agent; use a fresh shell pane'
+existing_name="$(pane_name "$pane")"
+if [ -n "$existing_name" ]; then
+  # Gate before migration or cleanup: a daemon's pinned pane is not its tty.
+  stdin_tty="$(tty 2>/dev/null || true)"
+  pane_tty="$(tmux display -p -t "$pane" '#{pane_tty}')"
+  [ -t 0 ] && [ -n "$pane_tty" ] && [ "$stdin_tty" = "$pane_tty" ] ||
+    die "pane '$existing_name' is already named and start is not running from its own terminal; quit the agent and run start from this pane's shell, or use a fresh pane"
+fi
 ensure_agent_ids
 export TMUX_AGENTS_DEPTH=0 TMUX_AGENTS_KIND="$kind" TMUX_AGENTS_PINNED=1
 agent_id="$(new_agent_id)"
-# Only clean our identity: a replacement must never be erased by an old exit.
-# shellcheck disable=SC2329
-finish() {
-  [ "$(pane_agent_id "$pane")" = "$agent_id" ] || return 0
+# Takeover and exit share state cleanup; only takeover retains connections.
+clear_agent() {
+  local keep_connections="${1:-0}" other key
   record_closed "$pane"
   note_closed "$pane"
   for other in $(tmux list-panes -a -F '#{pane_id}'); do
-    remove_word "$other" @peers "$pane"
+    [ "$keep_connections" = 1 ] || remove_word "$other" @peers "$pane"
     [ "$(tmux show-options -pqv -t "$other" @parent)" != "$pane" ] || tmux set-option -pu -t "$other" @parent
   done
   for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored activity awaiting waiting_on attention_since codex_thread; do
+    case "$key" in agent|peers|peer_names) [ "$keep_connections" != 1 ] || continue ;; esac
     tmux set-option -pu -t "$pane" "@$key" 2>/dev/null || true
   done
   refresh_labels
 }
+# Only clean our identity: a replacement must never be erased by an old exit.
+# shellcheck disable=SC2329
+finish() {
+  [ "$(pane_agent_id "$pane")" = "$agent_id" ] || return 0
+  clear_agent
+}
+[ -z "$existing_name" ] || clear_agent 1
 trap finish EXIT
 ensure_agent_id "$pane" "$agent_id" >/dev/null
-if [ -n "$name" ]; then
+if [ -n "$existing_name" ]; then
+  name="$existing_name"
+elif [ -n "$name" ]; then
   name="$(unique_name "$name")"
 else name="$(name_for "$kind" "$dir")"; fi
 set_name "$pane" "$name"
