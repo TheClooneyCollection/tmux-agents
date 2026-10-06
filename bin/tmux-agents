@@ -2,6 +2,10 @@
 # Browse agent panes: live preview, open hidden ones in a popup, jump, dismiss.
 set -euo pipefail
 here="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
+if [ "${1:-}" = start ]; then
+  shift
+  exec "$here/tmux-agents-start" "$@"
+fi
 . "$here/lib.sh"
 
 usage() {
@@ -54,7 +58,7 @@ list_agents() {
   ensure_agent_ids
   settings_get AGENTS_PREFIX TMUX_AGENTS_PREFIX @tmux_agents_session_prefix agents
   settings_get resume_days TMUX_AGENTS_RESUME_DAYS @tmux_agents_resume_days 7
-  snapshot="$(tmux list-panes -a -F 'P	#{pane_id}	#{?@agent,#{@agent},-}	#{pane_dead}	#{?@perm_since,#{@perm_since},-}	#{?@state,#{@state},-}	#{?@parent,#{@parent},-}	#{session_name}	#{?@activity,#{@activity},-}	#{pane_current_path}	#{session_name}:#{window_index}	#{?@attention_since,#{@attention_since},-}	#{?@msg_waiting_since,#{@msg_waiting_since},-}	#{window_id}	#{?@agent_id,#{@agent_id},-}	#{@state_since}	#{@worked}	#{@last_turn}	#{@turns}	#{@turn_start}	#{@started}	#{?@member,#{@member},0}')"
+  snapshot="$(tmux list-panes -a -F 'P	#{pane_id}	#{?@agent,#{@agent},-}	#{pane_dead}	#{?@perm_since,#{@perm_since},-}	#{?@state,#{@state},-}	#{?@parent,#{@parent},-}	#{session_name}	#{?@activity,#{@activity},-}	#{pane_current_path}	#{session_name}:#{window_index}	#{?@attention_since,#{@attention_since},-}	#{?@msg_waiting_since,#{@msg_waiting_since},-}	#{window_id}	#{?@agent_id,#{@agent_id},-}	#{@state_since}	#{@worked}	#{@last_turn}	#{@turns}	#{@turn_start}	#{@started}	#{?@member,#{@member},0}	#{?@tracked,#{@tracked},0}')"
   if [ -n "$client" ]; then
     clients="$(tmux list-clients -F '#{client_name}	#{window_id}')"
     while IFS="$tab" read -r c w; do [ "$c" != "$client" ] || { window="$w"; break; }; done <<<"$clients"
@@ -229,7 +233,7 @@ short_task() {
 # per-project counts. Agents waiting for permission take over the focus and turn red; past
 # TMUX_AGENTS_BLINK_SECS (default 60) unanswered, they blink.
 chip() {
-  local now frames spin rows id name dead st session since activity state act attention waiting _member_flag blink_secs
+  local now frames spin rows id name dead st session since activity state act attention waiting _member_flag tracked blink_secs
   settings_get AGENTS_PREFIX TMUX_AGENTS_PREFIX @tmux_agents_session_prefix agents
   settings_get blink_secs TMUX_AGENTS_BLINK_SECS @tmux_agents_blink_secs 60
   local -a ids names states acts projs sinces
@@ -237,8 +241,8 @@ chip() {
   frames=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
   # CHIP_SPIN lets the chip daemon put a placeholder here and animate it.
   spin="${CHIP_SPIN:-${frames[$((now % 10))]}}"
-  rows="$(tmux list-panes -a -F '#{pane_id}	#{?@agent,#{@agent},-}	#{pane_dead}	#{?@state,#{@state},-}	#{session_name}	#{?@perm_since,#{@perm_since},-}	#{?@activity,#{@activity},-}	#{?@parent,1,0}	#{?@attention_since,#{@attention_since},-}	#{?@msg_waiting_since,#{@msg_waiting_since},-}	#{?@member,#{@member},0}' \
-    | awk -F '\t' '(($8 == 1 && $2 != "-") || $10 != "-") && ($11 != 1 || ($3 != 1 && ($6 != "-" || $4 == "needs_you" || $10 != "-"))) && !seen[$1]++')"
+  rows="$(tmux list-panes -a -F '#{pane_id}	#{?@agent,#{@agent},-}	#{pane_dead}	#{?@state,#{@state},-}	#{session_name}	#{?@perm_since,#{@perm_since},-}	#{?@activity,#{@activity},-}	#{?@parent,1,0}	#{?@attention_since,#{@attention_since},-}	#{?@msg_waiting_since,#{@msg_waiting_since},-}	#{?@member,#{@member},0}	#{?@tracked,#{@tracked},0}' \
+    | awk -F '\t' '(($8 == 1 && $2 != "-") || $10 != "-") && ($11 != 1 || ($3 != 1 && ($6 != "-" || ($12 == 1 && $4 == "needs_you") || $10 != "-"))) && !seen[$1]++')"
   if [ -z "$rows" ]; then
     [ "$(tmux show-options -gv status)" != 2 ] || tmux run-shell -b "'$here/tmux-agents' --chip-layout off"
     return 0
@@ -246,7 +250,7 @@ chip() {
   # State comes from what agents report: tmux-agent-report sets @activity,
   # Claude's permission hook sets @perm_since, a reply to the parent sets
   # done, and a turn that ends without either sets needs_you.
-  while IFS="$(printf '\t')" read -r id name dead st session since activity _ attention waiting _member_flag; do
+  while IFS="$(printf '\t')" read -r id name dead st session since activity _ attention waiting _member_flag tracked; do
     [ "$name" != - ] || name="$id"
     if [ "$dead" = 1 ]; then
       state=exited act="exited"
@@ -255,6 +259,8 @@ chip() {
     elif [ "$waiting" != - ]; then
       state=message act="message waiting" since="$waiting"
       [[ $since =~ ^[0-9]+$ ]] || since="$now"
+    elif [ "$tracked" != 1 ]; then
+      state=untracked act="-"
     elif [ "$st" = idle ]; then
       state=idle act="idle"
     elif [ "$st" = "done" ]; then
@@ -392,7 +398,7 @@ case "${1:-}" in
     exit 0
     ;;
   --preview-info)
-    tmux display-message -p -t "$2" 'V	#{@agent}	#{@started}	#{@worked}	#{@last_turn}	#{@turns}	#{@turn_start}	#{@state}	#{@perm_since}	#{@msg_waiting_since}	#{pane_dead}	#{@activity}' | preview_header
+    tmux display-message -p -t "$2" 'V	#{@agent}	#{@started}	#{@worked}	#{@last_turn}	#{@turns}	#{@turn_start}	#{@state}	#{@perm_since}	#{@msg_waiting_since}	#{pane_dead}	#{?@tracked,#{@tracked},0}	#{@activity}' | preview_header
     tmux capture-pane -ep -J -t "$2" -S -300
     exit 0
     ;;
@@ -405,7 +411,7 @@ case "${1:-}" in
     valid_agent_id "$n" || die "invalid agent id: $n"
     parent="$(agent_name_by_id "$(record_get "$n" parent)")"
     [ -n "$parent" ] || parent="$(record_get "$n" parent_name)"
-    printf 'V\t%s\t%s\t%s\t%s\t%s\t\t\t\t\t\t%s\n' "$(record_get "$n" name)" \
+    printf 'V\t%s\t%s\t%s\t%s\t%s\t\t\t\t\t\t1\t%s\n' "$(record_get "$n" name)" \
       "$(record_get "$n" started)" "$(record_get "$n" worked)" \
       "$(record_get "$n" last_turn)" "$(record_get "$n" turns)" "$(record_get "$n" activity)" | preview_header
     printf 'closed, can be reopened\n\n'

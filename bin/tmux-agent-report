@@ -10,7 +10,7 @@ usage: tmux-agent-report [--from ME] "what you're doing now"
                      (background or another agent's work, never the user)
        tmux-agent-report --pane PANE --perm on|off   (Claude hooks)
        tmux-agent-report --pane PANE --turn-start|--turn-end   (Claude hooks)
-       tmux-agent-report --codex-notify JSON          (Codex notify)
+       tmux-agent-report [--agent-id ID] --codex-notify JSON (Codex notify)
 
 Agents call it when they start a task and at each major step, with a
 short phrase ("reading map loader", "running import tests"). The chip
@@ -23,17 +23,19 @@ permission requests go to a review model, never to the user. When one
 does need the user, it ends its turn without replying. --turn-end
 catches that: a sub agent that ends a turn neither done, idle, nor
 waiting on its own sub agents, requests, or its parent after a notice
-is marked needs_you. Codex reports turn ends through notify, whose JSON
-names the agent in its first message
-("[request from X to NAME via tmux-ask]"); the thread id is stored on
-NAME's pane (@codex_thread) for later turns.
+is marked needs_you. Codex reports turn ends through notify. Launchers
+pass the stable identity with internal --agent-id; older notify commands
+resolve a known thread or a request header in the first message
+("[request from X to NAME via tmux-ask]"). The thread id is stored on
+the pane (@codex_thread) for later turns.
 USAGE
 }
 
-FROM_PANE="" pane="" perm="" turn="" notify_json="" waiting=0 save_work=0
+FROM_PANE="" pane="" perm="" turn="" notify_json="" notify_agent_id="" waiting=0 save_work=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
+    --agent-id) notify_agent_id="${2:-}"; shift 2 ;;
     --from) FROM_PANE="${2:-}"; shift 2 ;;
     --pane) pane="${2:-}"; shift 2 ;;
     --save-work) save_work=1; shift ;;
@@ -129,6 +131,16 @@ if [ -n "$notify_json" ]; then
   ' 2>/dev/null)" || exit 0
   type="${fields%%	*}"; rest="${fields#*	}"; thread="${rest%%	*}"; to="${rest#*	}"
   [ "$type" = agent-turn-complete ] && [ -n "$thread" ] || exit 0
+  notify_target=""
+  if [ -n "$notify_agent_id" ]; then
+    valid_agent_id "$notify_agent_id" || exit 0
+    notify_target="$(find_pane_by_id "$notify_agent_id")"
+    [ -n "$notify_target" ] || exit 0
+    known="$(tmux show-options -pqv -t "$notify_target" @codex_thread)"
+    [ -z "$known" ] || [ "$known" = "$thread" ] || exit 0
+    known="$(record_get "$notify_agent_id" id)"
+    [ -z "$known" ] || [ "$known" = "$thread" ] || exit 0
+  fi
   # One line per turn end, to debug state changes: time thread to= last words.
   { mkdir -p "/tmp/tmux-agents-$(id -u)" && printf '%s %s to=%s %s\n' "$(date '+%F %T')" "$thread" "${to:--}" \
       "$(printf '%s' "$notify_json" | /usr/bin/perl -MJSON::PP -e 'local $/; my $j = eval { decode_json(<STDIN>) } || {}; my $m = $j->{"last-assistant-message"} // ""; $m =~ s/\s+/ /g; print substr($m, 0, 80)' 2>/dev/null)" \
@@ -142,9 +154,17 @@ if [ -n "$notify_json" ]; then
       [ "$(record_get "${rec##*/}" id)" = "$thread" ] || continue
       pane="$(find_pane_by_id "${rec##*/}")"
       [ -n "$pane" ] || exit 0
+      [ -z "$notify_target" ] || [ "$pane" = "$notify_target" ] || exit 0
       tmux set-option -p -t "$pane" @codex_thread "$thread"
       break
     done
+  fi
+  if [ -n "$notify_agent_id" ]; then
+    # The launcher has no request header on its first ordinary turn. Bind
+    # only its stable identity, never a reused pane or display label.
+    [ -z "$pane" ] || [ "$pane" = "$notify_target" ] || exit 0
+    tmux set-option -p -t "$notify_target" @codex_thread "$thread"
+    pane="$notify_target"
   fi
   if [ -z "$pane" ] && [ -n "$to" ]; then
     p="$(find_pane "$to")"
@@ -171,6 +191,9 @@ else
 fi
 
 [ "$save_work" -eq 0 ] || { agent_save_work "$pane"; exit 0; }
+
+# Turn hooks prove tracking even when configured outside the launcher.
+[ -z "$turn" ] || tmux set-option -p -t "$pane" @tracked 1
 
 case "$turn" in
   end) turn_end "$pane"; exit 0 ;;

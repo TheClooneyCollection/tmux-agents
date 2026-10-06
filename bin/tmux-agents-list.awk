@@ -6,8 +6,10 @@ ENVIRON["LIST_PREVIEW"]=="1" {
     if (NR==1) {
         preview_name=$2; preview_start=$3; work=$4; preview_last=$5; preview_turns=$6
         if (numeric(work) && numeric($7) && $8=="working" && $9=="" && $10=="" && $11!=1) work+=now>$7 ? now-$7 : 0
-        preview_activity=$12
-        for (i=13;i<=NF;i++) preview_activity=preview_activity " " $i
+        preview_tracked=($12==1)
+        if (!preview_tracked) work=""
+        preview_activity=$13
+        for (i=14;i<=NF;i++) preview_activity=preview_activity " " $i
     } else preview_activity=preview_activity "\n" $0
     next
 }
@@ -17,14 +19,14 @@ $1 == "P" {
     order[++np] = p
     name[p]=$3; dead[p]=$4; perm[p]=$5; state[p]=$6; parent[p]=$7
     session[p]=$8; activity[p]=$9; path[p]=$10; location[p]=$11
-    # P16..21 are timing; P22 is membership, independent of window ancestry.
-    attention[p]=$12; waiting[p]=$13; window[p]=$14; ismember[p]=($22==1)
+    # P16..21 are timing; P22 is membership; P23 is explicit hook tracking.
+    attention[p]=$12; waiting[p]=$13; window[p]=$14; ismember[p]=($22==1); tracked[p]=($23==1)
     if ($15 != "-") byid[$15]=p
     state_since[p]=$16; worked[p]=$17; last_turn[p]=$18; turns[p]=$19; turn_start[p]=$20; started[p]=$21
     next
 }
-# R9..14 are saved timing; R15 is membership.
-$1 == "R" { record[$2]=1; rid[$2]=$3; closed[$2]=$4; owner[$2]=$5; dir[$2]=$6; label[$2]=$7; parentlabel[$2]=$8; saved_since[$2]=$9; saved_worked[$2]=$10; saved_last[$2]=$11; saved_turns[$2]=$12; saved_start[$2]=$14; recordmember[$2]=($15==1); next }
+# R9..14 are saved timing; R15 is membership; R16 marks top-level launchers.
+$1 == "R" { record[$2]=1; rid[$2]=$3; closed[$2]=$4; owner[$2]=$5; dir[$2]=$6; label[$2]=$7; parentlabel[$2]=$8; saved_since[$2]=$9; saved_worked[$2]=$10; saved_last[$2]=$11; saved_turns[$2]=$12; saved_start[$2]=$14; recordmember[$2]=($15==1); launcher[$2]=($16==1); next }
 $1 == "D" { project[$2]=$3; next }
 # Walk to the first visible live ancestor, with the original pane as fallback.
 function visible(p, original, visited) {
@@ -147,7 +149,7 @@ function preview_lines(s, width, lines, n, j, out) {
     return out
 }
 function metadata(full, start, work, last, count) {
-    return full "\n" preview_lines(preview_activity,preview_width) "\nstarted " (numeric(start) ? start : "?") " · age " (numeric(start) ? elapsed(now-start) : "?") "\nworked " (numeric(work) ? duration(work) : "?") " · last turn " (numeric(last) ? duration(last) : "?") " · turns " (numeric(count) ? count : "?")
+    return full "\n" preview_lines(preview_activity,preview_width) "\nstarted " (numeric(start) ? start : "?") " · age " (numeric(start) ? elapsed(now-start) : "?") "\n" (preview_tracked ? "worked " (numeric(work) ? duration(work) : "?") " · last turn " (numeric(last) ? duration(last) : "?") " · turns " (numeric(count) ? count : "?") : "tracking -")
 }
 function add(rank, section, id, label, status, ownername, report, timing) {
     nr++; ranks[nr]=rank; sections[nr]=section; ids[nr]=id; labels[nr]=label
@@ -198,6 +200,7 @@ END {
         if (dead[p]==1) { rank=5; status="✗ exited" }
         else if (perm[p]!="-") { rank=0; status="⚠ permission" }
         else if (waiting[p]!="-") { rank=1; status="✉ message waiting" }
+        else if (!tracked[p]) { rank=3; status="-" }
         else if (state[p]=="needs_you") { rank=1; status="◆ needs you" }
         else if (state[p]=="idle") { rank=3; status="○ idle" }
         else if (state[p]=="done") { rank=4; status="✓ done" }
@@ -205,7 +208,7 @@ END {
         section=index(session[p],prefix)==1 ? substr(session[p],length(prefix)+1) : project[path[p]]
         rowproject=section
         report=activity[p]
-        if (dead[p]!=1 && (waiting[p]!="-" || (parent[p]!="-" && (perm[p]!="-" || state[p]=="needs_you")))) {
+        if (dead[p]!=1 && (waiting[p]!="-" || (parent[p]!="-" && (perm[p]!="-" || (tracked[p] && state[p]=="needs_you"))))) {
             since=perm[p]!="-" ? perm[p] : (waiting[p]!="-" ? waiting[p] : attention[p])
             if (since !~ /^[0-9]+$/) since=now
             rank=since-20000000000
@@ -224,6 +227,10 @@ END {
         if (perm[p]!="-") since=perm[p]
         else if (waiting[p]!="-") since=waiting[p]
         else if (state[p]=="needs_you" && !numeric(since)) since=attention[p]
+        if (!tracked[p]) {
+            work=""
+            if (perm[p]=="-" && waiting[p]=="-") since=""
+        }
         add(rank,section,p,name[p]=="-" ? p : name[p],status,ownername,report,timecell(since,work))
         pp=parent[p]
         parentprojects[nr]=index(session[pp],prefix)==1 ? substr(session[pp],length(prefix)+1) : project[path[pp]]
@@ -231,7 +238,7 @@ END {
         rowprojects[nr]=rowproject
     }
     # Shell glob order used to be the stable tie-break for closed records.
-    for (n in record) if (rid[n]!="" && !(n in byid) && (scope=="all" || (target!="" && record_window(owner[n])==target))) {
+    for (n in record) if (!launcher[n] && rid[n]!="" && !(n in byid) && (scope=="all" || (target!="" && record_window(owner[n])==target))) {
         j=++nc
         while (j>1 && "x" names[j-1]>"x" n) { names[j]=names[j-1]; j-- }
         names[j]=n
