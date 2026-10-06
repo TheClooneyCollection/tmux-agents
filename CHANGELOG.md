@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Allow `tmux-agents start` to reuse a named pane from its own shell while preserving its name and connections.
+- Allow `tmux-agents start` to reuse a named pane from its own shell while preserving its connections and optionally renaming through `--name` before takeover.
 
 ## v1.12.0 (2026-10-06)
 
