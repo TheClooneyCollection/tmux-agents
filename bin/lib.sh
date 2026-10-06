@@ -1070,7 +1070,7 @@ codex_profile_for_home() {
 # Publishes agent_command and the child PATH/CODEX_HOME environment.
 build_agent_command() {
   local agent="$1" launch_mode="$2" sid="${3:-}" mode="${4:-new}"
-  local report claude_hooks home notify_id
+  local report claude_hooks home notify_id sub_auto=off
   local codex_env=() codex_notify=()
   # printf assignment avoids ShellCheck treating a sourced function as an
   # immediately executed PATH assignment in its callers.
@@ -1087,8 +1087,11 @@ build_agent_command() {
     -c 'shell_environment_policy.set.TMUX_AGENTS_PINNED="1"'
     -c "shell_environment_policy.set.TMUX_AGENTS_KIND=\"$agent\""
   )
-  # Sub agents start in auto mode: Claude's auto permission mode, Codex's
-  # auto review, so the user isn't asked about every command they run.
+  # Only sub agents consume the auto-mode preference; top-level starts keep
+  # agent defaults. Read here so tmux options also resolve inside the child.
+  if [ "$launch_mode" = spawn ]; then
+    settings_get sub_auto TMUX_AGENTS_SUB_AUTO @tmux_agents_sub_auto on
+  fi
   # Permission hooks feed the chip: an agent waiting for approval can't
   # report anything itself. Claude runs hooks in its own process, so its
   # commands can carry the pane id.
@@ -1105,7 +1108,7 @@ build_agent_command() {
   case "$agent" in
     claude)
       agent_command=(claude)
-      [ "$launch_mode" != spawn ] || agent_command+=(--permission-mode auto)
+      [ "$sub_auto" != on ] || agent_command+=(--permission-mode auto)
       agent_command+=(--settings "$claude_hooks")
       if [ "$mode" = resume ]; then agent_command+=(--resume "$sid"); elif [ -n "$sid" ]; then agent_command+=(--session-id "$sid"); fi ;;
     # No hooks for Codex: with auto_review its escalations go to a review
@@ -1117,7 +1120,7 @@ build_agent_command() {
       fi
       agent_command=(codex)
       [ "$mode" != resume ] || agent_command+=(resume)
-      [ "$launch_mode" != spawn ] || agent_command+=(-c 'approvals_reviewer="auto_review"')
+      [ "$sub_auto" != on ] || agent_command+=(-c 'approvals_reviewer="auto_review"')
       agent_command+=("${codex_env[@]}" "${codex_notify[@]}")
       [ "$mode" != resume ] || agent_command+=("$sid") ;;
   esac
