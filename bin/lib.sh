@@ -889,14 +889,15 @@ agent_identity_lock() {
 # Called under the identity lock. Authorization belongs to the caller.
 _rename_agent_locked() {
   local pane="$1" new="$2" old owner dir aid
-  _migrate_agent_ids_locked || return 1
   valid_name "$new" || die "invalid name '$new' (use letters, digits, . _ ~ and -)"
   pane_alive "$pane" || die "pane $pane no longer exists"
   old="$(pane_name "$pane")"
-  aid="$(_ensure_agent_id_locked "$pane")" || return 1
   [ "$old" != "$new" ] || { printf '%s\n' "$old"; return 0; }
   owner="$(find_pane "$new")"
   [ -z "$owner" ] || die "name '$new' is already used by pane $owner"
+  # Refusals must not migrate legacy records or allocate an identity.
+  _migrate_agent_ids_locked || return 1
+  aid="$(_ensure_agent_id_locked "$pane")" || return 1
   dir="$(sessions_dir)"
   if [ -f "$dir/$aid" ]; then record_set "$aid" name "$new" || return 1; fi
   tmux set-option -p -t "$pane" @agent "$new" || return 1
