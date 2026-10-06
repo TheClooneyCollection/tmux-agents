@@ -4,7 +4,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 . "$here/lib.sh"
 usage() {
-  echo 'usage: tmux-agents start claude|codex|PROFILE [--name NAME] [-- ARGS...]'
+  echo 'usage: tmux-agents start claude|codex|PROFILE [--name NAME [--exact]] [-- ARGS...]'
   echo '       tmux-agents start chain [DIR] [--worker AGENT]'
 }
 case "${1:-}" in -h|--help) usage; exit 0 ;; '') usage >&2; exit 1 ;; esac
@@ -24,6 +24,7 @@ start_chain_work=0
 unset TMUX_START_CHAIN_WORK
 kind="$1"; shift
 name="" window="" dir="$PWD"
+explicit_exact=0
 if [ "$kind" = chain ]; then
   worker=""
   if [ $# -gt 0 ] && [[ $1 != -* ]]; then dir="$1"; shift; fi
@@ -48,16 +49,14 @@ else
   while [ $# -gt 0 ]; do
     case "$1" in
       --name) [ -n "${2:-}" ] || die '--name needs a name'; name="$2"; shift 2 ;;
+      --exact) start_name_exact=1; explicit_exact=1; shift ;;
       --) shift; break ;;
       *) die "unknown launcher argument '$1' (agent arguments follow --)" ;;
     esac
   done
 fi
+[ "$explicit_exact" != 1 ] || [ -n "$name" ] || die '--exact requires --name'
 case "$kind" in claude|codex) ;; *) codex_home_for "$kind" >/dev/null || die "unknown agent '$kind'" ;; esac
-if [ -n "$name" ]; then
-  prefix=codex; [ "$kind" != claude ] || prefix=claude
-  name="$(format_given_name "$prefix" "$dir" "$name" "$start_name_exact")"
-fi
 pane="$(self_pane)"
 if [ -n "$window" ]; then
   # tmux executes its command through a shell; quote each argument once.
@@ -84,6 +83,16 @@ if [ -n "$existing_name" ]; then
   pane_tty="$(tmux display -p -t "$pane" '#{pane_tty}')"
   [ -t 0 ] && [ -n "$pane_tty" ] && [ "$stdin_tty" = "$pane_tty" ] ||
     die "pane '$existing_name' is already named and start is not running from its own terminal; quit the agent and run start from this pane's shell, or use a fresh pane"
+fi
+# An unchanged supplied label is a no-op even with the prefixed default.
+# Format only after the tty gate, using the incoming launcher's logical kind.
+if [ -n "$name" ] && [ "$name" != "$existing_name" ]; then
+  prefix=codex; [ "$kind" != claude ] || prefix=claude
+  name="$(format_given_name "$prefix" "$dir" "$name" "$start_name_exact")"
+  if [ -n "$existing_name" ] && [ "$name" != "$existing_name" ]; then
+    rename_agent "$pane" "$name"
+    existing_name="$name"
+  fi
 fi
 ensure_agent_ids
 export TMUX_AGENTS_DEPTH=0 TMUX_AGENTS_KIND="$kind" TMUX_AGENTS_PINNED=1
