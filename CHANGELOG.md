@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.12.1 (2026-10-06)
 
-- Allow `tmux-agents start` to reuse a named pane from its own shell while preserving its connections and optionally renaming through `--name` before takeover.
+- **`tmux-agents start` takes over a named pane.** Run from the pane's own shell (its terminal), it reuses a pane whose agent has quit: it keeps the name and connections, closes the old record and starts a fresh tracked agent. `--name` renames the pane first, like `tmux-rename`. From anywhere else, such as an agent's own command inside the pane, it still refuses with a clearer message.
 
 ## v1.12.0 (2026-10-06)
 
