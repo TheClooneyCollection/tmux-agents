@@ -1,6 +1,6 @@
 # Configuration
 
-Set user preferences in `tmux.conf`, or change them live with `tmux set -g`. Environment overrides win over options, then the defaults below apply. For given names, `--exact` takes priority over both. Use the full name printed by `tmux-spawn` or `tmux-rename`.
+Set user preferences in `tmux.conf`, or change them live with `tmux set -g`. Environment overrides win over options, then the defaults below apply. For given names, `--exact` takes priority over both. Use the full name printed by `tmux-spawn` or `tmux-rename`. The list and preview settings apply to the `prefix + a` agent list, which needs `fzf`.
 
 ```tmux
 set -g @tmux_agents_name_format exact
