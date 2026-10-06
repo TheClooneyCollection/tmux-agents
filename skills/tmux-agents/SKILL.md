@@ -16,12 +16,20 @@ If `command -v tmux-ask` finds nothing, tmux-agents isn't installed yet: tell th
 Pass `--from <your name>` to every `tmux-ask`, `tmux-peers`, `tmux-peek` and `tmux-spawn` call.
 
 - **Where it comes from.** Your name is the `to` part of messages you receive: `[request from X to Y via tmux-ask]` means you are Y. A spawned agent's first message is such a request.
-- **`ME` and `my-name` below are placeholders.** Never copy them, or a name like `claude`, literally. If you don't know your name yet, run `tmux-peers` first: in Claude, or in Codex started by tmux-spawn or the tmux-agents `codex` wrapper, an unnamed pane gets a name on the spot (like `claude-~-1`) and the command tells you what it is.
+- **`ME` and `my-name` below are placeholders.** Never copy them, or a name like `claude`, literally. If you don't know your name yet, run `tmux-peers` first: in Claude, or in Codex started by `tmux-agents start`, `tmux-spawn` or the tmux-agents `codex` wrapper, an unnamed pane gets a name on the spot (like `claude-~-1`) and the command tells you what it is.
 - **Why it matters.** Codex runs shell commands in a shared background process whose `$TMUX_PANE` can be another agent's pane, so without `--from` you may act as someone else, and get "not connected" errors.
 - **If you've never received a message,** `tmux-peers` (no `--from`) shows who `$TMUX_PANE` says you are. Only trust it when:
   - you are Claude (Claude runs commands in its own pane), or
-  - `echo $TMUX_AGENTS_PINNED` prints `1`: Codex was started through the tmux-aware `codex` wrapper or by `tmux-spawn`, which pin `$TMUX_PANE`.
-- **Otherwise, in Codex, `tmux-peers` may show another agent's identity.** Don't pick a name from it and don't ask the user to confirm one. Tell the user your identity can't be determined, and ask them for your pane's name (it is on the pane's top border, `name ⇄ peers`), or to restart you with the tmux-agents `codex` wrapper from a tmux pane.
+  - `echo $TMUX_AGENTS_PINNED` prints `1`: Codex was started through `tmux-agents start`, the tmux-aware `codex` wrapper or `tmux-spawn`, which pin `$TMUX_PANE`.
+- **Otherwise, in Codex, `tmux-peers` may show another agent's identity.** Don't pick a name from it and don't ask the user to confirm one. Tell the user your identity can't be determined, and ask them for your pane's name (it is on the pane's top border, `name ⇄ peers`), or to restart you with `tmux-agents start codex` (or their configured profile) from a tmux pane.
+
+## Starting top-level agents
+
+Recommend `tmux-agents start claude|codex|PROFILE [--name NAME] [--split right|below] [-- AGENT ARGS]` from a tmux shell. It supplies the same hooks, identity pins and profile lookup as `tmux-spawn`, without editing global agent settings. It keeps the agent's permission defaults, runs it as a child and saves work and clears pane state on exit, returning to the shell. A split is independent: no owner, membership or automatic connection. Use `tmux-connect` only when requested. These top-level records are not resumable sub agents; use the agent's resume arguments after `--`.
+
+`tmux-agents start chain [DIR] [--worker AGENT]` opens a new window in DIR (default `$PWD`), named after its basename, and starts Claude with the initial prompt to start the chain. The agent-chain skill creates its members. Existing secondary/worker role briefs join that chain; they must not launch another one.
+
+`@tracked=1` is set by start/spawn and by the first turn-start, turn-end or notify hook report. Untracked agents show `-`, no worked time and no inferred needs-you state; messages still work, but requests do not mark them working. Optional Codex wrappers pin identity only for direct `codex` invocation; recommend `start codex` or `start PROFILE` for tracking.
 
 ## Commands
 

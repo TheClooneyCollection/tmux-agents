@@ -50,7 +50,7 @@ One item at a time; skip what is already in place. See [Configuration](../../doc
 1. **tmux.** Add `source-file <checkout>/tmux/tmux-agents.conf` to the user's tmux config (`~/.tmux.conf`, or `~/.config/tmux/tmux.conf` if that is the one they use). If the commands were linked somewhere other than `~/.local/bin`, put `%hidden TMUX_AGENTS_BIN="<that dir>"` on the line before. Then offer to reload it with `tmux source-file <config>`.
 2. **PATH.** If `command -v tmux-ask` finds nothing, add `~/.local/bin`: `fish_add_path ~/.local/bin` for fish, or `export PATH="$HOME/.local/bin:$PATH"` in `~/.zshrc` / `~/.bashrc`.
 3. **Claude** (if they use it). Merge the `permissions.allow` entries from `<checkout>/integrations/claude/settings.json` into `~/.claude/settings.json`: keep everything already there, add only the missing entries, and write valid JSON with a script (python3 or jq), not by hand.
-4. **Codex** (if they use it). It must be started through the wrapper, which pins each Codex to its own tmux pane:
+4. **Agent launch.** Recommend `tmux-agents start claude`, `tmux-agents start codex` or `tmux-agents start PROFILE` inside tmux. The launcher supplies identity pins and turn hooks per process; do not add global hooks to Claude settings or Codex config. It keeps the agent's permission defaults and returns to the shell on exit. A Codex wrapper is optional for users who type `codex` directly; it pins identity only and does not enable tracking:
    - fish: copy `<checkout>/integrations/fish/functions/*.fish` into `~/.config/fish/functions/`. If they already have a `codex.fish`, show both and ask.
    - zsh/bash: add `source <checkout>/integrations/sh/codex.sh` to `~/.zshrc` / `~/.bashrc`.
 5. **Optional.** Offer to add a line to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`: "Start sub agents with tmux-spawn (the tmux-agents skill), not the built-in sub agents."
@@ -59,19 +59,19 @@ One item at a time; skip what is already in place. See [Configuration](../../doc
 
 In a new shell: `command -v tmux-ask tmux-spawn` finds both, and in tmux `tmux list-keys | grep tmux-agents` shows `prefix + a` and `prefix + A`.
 
-Tell the user that agents already running (you included) won't see the new PATH, wrapper, skill or permissions until they are restarted. Suggest restarting you inside tmux and saying "tmux-agents quick start" to continue.
+Tell the user that agents already running (you included) won't see the new PATH, wrapper, skill or permissions until they are restarted. Suggest restarting with `tmux-agents start claude` or `tmux-agents start codex` (or their profile) inside tmux and saying "tmux-agents quick start" to continue.
 
 ## 6. Quick start
 
 Walk the user through it one step at a time. Say what to do, then wait for them to do it before the next step. Keep explanations to a sentence or two.
 
-1. **Two agents side by side.** Ask the user to start `claude` or `codex` in tmux and tell that agent: "use tmux-agents to open a Codex to your right". If you are already that agent, have them give you that request. Follow the `tmux-agents` skill's identity rules, then use `tmux-spawn codex --from <your-name> --split <your-name> --right --name quick-start` for that explicit request; use the full name it prints. Honor a different agent kind or Codex profile if the user requests one; otherwise follow the same-kind default. Only use a visible split when the user asks for that layout.
+1. **Two agents side by side.** Ask the user to run `tmux-agents start claude` or `tmux-agents start codex` in tmux and tell that agent: "use tmux-agents to open a Codex to your right". If you are already that agent, have them give you that request. Follow the `tmux-agents` skill's identity rules, then use `tmux-spawn codex --from <your-name> --split <your-name> --right --name quick-start` for that explicit request; use the full name it prints. Honor a different agent kind or Codex profile if the user requests one; otherwise follow the same-kind default. Only use a visible split when the user asks for that layout.
 2. **Agents talking.** Tell the original agent: "ask the agent you just opened to review <a file in this project>". The agents are already connected. The request appears in the new pane, and the reply comes back to the original agent as a new message. Both panes show `name ⇄ peer` on their top border.
 3. **A sub agent.** Ask the original agent: "spawn a sub agent to <a small task, like adding a test>". It runs in a hidden window, and a line above the status bar shows it working.
 4. **Watch it.** If fzf is missing, explain that the list shows installation instructions until a key is pressed; continue the command-based tour. Otherwise press `prefix + a`: the agent list with a live preview. Arrow keys move, Enter opens the agent in a popup where you can answer it or give direction, `prefix + d` goes back to the list, and `prefix + d` again closes it.
 5. **Needs you.** If a sub agent waits for permission the line turns red; if it ends its turn without answering its parent, amber. Open it from the list to answer.
 6. **Clean up.** The parent closes its sub agents when it is done with them. You can close one yourself with `ctrl-x` in the list, or every finished one with `ctrl-d`.
 
-As a manual alternative, the user can split the window themselves, start `claude` and `codex` in separate panes (Codex through its wrapper), then tell one to "use tmux-agents to connect to the other agent".
+For an independent top-level agent, the user can run `tmux-agents start codex --split right`, then ask an agent to connect them. For a new chain, `tmux-agents start chain [DIR] [--worker AGENT]` opens a window in DIR (default current directory) and prompts Claude to create its secondary and worker. Agents launched without hooks show `-` with no worked time; they can still exchange messages.
 
 Finish by pointing them to the README for the full command list and more than one Codex account.

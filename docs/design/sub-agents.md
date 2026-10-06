@@ -10,7 +10,7 @@ User settings below also have `@tmux_agents_*` options; environment overrides wi
 
 1. **Refuse if too deep.** For ordinary sub agents, `TMUX_AGENTS_DEPTH` (unset means 0) must be below `TMUX_AGENTS_MAX_DEPTH` (default 2). An ordinary child gets the caller's depth + 1 through the window or split command's `-e`, so a top-level agent can spawn children, and they can spawn grandchildren, which can't spawn further.
 2. **Pick the agent kind.** An explicit `claude`, `codex` or Codex profile wins. Profiles are extra Codex accounts in `TMUX_AGENTS_CODEX_HOMES` (`name=CODEX_HOME ...`). Otherwise, in order:
-   - `TMUX_AGENTS_KIND`, pinned by `tmux-spawn` and the Codex wrappers, since Codex runs commands without its own `CODEX_HOME`;
+   - `TMUX_AGENTS_KIND`, pinned by `tmux-agents start`, `tmux-spawn` and the Codex wrappers, since Codex runs commands without its own `CODEX_HOME`;
    - `CLAUDECODE` means claude;
    - a `CODEX_HOME` listed as a profile means that profile;
    - the caller pane's `pane_current_command`.
@@ -20,7 +20,9 @@ User settings below also have `@tmux_agents_*` options; environment overrides wi
 6. **Hand over the task through a file.** The request body goes to a `mktemp` file. The window runs `tmux-spawn --run <agent> <file>`, which reads and deletes it and `exec`s the agent with the text as its first prompt (`claude "<prompt>"` and `codex "<prompt>"` both start interactive with an initial prompt). No shell ever quotes the task, and nothing has to wait for the TUI to be ready before pasting.
 7. **Wire it up.** `set-option -p remain-on-exit on` keeps the transcript on the child pane only after it exits. Only hidden windows get `automatic-rename off`; splits preserve the shared window settings apart from the normal agent border labels. The script sets `@agent` and `@parent`, links both ways, and refreshes labels.
 
-What `--run` sets up:
+What `--run` sets up (hooks, pins and profile setup are shared with `tmux-agents start`; auto mode applies only to spawned agents):
+
+- **Tracking.** Start/spawn mark `@tracked=1` before launch. The first turn-start, turn-end or notify report also marks a pane tracked. Without tracking, rows show `-`, omit worked time and do not infer needs-you; messaging still works.
 
 - **Auto mode.** Sub agents always start with `--permission-mode auto` (Claude) or `-c approvals_reviewer="auto_review"` (Codex). Before this, a spawned Codex on a second account fell back to its config default (`user`) and asked about every command, while its parent had been switched to auto review by hand.
 - **Codex identity pins.** For Codex (any profile), `--run` passes `-c shell_environment_policy.set.{TMUX_PANE,TMUX,TMUX_AGENTS_DEPTH}` with the new pane's values, so commands the sub agent runs through Codex's shared daemon see its own identity and depth. `codex sandbox` confirmed the override is applied. See [environment](environment.md#codex-runs-commands-in-a-shared-daemon).
@@ -52,7 +54,7 @@ What `--run` sets up:
 ## Done state and cleanup
 
 - **Idle.** Spawning without task text (including `--for`) sets `@state idle`, displayed as grey `○ idle` between working and done. Requests and progress reports start work; turn end leaves idle alone. Reopening a previously completed session retains the existing done state.
-- **Marking.** `tmux-ask` sets `@state done` on the sender when it replies to its own `@parent`, and `@state working` on the receiver of any request.
+- **Marking.** `tmux-ask` sets `@state done` on the sender when it replies to its own `@parent`, and `@state working` on the tracked receiver of a request. Untracked receivers retain `-`.
 - **Cleanup.** `tmux-dismiss --done` considers done and exited sub agents, skips members and any subtree containing a member or unfinished descendants with a note, asks y/N on the terminal, and closes eligible subtrees deepest first. The switcher runs it with fzf `execute` on `ctrl-d`, then reloads.
 - **Reports don't reopen work.** `tmux-agent-report` sets `working`, except on a `done` agent: a report right after replying ("delivered abc123") is a summary. Seen live: spirit-fire replied, then reported, and the turn end that followed marked it needs you. Only a new request sets a done agent back to working.
 - **Requests reopen work; notices don't.** A request to a `done` sub agent sets it back to `working` and adds it to the sender's `@awaiting`; a notice changes neither. Seen live: a parent broadcast a rule ("no reply needed, don't restart") to finished sub agents as a request. They acknowledged locally without `--reply`, and the next turn end marked them needs you, while the parent kept waiting on them. The skill now says to send information as notices. Notices also leave a Claude sub agent's state alone at turn start (the `UserPromptSubmit` hook sees the prompt begin with `[notice from`): otherwise a notice would clear what it reported with `--waiting`, and the turn end after it would mark it needs you. Guessing from the answer's wording ("standing by") was rejected, since it would also hide real unfinished work.

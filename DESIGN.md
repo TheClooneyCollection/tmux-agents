@@ -12,9 +12,11 @@ How the `tmux-*` scripts work, why they work that way, and the traps found while
 
 ## Architecture
 
-Live state lives in tmux user options on the panes themselves: a pane's name, its links to other panes, and, for sub agents, their parent and state. Closing a pane cleans up its links. Two things must outlive a pane and are files: session records (`~/.local/state/tmux-agents/<server>/sessions/`), so a closed sub agent can be reopened, and the message queue (`/tmp/tmux-agents-<uid>/queue/<server>/`), so no message is dropped while its receiver is busy or gone. Links are explicit and symmetric, so the user always knows who can reach whom.
+Live state lives in tmux user options on the panes themselves: a pane's name, its links to other panes, tracking and turn state, and, for sub agents, their parent. Closing a pane cleans up its links. Two things must outlive a pane and are files: session records (`~/.local/state/tmux-agents/<server>/sessions/`), so a closed sub agent can be reopened, and the message queue (`/tmp/tmux-agents-<uid>/queue/<server>/`), so no message is dropped while its receiver is busy or gone. Links are explicit and symmetric, so the user always knows who can reach whom.
 
 A message is text pasted into the receiver's pane and submitted, exactly as if the user had typed it. The sender ends its turn; the answer arrives later as a new prompt in its own pane. Every message carries the sender's and receiver's names and its own reply instructions, so an agent that never loaded the skill can still answer.
+
+`tmux-agents start` launches a tracked top-level agent with per-process hooks, identity pins and profile selection shared with spawning. It preserves permission defaults and returns to the shell on exit, saving work and clearing pane state. Agents without hooks show `-` without worked time; messaging still works. `start chain` opens a new window and gives Claude the initial prompt to create its chain.
 
 Sub agents are ordinary agents started by `tmux-spawn`, in hidden windows of an `agents-<project>` session by default or in a visible split (`--split`), linked to their owner: whoever spawned them, or the agent named with `--for`. The `prefix + a` switcher lists and opens them, and a second status line (the chip) shows what each one is doing, fed by reports and hooks rather than screen scraping.
 
@@ -31,7 +33,7 @@ Sub agents are ordinary agents started by `tmux-spawn`, in hidden windows of an 
 | `tmux-peek` | Reads a peer's screen (`capture-pane -J`). |
 | `tmux-spawn` | Starts a connected sub agent in a hidden window or a visible split, for the caller or for another agent (`--for`); `--resume` reopens a closed one. `--run` is its in-pane half. |
 | `tmux-agent-report` | Sub agent progress, permission and turn-end reports for the chip. |
-| `tmux-agents` | fzf switcher (`prefix + a`). `--list`, `--view`, `--chip` and `--alert` are among its helper modes. |
+| `tmux-agents` | Top-level launcher (`start`) and fzf switcher (`prefix + a`). `--list`, `--view`, `--chip` and `--alert` are among its helper modes. |
 | `tmux-dismiss` | Closes an agent and its sub agents (the whole subtree; `--keep-children` for just the one); agents may close their descendants. |
 
 ## Topics

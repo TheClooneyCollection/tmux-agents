@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Tracked top-level launches.** `tmux-agents start claude|codex|PROFILE` supplies identity pins and turn hooks without editing global agent config. Optional names, independent right/below splits and agent arguments are supported; exit saves work, clears pane state and returns to the shell. Agent permission defaults are preserved.
+- **Start a chain from the shell.** `tmux-agents start chain [DIR] [--worker AGENT]` opens a window in the chosen directory and gives Claude the initial prompt to create the chain.
+- **Honest untracked status.** Agents without hooks show `-`, without worked time or inferred needs-you state; messaging still works. Codex wrappers remain optional identity-only helpers; setup recommends `tmux-agents start`.
+
 ## v1.11.0 (2026-10-06)
 
 - **Reload your tmux config after updating** (`tmux source-file ~/.tmux.conf`): new hooks save worked time when a pane dies and mark records of removed panes closed.

@@ -80,14 +80,14 @@ cd tmux-agents
 | **tmux** | 在 `~/.tmux.conf` 里加 `source-file ~/path/to/tmux-agents/tmux/tmux-agents.conf`，然后重新加载 |
 | **PATH** | `~/.local/bin` |
 | **Claude** | 把 [`integrations/claude/settings.json`](integrations/claude/settings.json) 里的 `allow` 规则合并进 `~/.claude/settings.json` |
-| **Codex** | wrapper：[`integrations/fish/functions/`](integrations/fish/functions) 或 [`integrations/sh/codex.sh`](integrations/sh/codex.sh) |
+| **Codex（可选）** | 仅固定身份的 wrapper：[`integrations/fish/functions/`](integrations/fish/functions) 或 [`integrations/sh/codex.sh`](integrations/sh/codex.sh) |
 
 <details>
 <summary>每一项是做什么的</summary>
 
 - **tmux：** `prefix + a`（agent 列表）、`prefix + A`（连接）、子 agent 状态行，以及刷新边框、响铃提醒和发送排队消息的 hooks。如果命令没有链接到 `~/.local/bin`，在 `source-file` 那行之前加上 `%hidden TMUX_AGENTS_BIN="/那个/目录"`。
 - **Claude：** agent 发消息、查看、spawn、报告进度、给自己或后代改名、关闭自己的子 agent 时都不用再弹确认。`tmux-connect`（不带 `--from`）、`tmux-disconnect`、不带参数的 `tmux-dismiss` 和不带 `--from` 的 `tmux-rename` 仍然由你来操作，照样会询问。
-- **Codex：** Codex 在一个共享的后台进程里执行命令，里面的 `$TMUX_PANE` 可能属于别的 pane，所以要靠 wrapper 把每个 Codex 固定到它自己的 pane（见 DESIGN.md）。fish 用户把函数复制到 `~/.config/fish/functions/`；bash/zsh 用户在 `~/.bashrc` 或 `~/.zshrc` 里 `source` 那个 sh 文件。
+- **Codex：** 使用 `tmux-agents start codex`（或已配置的 profile）固定身份并跟踪回合。可选 wrapper 只在直接输入 `codex` 时固定身份，不提供状态跟踪。fish 用户把函数复制到 `~/.config/fish/functions/`；bash/zsh 用户在 `~/.bashrc` 或 `~/.zshrc` 里 `source` 那个 sh 文件。启动 hooks 按进程传入，不修改 Claude 或 Codex 的全局 hook 配置。
 - **可选：** 在 `CLAUDE.md` / `AGENTS.md` 里告诉 agent 所有子 agent 都用 `tmux-spawn` 开。skill 里有具体说明。
 
 </details>
@@ -113,13 +113,13 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 
 ## 快速上手
 
-1. 在 tmux 中启动 `claude` 或 `codex`。对它说："用 tmux-agents 在你右边开一个 Codex"。它会通过 `tmux-spawn --split` 在自己旁边打开一个已连接的 agent。
+1. 在 tmux 中运行 `tmux-agents start claude` 或 `tmux-agents start codex`。对它说："用 tmux-agents 在你右边开一个 Codex"。它会通过 `tmux-spawn --split` 在自己旁边打开一个已连接的 agent。
 2. 对原来的 agent 说："让你刚打开的 Codex review 这个 diff"。请求会出现在 Codex 的 pane 里，回复会回到原来的 agent。
 3. 对原来的 agent 说："开一个子 agent 给 parser 加测试"。它在隐藏窗口里运行，状态栏上方那一行会显示它的进度。
 4. 按 `prefix + a` 查看它。按 Enter 用 popup 打开，按 `prefix + d` 返回。
 5. 对原来的 agent 说："start the chain"。它会成为和你对话的 main agent，再开一个负责协调的 secondary 和一个负责实现的 Codex worker，三个并排在你的窗口里（`agent-chain` skill）。
 
-也可以自己分屏，在两个 pane 中分别启动 `claude` 和 `codex`，再对其中一个说 "用 tmux-agents 连接另一个 agent"。
+在 shell 中运行 `tmux-agents start chain [DIR] [--worker AGENT]`，会在 DIR（默认当前目录）中新开窗口，以目录 basename 命名，并把 "start the chain" 和 worker 选择作为 Claude 的初始提示。也可以用 `tmux-agents start codex --split right` 打开一个独立 agent，再让任一 agent 连接对方。名称、profile、参数和退出行为见[启动 agent](docs/guide.md#starting-agents)。
 
 也可以让 agent 带你走一遍：对它说 "tmux-agents quick start"。
 
@@ -139,7 +139,7 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 
 关掉的子 agent 和成员会在列表底部的 `closed` 区保留 7 天：按 `enter` 就能带着完整对话重新打开。也可以让它的父 agent 帮你重开。
 
-状态：`⠹` 工作中 · `○` 空闲（还没有任务）· `✓` 已完成 · `⚠` 等待权限（红）· `◆` 需要你（黄）· `✉` 有消息在等你停止打字或滚动 · `✗` 已退出
+状态：`⠹` 工作中 · `○` 空闲（还没有任务）· `✓` 已完成 · `⚠` 等待权限（红）· `◆` 需要你（黄）· `✉` 有消息在等你停止打字或滚动 · `✗` 已退出 · `-` 未跟踪（无工作时长；仍可收发消息）
 
 ## 命令
 
@@ -151,7 +151,7 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 | `tmux-rename` | 修改 agent 标签，保留身份、历史和连接 |
 | `tmux-ask` | 给已连接的 agent 发消息 |
 | `tmux-spawn` | 在隐藏窗口或 `--split` 分屏中启动子 agent，或用 `--member` 创建长期成员 |
-| `tmux-agents` | agent 列表（`prefix + a`） |
+| `tmux-agents` | agent 列表（`prefix + a`）；`start` 启动可跟踪的 agent 或 chain |
 | `tmux-peers`、`tmux-peek` | 查看连接关系；读取另一个 pane 的内容 |
 | `tmux-dismiss`、`tmux-disconnect` | 关闭子 agent；断开 pane 之间的连接 |
 | `tmux-agent-report` | 报告进度，显示在状态行上 |

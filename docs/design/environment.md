@@ -34,10 +34,18 @@ Codex runs shell commands in a shared app-server daemon, one per `CODEX_HOME`, w
 The fixes:
 
 - **`--from` identity in every message** (see [protocol](state-and-protocol.md#design-decisions)).
-- **`shell_environment_policy.set` pins** (`TMUX_PANE`, `TMUX`, `TMUX_AGENTS_PINNED=1`) for every Codex started in tmux. `tmux-spawn --run` adds them for sub agents (plus `TMUX_AGENTS_DEPTH`), and the `codex` wrappers in `integrations/` add them (via `__codex_tmux_pins`) for Codex the user starts.
+- **`shell_environment_policy.set` pins** (`TMUX_PANE`, `TMUX`, `TMUX_AGENTS_PINNED=1`) for every Codex started in tmux. `tmux-agents start` and `tmux-spawn --run` share launch setup for these pins (plus `TMUX_AGENTS_DEPTH`), profile selection and turn hooks. The optional `codex` wrappers in `integrations/` add identity pins only (via `__codex_tmux_pins`) for direct shell invocation, without turn tracking.
 - **No guessing.** The skill no longer lets an unpinned Codex pick a name from `tmux-peers` or have the user confirm one, and `tmux-peers` prints a warning when neither `--from`, `TMUX_AGENTS_PINNED` nor `CLAUDECODE` is set.
 
 Verified live: a Codex on a second account, restarted through the wrapper, saw `TMUX_AGENTS_PINNED=1` and `you: codex-~-1 (%48)` while sharing the daemon started from `%36`.
+
+## Top-level launch and tracking
+
+`tmux-agents start` runs the agent as a child and keeps its own permission defaults. It passes Claude settings hooks or Codex notify per process, with no global settings edits. On exit it saves the session/work record and clears the pane's agent state so the shell can be reused. Records have no parent and are excluded from resumable sub-agent lists. Splits create independent top-level agents with no implicit connection.
+
+`@tracked=1` is set before start/spawn launches and by the first turn-start, turn-end or notify report. This also recognizes externally configured hooks. Requests only mark tracked receivers working; untracked panes show `-`, omit worked time and cannot become needs-you from a missing turn end. Messaging remains available. See the [launcher decision](../decisions/2026-10-06-launcher.md).
+
+`start chain` creates a window in the requested directory (default `$PWD`), named after its basename. Claude receives the chain request as its initial prompt; the skill creates the members without a timed message delivery.
 
 ## Permissions
 

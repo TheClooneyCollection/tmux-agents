@@ -106,7 +106,13 @@ Almost done. Add these to your own config:
      $here/integrations/claude/settings.json
    into ~/.claude/settings.json.
 
-4. Codex: start it through a wrapper that pins its tmux identity:
+4. In tmux, start agents with tracking and identity pins:
+     tmux-agents start claude
+     tmux-agents start codex   (or a configured Codex profile)
+   Start a chain in a new window: tmux-agents start chain [DIR] [--worker AGENT]
+   Launch hooks are passed per process; global agent hook config is not edited.
+
+   Optional, for typing codex directly: a wrapper pins identity only, without tracking:
      fish:      cp $here/integrations/fish/functions/*.fish ~/.config/fish/functions/
      bash/zsh:  source $here/integrations/sh/codex.sh   (in ~/.bashrc or ~/.zshrc)
 
