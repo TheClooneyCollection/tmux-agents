@@ -21,12 +21,14 @@ See [Configuration](configuration.md) for the settings table, `tmux.conf` instru
 In a tmux shell:
 
 ```sh
-tmux-agents start claude|codex|PROFILE [--name NAME] [-- AGENT ARGS]
+tmux-agents start claude|codex|PROFILE [--name NAME [--exact]] [-- AGENT ARGS]
 ```
 
 Choose one agent kind or configured Codex profile. The launcher names the pane using the usual given-name rules, pins its identity and profile, and passes the same turn hooks as `tmux-spawn`. Arguments after `--` go to the agent unchanged, for example `tmux-agents start claude -- --resume`. Hooks apply to that process; global Claude settings and Codex config are not edited.
 
 A plain launch starts idle and does not count time waiting at the prompt. A turn-start hook or incoming request starts the clock; arguments after `--` stay opaque and do not change the initial state. `start chain` starts working because the launcher supplies its initial task.
+
+A named pane can be reused from its own shell. Its name and connections are retained; a different `--name` uses the normal rename path before takeover, and `--exact` keeps the requested name verbatim. Invalid or taken names refuse without changing the old agent. Calls from another terminal or without a terminal cannot take over a named pane.
 
 The agent runs as a child in the current pane: exiting returns to the shell, saves its work and clears the pane's agent state. It is an independent top-level agent with no owner or membership, and keeps the agent's own permission defaults. To choose a permission mode, pass the agent's option after `--`. To place another independent agent beside it, split the pane manually and run `tmux-agents start` in the new pane; use `tmux-connect` when you want a connection. For a connected sub agent, ask the running agent to use `tmux-spawn --split`.
 
@@ -127,7 +129,7 @@ claude-<dir>-auth-review:  ...works, then tmux-ask --reply back to the caller
 
 | Command | What it does |
 | --- | --- |
-| `tmux-agents start claude\|codex\|PROFILE [--name NAME] [-- AGENT ARGS]` | Start an independent tracked agent in the current pane; exits back to the shell. |
+| `tmux-agents start claude\|codex\|PROFILE [--name NAME [--exact]] [-- AGENT ARGS]` | Start an independent tracked agent in the current pane; exits back to the shell. |
 | `tmux-agents start chain [DIR] [--worker AGENT]` | Open a new window and ask its Claude main to start the chain. |
 | `tmux-connect [target] [--as NAME] [--all]`, `tmux-connect --from ME codex\|claude\|NAME` | Name this pane and link it to `target` (name, `%id`, or `1.0`). No target opens a picker of panes in this window (`--all`: every window); the pane under the cursor is tinted. Unnamed panes get asked for a name. With `--from` (agents) it never prompts: `codex`/`claude` picks that agent's pane in this window, and names are generated. |
 | `tmux-rename [--from ME] <agent> <new> [--exact]` | Change an agent's label, keeping its ID. With `--from`, yourself or descendants only. |
