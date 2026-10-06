@@ -18,6 +18,10 @@ unset TMUX_START_CODEX_HOMES
 start_name_exact=0
 [ "${TMUX_START_NAME_EXACT:-}" != 1 ] || start_name_exact=1
 unset TMUX_START_NAME_EXACT
+# Only chain supplies a known initial task; arbitrary CLI arguments stay opaque.
+start_chain_work=0
+[ "${TMUX_START_CHAIN_WORK:-}" != 1 ] || start_chain_work=1
+unset TMUX_START_CHAIN_WORK
 kind="$1"; shift
 name="" split="" window="" dir="$PWD"
 if [ "$kind" = chain ]; then
@@ -35,6 +39,7 @@ if [ "$kind" = chain ]; then
     case "$worker" in claude|codex) ;; *) codex_home_for "$worker" >/dev/null || die "unknown worker '$worker'" ;; esac
   fi
   window="${dir##*/}"; window="${window:-root}"
+  start_chain_work=1
   prompt='start the chain'
   [ -z "$worker" ] || prompt="$prompt; use $worker as the worker"
   kind=claude
@@ -59,7 +64,7 @@ pane="$(self_pane)"
 if [ -n "$split$window" ]; then
   # tmux executes its command through a shell; quote each argument once.
   # The new pane then runs a child agent and returns to its own shell.
-  args=(env TMUX_START_NAME_EXACT=1 "TMUX_START_CODEX_HOMES=$codex_homes" "TMUX_SPAWN_BIN=${TMUX_SPAWN_BIN:-}" "XDG_STATE_HOME=${XDG_STATE_HOME:-$HOME/.local/state}" "$here/tmux-agents-start" "$kind")
+  args=(env TMUX_START_NAME_EXACT=1 "TMUX_START_CHAIN_WORK=$start_chain_work" "TMUX_START_CODEX_HOMES=$codex_homes" "TMUX_SPAWN_BIN=${TMUX_SPAWN_BIN:-}" "XDG_STATE_HOME=${XDG_STATE_HOME:-$HOME/.local/state}" "$here/tmux-agents-start" "$kind")
   [ -z "$name" ] || args+=(--name "$name")
   args+=(-- "$@")
   command=""
@@ -124,7 +129,9 @@ fi
 record_set "$agent_id" id "$sid"
 tmux set-option -p -t "$pane" @tracked 1
 tmux set-option -p -t "$pane" @member 0
-agent_start_work "$pane" working
+initial_state=idle
+[ "$start_chain_work" != 1 ] || initial_state=working
+agent_start_work "$pane" "$initial_state"
 
 refresh_labels
 build_agent_command "$kind" start "$sid"

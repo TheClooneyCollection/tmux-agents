@@ -37,6 +37,22 @@ clear_work() {
     tmux set -pu -t %0 "@$field"
   done
 }
+# Waiting for the first prompt is not work, even if a completion arrives first.
+first="$(tmux new-window -d -P -F '#{pane_id}' cat </dev/null)"
+agent_start_work "$first" idle 100
+agent_turn_state "$first" end needs_you 2000
+expect 'initial idle interval accrues no work' "$first" worked 0
+expect 'completion before start leaves idle state' "$first" state idle
+expect 'completion before start has no active interval' "$first" turn_start ''
+agent_turn_state "$first" start '' 3000
+expect 'first turn start wakes idle' "$first" state working
+expect 'first turn clock begins at event not launch' "$first" turn_start 3000
+agent_set_state "$first" "done" 3007
+expect 'only post-start seconds count' "$first" worked 7
+agent_turn_state "$first" start '' 4000
+expect 'turn hook preserves done guard' "$first" state "done"
+expect 'done guard accrues no further work' "$first" worked 7
+expect 'done guard has no active interval' "$first" turn_start ''
 # The old pane's true start cannot be recovered from its age or stale state.
 clear_work
 tmux set -p -t %0 @state working
