@@ -1048,3 +1048,78 @@ agent_sweep_closed() {
     }
   ' "$d"
 }
+
+codex_home_for() {
+  local e
+  for e in ${codex_homes:-}; do
+    [ "${e%%=*}" != "$1" ] || { printf '%s\n' "${e#*=}"; return 0; }
+  done
+  return 1
+}
+
+codex_profile_for_home() {
+  local e
+  for e in ${codex_homes:-}; do
+    [ "${e#*=}" != "$1" ] || { printf '%s\n' "${e%%=*}"; return 0; }
+  done
+  return 1
+}
+
+
+# build_agent_command KIND spawn|start [SESSION_ID] [new|resume].
+# Publishes agent_command and the child PATH/CODEX_HOME environment.
+build_agent_command() {
+  local agent="$1" launch_mode="$2" sid="${3:-}" mode="${4:-new}"
+  local report claude_hooks home notify_id
+  local codex_env=() codex_notify=()
+  # printf assignment avoids ShellCheck treating a sourced function as an
+  # immediately executed PATH assignment in its callers.
+  printf -v PATH '%s:%s' "${here:?caller must set bin directory}" "$PATH"
+  export PATH
+  # Test hook: put stand-in agent binaries first.
+  [ -z "${TMUX_SPAWN_BIN:-}" ] || printf -v PATH '%s:%s' "$TMUX_SPAWN_BIN" "$PATH"
+  # Codex runs commands in a shared app-server daemon that keeps the env of
+  # whichever pane started it; pin this pane's identity for its commands.
+  codex_env=(
+    -c "shell_environment_policy.set.TMUX_PANE=\"${TMUX_PANE:-}\""
+    -c "shell_environment_policy.set.TMUX=\"${TMUX:-}\""
+    -c "shell_environment_policy.set.TMUX_AGENTS_DEPTH=\"${TMUX_AGENTS_DEPTH:-0}\""
+    -c 'shell_environment_policy.set.TMUX_AGENTS_PINNED="1"'
+    -c "shell_environment_policy.set.TMUX_AGENTS_KIND=\"$agent\""
+  )
+  # Sub agents start in auto mode: Claude's auto permission mode, Codex's
+  # auto review, so the user isn't asked about every command they run.
+  # Permission hooks feed the chip: an agent waiting for approval can't
+  # report anything itself. Claude runs hooks in its own process, so its
+  # commands can carry the pane id.
+  report="'$here/tmux-agent-report' --pane '${TMUX_PANE:-}'"
+  claude_hooks="$(printf '{"hooks":{"Notification":[{"matcher":"permission_prompt","hooks":[{"type":"command","command":"%s --perm on"}]}],"PostToolUse":[{"hooks":[{"type":"command","command":"%s --perm off"}]}],"UserPromptSubmit":[{"hooks":[{"type":"command","command":"%s --turn-start"}]}],"Stop":[{"hooks":[{"type":"command","command":"%s --turn-end"}]}]}}' "$report" "$report" "$report" "$report")"
+  # Codex says when a turn ends through notify (not a hook, so no trust
+  # prompt); tmux-agent-report finds the pane from the turn's messages.
+  codex_notify=(-c "notify=[\"$here/tmux-agent-report\",\"--codex-notify\"]")
+  notify_id="$(pane_agent_id "${TMUX_PANE:-}")"
+  if [ -n "$notify_id" ]; then
+    codex_notify=(-c "notify=[\"$here/tmux-agent-report\",\"--agent-id\",\"$notify_id\",\"--codex-notify\"]")
+  fi
+  # A new Claude gets the session id we recorded; --resume reopens one.
+  case "$agent" in
+    claude)
+      agent_command=(claude)
+      [ "$launch_mode" != spawn ] || agent_command+=(--permission-mode auto)
+      agent_command+=(--settings "$claude_hooks")
+      if [ "$mode" = resume ]; then agent_command+=(--resume "$sid"); elif [ -n "$sid" ]; then agent_command+=(--session-id "$sid"); fi ;;
+    # No hooks for Codex: with auto_review its escalations go to a review
+    # model, never to the user, so PermissionRequest only ever misfired.
+    *)
+      if [ "$agent" != codex ]; then
+        home="$(codex_home_for "$agent")" || die "unknown agent '$agent' (claude, codex, or a TMUX_AGENTS_CODEX_HOMES profile)"
+        export CODEX_HOME="$home"
+      fi
+      agent_command=(codex)
+      [ "$mode" != resume ] || agent_command+=(resume)
+      [ "$launch_mode" != spawn ] || agent_command+=(-c 'approvals_reviewer="auto_review"')
+      agent_command+=("${codex_env[@]}" "${codex_notify[@]}")
+      [ "$mode" != resume ] || agent_command+=("$sid") ;;
+  esac
+
+}

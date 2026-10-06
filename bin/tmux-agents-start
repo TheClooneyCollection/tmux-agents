@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# Internal implementation of tmux-agents start.
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+. "$here/lib.sh"
+usage() {
+  echo 'usage: tmux-agents start claude|codex|PROFILE [--name NAME] [--split right|below] [-- ARGS...]'
+  echo '       tmux-agents start chain [DIR] [--worker AGENT]'
+}
+case "${1:-}" in -h|--help) usage; exit 0 ;; '') usage >&2; exit 1 ;; esac
+require_tmux
+resolve_codex_homes codex_homes
+# Child panes get the caller-resolved profile mapping, not a stale server value.
+codex_homes="${TMUX_START_CODEX_HOMES-$codex_homes}"
+unset TMUX_START_CODEX_HOMES
+# The forwarded name is already formatted. Keep this one-call override out
+# of the agent environment, where it would change future child names.
+start_name_exact=0
+[ "${TMUX_START_NAME_EXACT:-}" != 1 ] || start_name_exact=1
+unset TMUX_START_NAME_EXACT
+kind="$1"; shift
+name="" split="" window="" dir="$PWD"
+if [ "$kind" = chain ]; then
+  worker=""
+  if [ $# -gt 0 ] && [[ $1 != -* ]]; then dir="$1"; shift; fi
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --worker) [ -n "${2:-}" ] || die '--worker needs an agent'; worker="$2"; shift 2 ;;
+      *) die "unknown chain argument '$1'" ;;
+    esac
+  done
+  [ -d "$dir" ] || die "directory does not exist: $dir"
+  dir="$(cd "$dir" && pwd)"
+  if [ -n "$worker" ]; then
+    case "$worker" in claude|codex) ;; *) codex_home_for "$worker" >/dev/null || die "unknown worker '$worker'" ;; esac
+  fi
+  window="${dir##*/}"; window="${window:-root}"
+  prompt='start the chain'
+  [ -z "$worker" ] || prompt="$prompt; use $worker as the worker"
+  kind=claude
+  set -- "$prompt"
+else
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --name) [ -n "${2:-}" ] || die '--name needs a name'; name="$2"; shift 2 ;;
+      --split) [ -n "${2:-}" ] || die '--split needs right or below'; split="$2"; shift 2
+        case "$split" in right|below) ;; *) die '--split needs right or below' ;; esac ;;
+      --) shift; break ;;
+      *) die "unknown launcher argument '$1' (agent arguments follow --)" ;;
+    esac
+  done
+fi
+case "$kind" in claude|codex) ;; *) codex_home_for "$kind" >/dev/null || die "unknown agent '$kind'" ;; esac
+if [ -n "$name" ]; then
+  prefix=codex; [ "$kind" != claude ] || prefix=claude
+  name="$(format_given_name "$prefix" "$dir" "$name" "$start_name_exact")"
+fi
+pane="$(self_pane)"
+if [ -n "$split$window" ]; then
+  # tmux executes its command through a shell; quote each argument once.
+  # The new pane then runs a child agent and returns to its own shell.
+  args=(env TMUX_START_NAME_EXACT=1 "TMUX_START_CODEX_HOMES=$codex_homes" "TMUX_SPAWN_BIN=${TMUX_SPAWN_BIN:-}" "XDG_STATE_HOME=${XDG_STATE_HOME:-$HOME/.local/state}" "$here/tmux-agents-start" "$kind")
+  [ -z "$name" ] || args+=(--name "$name")
+  args+=(-- "$@")
+  command=""
+  quote_escape="'\\''"
+  for arg in "${args[@]}"; do
+    quoted="${arg//\'/$quote_escape}"
+    command="$command '$quoted'"
+  done
+  shell="$(tmux show-options -gv default-shell)"
+  shell_command="'${shell//\'/$quote_escape}'"
+  command="$command; exec $shell_command"
+  if [ -n "$window" ]; then
+    tmux new-window -t "$(tmux display -p -t "$pane" '#{session_id}'):" -n "$window" -c "$dir" "$command"
+  else
+    direction=-h; [ "$split" != below ] || direction=-v
+    tmux split-window "$direction" -t "$pane" -c "$dir" "$command"
+  fi
+  exit 0
+fi
+[ -z "$(pane_name "$pane")" ] || die 'this pane already has an agent; use --split or a fresh shell pane'
+ensure_agent_ids
+export TMUX_AGENTS_DEPTH=0 TMUX_AGENTS_KIND="$kind" TMUX_AGENTS_PINNED=1
+agent_id="$(new_agent_id)"
+# Only clean our identity: a replacement must never be erased by an old exit.
+# shellcheck disable=SC2329
+finish() {
+  [ "$(pane_agent_id "$pane")" = "$agent_id" ] || return 0
+  record_closed "$pane"
+  note_closed "$pane"
+  for other in $(tmux list-panes -a -F '#{pane_id}'); do
+    remove_word "$other" @peers "$pane"
+    [ "$(tmux show-options -pqv -t "$other" @parent)" != "$pane" ] || tmux set-option -pu -t "$other" @parent
+  done
+  for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored activity awaiting waiting_on attention_since codex_thread; do
+    tmux set-option -pu -t "$pane" "@$key" 2>/dev/null || true
+  done
+  refresh_labels
+}
+trap finish EXIT
+ensure_agent_id "$pane" "$agent_id" >/dev/null
+if [ -n "$name" ]; then
+  name="$(unique_name "$name")"
+else name="$(name_for "$kind" "$dir")"; fi
+set_name "$pane" "$name"
+record_set "$agent_id" name "$name"
+record_set "$agent_id" kind "$kind"
+record_set "$agent_id" dir "$dir"
+record_set "$agent_id" launcher 1
+record_set "$agent_id" depth 0
+sid=""
+# Let explicit resume/session arguments retain the agent CLI's own semantics.
+if [ "$kind" = claude ]; then
+  explicit_session=0
+  for arg in "$@"; do
+    case "$arg" in --resume|--resume=*|-r|--continue|-c|--session-id|--session-id=*) explicit_session=1 ;; esac
+  done
+  if [ "$explicit_session" -eq 0 ]; then
+    sid="$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)"
+    sid="$(printf '%s' "$sid" | tr '[:upper:]' '[:lower:]')"
+  fi
+fi
+record_set "$agent_id" id "$sid"
+tmux set-option -p -t "$pane" @tracked 1
+tmux set-option -p -t "$pane" @member 0
+agent_start_work "$pane" working
+
+refresh_labels
+build_agent_command "$kind" start "$sid"
+status=0
+"${agent_command[@]}" "$@" || status=$?
+exit "$status"

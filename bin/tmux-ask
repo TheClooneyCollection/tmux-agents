@@ -333,7 +333,7 @@ if [ "${1:-}" = --retry-locked ]; then
     rm -f "$source" "${source%.undelivered}.meta"
     # Reapply receiver state without attributing this retry to its caller.
     if [ "$kind" = request ]; then
-      agent_set_state "$receiver" working
+      [ "$(tmux show-options -pqv -t "$receiver" @tracked)" != 1 ] || agent_set_state "$receiver" working
       tmux set-option -pu -t "$receiver" @waiting_on 2>/dev/null || true
       tmux set-option -pu -t "$receiver" @attention_since 2>/dev/null || true
     elif [ "$kind" = reply ]; then
@@ -513,7 +513,7 @@ elif [ "$reply" -eq 1 ]; then
   [ "$(tmux display-message -p -t "$self" '#{@parent}')" != "$peer" ] || agent_set_state "$self" "done"
   remove_word "$peer" @awaiting "$from_id"
 else
-  agent_set_state "$peer" working
+  [ "$(tmux show-options -pqv -t "$peer" @tracked)" != 1 ] || agent_set_state "$peer" working
   tmux set-option -pu -t "$peer" @waiting_on 2>/dev/null || true
   tmux set-option -pu -t "$peer" @attention_since 2>/dev/null || true
   add_word "$self" @awaiting "$to_id"
