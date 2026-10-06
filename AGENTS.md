@@ -27,6 +27,8 @@ Notes for AI agents working on tmux-agents.
   | member lifecycle (spawn, depth, ownership, dismiss, resume; owner A) | `tests/members.sh` |
   | member UI (list, chip, attention; owner B) | `tests/member-ui.sh` |
   | user settings or configuration lookup | `settings.sh`, `spawn-names.sh`, `list-budget.sh`, `install.sh`, `skill-links.sh` |
+  | top-level launcher, shared launch hooks or pins | `tests/launcher.sh`, `tests/tracking.sh`, `spawn-for.sh`, `spawn-split.sh`, `settings.sh` |
+  | tracked state, untracked rows or message transitions | `tests/tracking.sh`, `needs-you.sh`, `worked-time.sh`, `list-budget.sh`, `preview-header.sh` |
   | skills or installer | `skills.sh`, `install.sh`, `skill-links.sh` |
   | `tmux-dismiss` | `dismiss.sh` |
   | agent IDs, record migration or identity lookup | `agent-ids.sh`, `lifecycle-ids.sh`, `list-ids.sh`, `live-names.sh` plus the message suites |

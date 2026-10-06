@@ -21,6 +21,10 @@ Names follow `<kind>-<project>-<role>`, e.g. `claude-~-main`, `claude-~-secondar
 
 The worker's agent is `codex` unless the user has named another (another agent kind, or a Codex profile from `@tmux_agents_codex_homes`, e.g. `codex-work`), for example in their CLAUDE.md or AGENTS.md. Use theirs if so. See [Configuration](../../docs/configuration.md) for Codex profiles and other user settings.
 
+## Starting from a shell
+
+`tmux-agents start chain [DIR] [--worker AGENT]` opens a new window in DIR (default `$PWD`), names it after DIR's basename and launches tracked Claude with "start the chain" and the worker choice as its initial prompt. The main follows the steps below. Without `--worker`, use the user's worker preference or Codex by default. This convenience command is for starting a new chain from a shell, never for secondary or worker role briefs joining an existing chain.
+
 ## Starting the chain (main agent)
 
 `<me>` is your current name (`tmux-peers` shows it).

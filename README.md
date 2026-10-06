@@ -80,14 +80,14 @@ Then add these to your own config (`install.sh` prints them with your paths):
 | **tmux** | `source-file ~/path/to/tmux-agents/tmux/tmux-agents.conf` in `~/.tmux.conf`, then reload |
 | **PATH** | `~/.local/bin` |
 | **Claude** | the `allow` rules from [`integrations/claude/settings.json`](integrations/claude/settings.json), into `~/.claude/settings.json` |
-| **Codex** | the wrapper: [`integrations/fish/functions/`](integrations/fish/functions) or [`integrations/sh/codex.sh`](integrations/sh/codex.sh) |
+| **Codex (optional)** | identity-only wrapper: [`integrations/fish/functions/`](integrations/fish/functions) or [`integrations/sh/codex.sh`](integrations/sh/codex.sh) |
 
 <details>
 <summary>What each one is for</summary>
 
 - **tmux:** `prefix + a` (agents), `prefix + A` (connect), the sub agent chip, and hooks for border refresh, bell alerts and queued messages. If you linked the commands somewhere other than `~/.local/bin`, put `%hidden TMUX_AGENTS_BIN="/that/dir"` before the `source-file` line.
 - **Claude:** agents can message, peek, spawn, report, rename themselves or descendants, and close their own sub agents without prompting. `tmux-connect` (without `--from`), `tmux-disconnect`, plain `tmux-dismiss` and plain `tmux-rename` stay yours and still prompt.
-- **Codex:** Codex runs commands in a shared daemon whose `$TMUX_PANE` may be another pane, so the wrapper pins each Codex to its own pane (see DESIGN.md). Copy the fish functions into `~/.config/fish/functions/`, or `source` the sh file from `~/.bashrc` / `~/.zshrc`.
+- **Codex:** use `tmux-agents start codex` (or a configured profile) for identity pins and turn tracking. The optional wrapper only pins identity when you type `codex` directly; it does not add tracking. Copy the fish functions into `~/.config/fish/functions/`, or `source` the sh file from `~/.bashrc` / `~/.zshrc`. Launch hooks are passed per process; no global Claude or Codex hook configuration is changed.
 - **Optional:** tell your agents to use `tmux-spawn` for every sub agent, in `CLAUDE.md` / `AGENTS.md`. The skill explains how.
 
 </details>
@@ -113,13 +113,13 @@ See [Configuration](docs/configuration.md) for tmux settings, defaults and envir
 
 ## Quick start
 
-1. Start `claude` or `codex` in tmux. Tell it: "use tmux-agents to open a Codex to your right". It uses `tmux-spawn --split` to open a connected agent beside itself.
+1. Run `tmux-agents start claude` or `tmux-agents start codex` in tmux. Tell it: "use tmux-agents to open a Codex to your right". It uses `tmux-spawn --split` to open a connected agent beside itself.
 2. Tell your original agent: "ask the Codex you just opened to review this diff". The request lands in Codex's pane, and the reply comes back to your original agent.
 3. Tell your original agent: "spawn a sub agent to add tests for the parser". It runs in a hidden window, and a line above your status bar shows how it's doing.
 4. Press `prefix + a` to watch it. Enter opens it in a popup, `prefix + d` goes back.
 5. Tell your original agent: "start the chain". It becomes the main agent you talk to, with a secondary that coordinates and a Codex worker that implements, side by side in your window (the `agent-chain` skill).
 
-Alternatively, split the window yourself, start `claude` and `codex` in separate panes, then tell one to "use tmux-agents to connect to the other agent".
+From a shell, `tmux-agents start chain [DIR] [--worker AGENT]` opens a new window in DIR (default: the current directory), named after its basename, and starts Claude with the initial prompt "start the chain" and your worker choice. Or use `tmux-agents start codex --split right` for an independent agent, then ask either agent to connect them. See [Starting agents](docs/guide.md#starting-agents) for names, profiles, arguments and exit behavior.
 
 Or let your agent show you: say "tmux-agents quick start".
 
@@ -139,7 +139,7 @@ Long-lived team members use `tmux-spawn --member`. They stay out of the default 
 
 Closed sub agents and members stay in a `closed` section at the bottom for 7 days: `enter` reopens one with its whole conversation. Or ask its parent to reopen it.
 
-Status: `⠹` working · `○` idle (no task yet) · `✓` done · `⚠` waiting for permission (red) · `◆` needs you (amber) · `✉` message waiting for you to stop typing or scrolling · `✗` exited
+Status: `⠹` working · `○` idle (no task yet) · `✓` done · `⚠` waiting for permission (red) · `◆` needs you (amber) · `✉` message waiting for you to stop typing or scrolling · `✗` exited · `-` untracked (no worked time; messaging still works)
 
 ## Commands
 
@@ -151,7 +151,7 @@ Agents run these for you; each takes `--help`.
 | `tmux-rename` | Change an agent's label while keeping its identity, history and links |
 | `tmux-ask` | Send a message to a connected agent |
 | `tmux-spawn` | Start a sub agent, or a long-lived `--member`, hidden or with `--split` |
-| `tmux-agents` | The agent list (`prefix + a`) |
+| `tmux-agents` | The agent list (`prefix + a`); `start` launches a tracked agent or chain |
 | `tmux-peers`, `tmux-peek` | Show connections; read another pane |
 | `tmux-dismiss`, `tmux-disconnect` | Close a sub agent; unlink panes |
 | `tmux-agent-report` | Report progress for the status line |

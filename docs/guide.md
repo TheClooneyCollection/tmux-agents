@@ -16,15 +16,33 @@ status chips, work without fzf.
 
 See [Configuration](configuration.md) for the settings table, `tmux.conf` instructions, precedence and environment overrides. The sections below explain how to use those settings in each workflow.
 
+## Starting agents
+
+In a tmux shell:
+
+```sh
+tmux-agents start claude|codex|PROFILE [--name NAME] [--split right|below] [-- AGENT ARGS]
+```
+
+Choose one agent kind or configured Codex profile. The launcher names the pane using the usual given-name rules, pins its identity and profile, and passes the same turn hooks as `tmux-spawn`. Arguments after `--` go to the agent unchanged, for example `tmux-agents start claude -- --resume`. Hooks apply to that process; global Claude settings and Codex config are not edited.
+
+The agent runs as a child: exiting returns to the shell, saves its work and clears the pane's agent state. It is an independent top-level agent with no owner or membership, and keeps the agent's own permission defaults. To choose a permission mode, pass the agent's option after `--`. `--split right` or `--split below` opens beside the current pane without connecting the two agents; use `tmux-connect` when you want a connection.
+
+An agent ID and session record retain its kind, directory, conversation ID and worked time, including checkpoints when a pane is killed. A top-level record is not a resumable sub agent; resume with the agent's own arguments after `--`.
+
+```sh
+tmux-agents start chain [DIR] [--worker AGENT]
+```
+
+This opens a new window in DIR (default `$PWD`), names it after DIR's basename, and launches Claude with "start the chain" and the worker choice as its initial prompt. The `agent-chain` skill then creates the secondary and worker members; the main agent renames itself using that skill. Use `--worker` for another agent or configured Codex profile; without it, the skill follows the user's worker preference, defaulting to Codex.
+
+Agents started through `start` or `tmux-spawn` are tracked. Turn hooks configured another way also enable tracking on their first turn report. Agents without hooks show `-`, no worked time and no inferred needs-you state; messaging still works. The optional Codex shell wrappers only pin identity when typing `codex` directly. Prefer `tmux-agents start codex` or `tmux-agents start PROFILE` for tracking.
+
 ## Connecting agents
 
-1. Open a pane and start `claude`.
-2. Open another pane and connect it before starting Codex:
-   ```sh
-   tmux-connect --as codex   # pick the claude pane from the list, name it "claude"
-   codex
-   ```
-3. Tell either agent to talk to the other: "ask codex to review this diff".
+1. Start `tmux-agents start claude` in tmux.
+2. Tell it: "use tmux-agents to open a Codex to your right". It opens a connected agent with `tmux-spawn --split`.
+3. Tell the original agent: "ask the Codex you just opened to review this diff".
 
 Or skip connecting by hand: tell an agent "connect codex and have it do xyz". It runs `tmux-connect --from <itself> codex`, which finds the other pane in this window running codex, names both panes if needed, and links them; then it sends the task.
 
@@ -63,7 +81,7 @@ claude-<dir>-auth-review:  ...works, then tmux-ask --reply back to the caller
 
 - **List layout and time.** Names occupy 26 display cells. Under their own project header, `claude-my-project-review` becomes `claude·review`; longer labels keep their start and end around `…`. Parents in the same project use the same abbreviation. Pinned rows keep the project prefix because their header does not name the project. The activity line is shortened by display width, including double-width CJK characters, before the status column. Closed rows use that space for the project.
 - **Searching.** The list searches the displayed short name and project. A full hyphenated name pasted in order, such as `claude-tmux-agents-secondary`, will not match because the display order and `·` separator differ. Search its parts instead: space-separated terms match in any order, for example `claude tmux secondary`.
-- **Worked time.** The status detail reads, for example, `4m · worked 1h5m`: time in the current state, then accumulated working time. Idle, done, permission, needs-you and message-waiting time do not count. Permission, needs-you and message waits pause the same turn; the last-turn value includes all its working intervals, excluding pauses. Turn completions and pauses save accrued work; reopening preserves it and adds subsequent work. Abrupt pane removal can lose the active interval, but keeps previously saved work. The preview shows the full name, activity wrapped to its width in a fixed three-line area (truncated with `…`, padded when short), start time, age, total worked, last turn and turn count. The seven-line header stays pinned while pane content follows its tail, with a dim separator between them. Closed agents show their last saved activity when available. Agents from before the upgrade show `started ?`; no past work is reconstructed, and an unknown total omits the worked part.
+- **Worked time.** Only tracked agents show work accounting; untracked agents show `-` without worked time. The status detail reads, for example, `4m · worked 1h5m`: time in the current state, then accumulated working time. Idle, done, permission, needs-you and message-waiting time do not count. Permission, needs-you and message waits pause the same turn; the last-turn value includes all its working intervals, excluding pauses. Turn completions and pauses save accrued work; reopening preserves it and adds subsequent work. Abrupt pane removal can lose the active interval, but keeps previously saved work. The preview shows the full name, activity wrapped to its width in a fixed three-line area (truncated with `…`, padded when short), start time, age, total worked, last turn and turn count. The seven-line header stays pinned while pane content follows its tail, with a dim separator between them. Closed agents show their last saved activity when available. Agents from before the upgrade show `started ?`; no past work is reconstructed, and an unknown total omits the worked part.
 
 - **Status chip.** While sub agents exist, a line above the status bar shows them:
 
@@ -107,6 +125,8 @@ claude-<dir>-auth-review:  ...works, then tmux-ask --reply back to the caller
 
 | Command | What it does |
 | --- | --- |
+| `tmux-agents start claude\|codex\|PROFILE [--name NAME] [--split right\|below] [-- AGENT ARGS]` | Start an independent tracked agent; exits back to the shell. |
+| `tmux-agents start chain [DIR] [--worker AGENT]` | Open a new window and ask its Claude main to start the chain. |
 | `tmux-connect [target] [--as NAME] [--all]`, `tmux-connect --from ME codex\|claude\|NAME` | Name this pane and link it to `target` (name, `%id`, or `1.0`). No target opens a picker of panes in this window (`--all`: every window); the pane under the cursor is tinted. Unnamed panes get asked for a name. With `--from` (agents) it never prompts: `codex`/`claude` picks that agent's pane in this window, and names are generated. |
 | `tmux-rename [--from ME] <agent> <new> [--exact]` | Change an agent's label, keeping its ID. With `--from`, yourself or descendants only. |
 | `tmux-disconnect [name]` | Unlink from `name`, or from everyone. |
@@ -166,7 +186,7 @@ Putting the same line in `~/.tmux.conf` also works, and reaches agents that were
 set-environment -g TMUX_AGENTS_CODEX_HOMES "work=$HOME/.codex-work"
 ```
 
-`tmux-spawn work "task"` starts a sub agent on that account, and a Codex started with `CODEX_HOME=$HOME/.codex-work` spawns `work` sub agents by default. Give it its own wrapper; `integrations/sh/codex.sh` shows one.
+`tmux-agents start work` starts a tracked top-level Codex on that account. `tmux-spawn work "task"` starts a sub agent on it; its sub agents inherit that profile by default. A wrapper is optional for direct shell invocation and pins identity only; `integrations/sh/codex.sh` shows one.
 
 ## Slow popup startup
 
