@@ -254,4 +254,10 @@ auto_pane="$(tmux new-window -d -P -F '#{pane_id}' -c "$tmp" "'$B/tmux-agents-st
 wait_file "$tmp/$auto_pane.init"
 check 'auto profile stub ready' bash -c 'tmux capture-pane -p -t "$1" | grep -q "FAKE codex"' _ "$auto_pane"
 check 'auto profile launch uses codex prefix' test "$(pane_name "$auto_pane")" = "codex-${tmp##*/}-1"
+# A real top-level launch completes its turn without asking for attention.
+printf '%s\n' '{"prompt":"user task"}' | "$B/tmux-agent-report" --pane "$auto_pane" --turn-start
+"$B/tmux-agent-report" --pane "$auto_pane" --turn-end </dev/null
+check 'launched top-level ends idle' test "$(info "$auto_pane" state)" = idle
+check 'launched top-level has no attention marker' test -z "$(info "$auto_pane" attention_since)"
+check 'launched top-level completes one turn' test "$(info "$auto_pane" turns)" = 1
 exit "$fail"

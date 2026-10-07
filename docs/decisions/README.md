@@ -6,6 +6,7 @@ Each file: the context, the decision, why, and what was rejected. Name new ones 
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-07 | [Top-level agents go idle at turn end](2026-10-07-top-level-turn-end-idle.md) |
 | 2026-10-06 | [Starting agents through tmux-agents](2026-10-06-launcher.md) |
 | 2026-10-05 | [fzf is required for the agent list](2026-10-05-fzf-required.md) |
 | 2026-10-05 | [Agent list layout and worked time](2026-10-05-list-layout-and-worked-time.md) |

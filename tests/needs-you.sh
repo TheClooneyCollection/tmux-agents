@@ -58,6 +58,52 @@ expect() {  # name, wanted kid state
   if [ "$got" = "$2" ]; then echo "ok    $1 ($got)"; else echo "FAIL  $1: kid is $got, wanted $2"; fail=1; fi
 }
 
+check() {
+  local label="$1"; shift
+  if "$@"; then echo "ok    $label"; else echo "FAIL  $label"; fail=1; fi
+}
+
+echo "Top-level turn ends and wakeups"
+reset
+tmux set -pu -t %1 @parent
+turn_start "user task"
+tmux set -p -t %1 @attention_since 1
+turn_end
+expect "top-level with nothing pending goes idle" idle
+check "top-level clears old attention" test -z "$(st %1 @attention_since)"
+check "idle completes the worked-time turn" test "$(st %1 @turns)" = 1
+check "idle stops active work clock" test -z "$(st %1 @turn_start)"
+turn_end
+check "duplicate idle turn end does not count twice" test "$(st %1 @turns)" = 1
+turn_start "next user prompt"
+expect "turn-start wakes idle top-level" working
+turn_end
+"$B/tmux-agent-report" --pane %1 "resumed top-level work" >/dev/null
+expect "progress report wakes idle top-level" working
+turn_end
+ask %0 kid "new request"
+expect "incoming request wakes idle top-level" working
+turn_end
+turn_start "delegate work to boss"
+ask %1 boss "pending reply"
+turn_end
+expect "top-level awaiting live agent stays working" working
+check "top-level shows awaited agent" test "$(st %1 @activity)" = "waiting for boss"
+check "top-level waiting has no attention marker" test -z "$(st %1 @attention_since)"
+ask %0 --reply kid "answer"
+turn_end
+expect "top-level goes idle after reply clears wait" idle
+# Ownership, including member ownership, keeps the existing needs-you rule.
+tmux set -p -t %1 @parent %0
+reset
+turn_end
+expect "sub agent still needs you with nothing pending" needs_you
+tmux set -p -t %1 @member 1
+reset
+turn_end
+expect "member still needs you with nothing pending" needs_you
+tmux set -pu -t %1 @member
+
 echo "Normal workflows: never needs you"
 
 reset

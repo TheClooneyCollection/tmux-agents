@@ -52,8 +52,9 @@ while [ $# -gt 0 ]; do
 done
 
 # A turn ended. Done and idle agents keep their state; agents still waiting on their own
-# sub agents or on replies show "waiting for ..."; anyone else needs the
-# user. Never fails: it runs from hooks and notify.
+# sub agents or on replies show "waiting for ...". With nothing pending,
+# top-level agents go idle; sub agents and members need the user.
+# Never fails: it runs from hooks and notify.
 # Bash commands Claude is still running for pane $1, i.e. its background
 # tasks: children of the pane's claude process started through Claude's
 # shell snapshot, minus this hook's own ancestors. Prints a count.
@@ -102,6 +103,9 @@ turn_end() {
   if [ -n "$who" ]; then
     agent_turn_state "$p" end working
     tmux set-option -p -t "$p" @activity "waiting for $who"
+    tmux set-option -pu -t "$p" @attention_since 2>/dev/null || true
+  elif [ -z "$(tmux show-options -pqv -t "$p" @parent)" ]; then
+    agent_turn_state "$p" end idle
     tmux set-option -pu -t "$p" @attention_since 2>/dev/null || true
   else
     agent_turn_state "$p" end needs_you
