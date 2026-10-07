@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Keep agent kinds in names.** Renaming and automatic naming use the saved agent kind when a launch wrapper is the foreground command. Claude keeps `claude-`; Codex profiles use `codex-`, including unnamed starts and spawns.
+
 ## v1.12.1 (2026-10-06)
 
 - **`tmux-agents start` takes over a named pane.** Run from the pane's own shell (its terminal), it reuses a pane whose agent has quit: it keeps the name and connections, closes the old record and starts a fresh tracked agent. `--name` renames the pane first, like `tmux-rename`. From anywhere else, such as an agent's own command inside the pane, it still refuses with a clearer message.

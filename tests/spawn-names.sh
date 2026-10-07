@@ -59,6 +59,7 @@ expect_spawn() {
 expect_spawn claude-project-review claude claude --name review
 expect_spawn codex-project-build codex codex --name build
 expect_spawn codex-project-profile codex extra --name profile
+expect_spawn codex-project-1 codex extra
 TMUX_AGENTS_KIND=claude expect_spawn codex-project-own-kind codex codex --name own-kind
 TMUX_AGENTS_KIND=codex expect_spawn claude-project-own-kind claude claude --name own-kind
 TMUX_AGENTS_KIND=extra expect_spawn codex-project-inherited codex --name inherited
@@ -110,7 +111,7 @@ home_pane="$(tmux new-window -d -t work -c "$HOME" -P -F '#{pane_id}' cat)"
 tmux set -p -t "$home_pane" @agent home-parent
 caller=home-parent expect_spawn 'claude-~-home' claude claude --name home
 # Automatic names retain their existing format even with exact preference.
-TMUX_AGENTS_NAME_FORMAT=exact expect_spawn codex-project-1 codex codex
+TMUX_AGENTS_NAME_FORMAT=exact expect_spawn codex-project-2 codex codex
 FZF_PROMPT='agents · all windows> ' "$B/tmux-agents" --list | tr '\0' '\n' >"$tmp/list"
 check 'prefixed agent is abbreviated under its project in list' grep -Fq 'codex·build' "$tmp/list"
 check '--exact requires a given name' reject codex --exact

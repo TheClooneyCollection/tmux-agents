@@ -33,6 +33,20 @@ pane_command() {
   tmux display-message -p -t "$1" '#{pane_current_command}' 2>/dev/null
 }
 
+# Naming must describe the target agent, not a foreground launch wrapper.
+# start/spawn save the logical kind (including Codex profiles) by stable ID.
+# Unrecorded panes retain the current-command naming fallback.
+pane_name_kind() {
+  local aid kind=""
+  aid="$(pane_agent_id "$1")"
+  if valid_agent_id "$aid"; then kind="$(record_get "$aid" kind)"; fi
+  case "$kind" in
+    '') pane_command "$1" ;;
+    claude) printf '%s\n' claude ;;
+    *) printf '%s\n' codex ;;
+  esac
+}
+
 pane_location() {
   tmux display-message -p -t "$1" '#{session_name}:#{window_index}.#{pane_index}' 2>/dev/null
 }
@@ -116,7 +130,7 @@ sanitize_name() {
 # Extra args count as taken names (suggestions not yet applied).
 suggest_name() {
   local pane="$1"; shift
-  name_for "$(pane_command "$pane")" "$(tmux display-message -p -t "$pane" '#{pane_current_path}')" "$@"
+  name_for "$(pane_name_kind "$pane")" "$(tmux display-message -p -t "$pane" '#{pane_current_path}')" "$@"
 }
 
 # Name for command $1 running in directory $2; extra args count as taken.

@@ -65,6 +65,18 @@ assert b'--permission-mode' not in args
 hooks=json.loads(args[args.index(b'--settings')+1]); assert set(hooks['hooks'])=={'Notification','PostToolUse','UserPromptSubmit','Stop'}
 PY
 check 'Claude argv exactness, hooks and default permission mode' test "$?" = 0
+# start stays as a Bash foreground wrapper while the real agent runs below it.
+check 'Claude launcher exposes the wrapper command' test "$(pane_command "$new")" = bash
+claude_name="claude-${tmp##*/}-main"
+check 'rename uses recorded Claude kind through wrapper' "$B/tmux-rename" --from exactness exactness main
+check 'Claude rename retains kind prefix' test "$(pane_name "$new")" = "$claude_name"
+check 'matching Claude prefix is kept' "$B/tmux-rename" --from "$claude_name" "$claude_name" "$claude_name"
+check 'Claude prefix is not doubled' test "$(pane_name "$new")" = "$claude_name"
+check 'suggested name uses recorded Claude kind' test "$(suggest_name "$new")" = "claude-${tmp##*/}-1"
+tmux set-option -pu -t "$new" @agent
+check 'self lookup auto-names recorded wrapper pane' test "$(FROM_PANE=not-yet-named TMUX_PANE="$new" TMUX_AGENTS_PINNED=1 self_pane)" = "$new"
+check 'self lookup preserves Claude prefix' test "$(pane_name "$new")" = "claude-${tmp##*/}-1"
+
 check 'plain Claude with opaque arguments begins idle' test "$(info "$new" state)" = idle
 check 'plain Claude has no active clock' test -z "$(info "$new" turn_start)"
 check 'plain Claude starts with zero work' test "$(info "$new" worked)" = 0
@@ -110,6 +122,12 @@ check 'Codex stub marker' bash -c 'tmux capture-pane -p -t "$1" | grep -q "FAKE 
 check 'plain profile with opaque arguments begins idle' test "$(info "$pane" state)" = idle
 check 'plain profile has no active clock' test -z "$(info "$pane" turn_start)"
 check 'profile has no internal chain marker' test "$(cat "$tmp/$pane.chain-marker")" = unset
+check 'profile launcher exposes the wrapper command' test "$(pane_command "$pane")" = bash
+profile_name="codex-${tmp##*/}-profile"
+check 'rename profile from Claude uses target kind' env TMUX_AGENTS_KIND=claude "$B/tmux-rename" "$profile_name" renamed
+check 'profile rename uses codex prefix' test "$(pane_name "$pane")" = "codex-${tmp##*/}-renamed"
+check 'suggested profile name uses codex prefix' test "$(suggest_name "$pane")" = "codex-${tmp##*/}-1"
+check 'restore profile label' "$B/tmux-rename" "$(pane_name "$pane")" "$profile_name"
 check 'profile CODEX_HOME' test "$(cat "$tmp/$pane.home")" = "$tmp/profile"
 check 'profile independent parent' test -z "$(info "$pane" parent)"
 check 'profile independent peers' test -z "$(info "$pane" peers)"
@@ -211,4 +229,9 @@ done
 check 'rejected split allocates no pane' test "$(tmux list-panes -a -F '#{pane_id}')" = "$before"
 check 'rejected split leaves no agent state' test -z "$(info %0 agent_id)$(info %0 agent)$(info %0 tracked)"
 check 'launcher help omits --split' bash -c '! "$1/tmux-agents-start" --help | grep -q -- --split' _ "$B"
+# Unnamed profile launches use the same codex prefix as explicit short names.
+auto_pane="$(tmux new-window -d -P -F '#{pane_id}' -c "$tmp" "'$B/tmux-agents-start' extra; exec cat")"
+wait_file "$tmp/$auto_pane.init"
+check 'auto profile stub ready' bash -c 'tmux capture-pane -p -t "$1" | grep -q "FAKE codex"' _ "$auto_pane"
+check 'auto profile launch uses codex prefix' test "$(pane_name "$auto_pane")" = "codex-${tmp##*/}-1"
 exit "$fail"

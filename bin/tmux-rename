@@ -37,6 +37,6 @@ if [ -n "$FROM_PANE" ]; then
   caller="$(resolve_pane "$FROM_PANE")"
   [ "$caller" = "$pane" ] || pane_is_descendant "$pane" "$caller" || die "'$target' is not you or your descendant"
 fi
-new="$(format_given_name "$(pane_command "$pane")" "$(tmux display-message -p -t "$pane" '#{pane_current_path}')" "$new" "$exact")"
+new="$(format_given_name "$(pane_name_kind "$pane")" "$(tmux display-message -p -t "$pane" '#{pane_current_path}')" "$new" "$exact")"
 rename_agent "$pane" "$new"
 printf 'renamed to %s (%s)\n' "$new" "$pane"

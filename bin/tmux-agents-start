@@ -86,8 +86,8 @@ if [ -n "$existing_name" ]; then
 fi
 # An unchanged supplied label is a no-op even with the prefixed default.
 # Format only after the tty gate, using the incoming launcher's logical kind.
+prefix=codex; [ "$kind" != claude ] || prefix=claude
 if [ -n "$name" ] && [ "$name" != "$existing_name" ]; then
-  prefix=codex; [ "$kind" != claude ] || prefix=claude
   name="$(format_given_name "$prefix" "$dir" "$name" "$start_name_exact")"
   if [ -n "$existing_name" ] && [ "$name" != "$existing_name" ]; then
     rename_agent "$pane" "$name"
@@ -125,7 +125,7 @@ if [ -n "$existing_name" ]; then
   name="$existing_name"
 elif [ -n "$name" ]; then
   name="$(unique_name "$name")"
-else name="$(name_for "$kind" "$dir")"; fi
+else name="$(name_for "$prefix" "$dir")"; fi
 set_name "$pane" "$name"
 record_set "$agent_id" name "$name"
 record_set "$agent_id" kind "$kind"
