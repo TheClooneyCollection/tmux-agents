@@ -86,7 +86,7 @@ if [ -n "$existing_name" ]; then
 fi
 # An unchanged supplied label is a no-op even with the prefixed default.
 # Format only after the tty gate, using the incoming launcher's logical kind.
-prefix=codex; [ "$kind" != claude ] || prefix=claude
+prefix="$(name_kind_for "$kind")"
 if [ -n "$name" ] && [ "$name" != "$existing_name" ]; then
   name="$(format_given_name "$prefix" "$dir" "$name" "$start_name_exact")"
   if [ -n "$existing_name" ] && [ "$name" != "$existing_name" ]; then

@@ -322,8 +322,7 @@ fi
 spawn_depth="$((depth + 1))"
 
 cwd="$(tmux display-message -p -t "$self" '#{pane_current_path}')"
-kind=codex
-[ "$agent" != claude ] || kind=claude
+kind="$(name_kind_for "$agent")"
 if [ -n "$name" ]; then
   name="$(format_given_name "$kind" "$cwd" "$name" "$exact")"
   name="$(unique_name "$name")"

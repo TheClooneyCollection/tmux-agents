@@ -61,7 +61,7 @@ Suggested names are `<command>-<dir>-<N>`: `claude-project-xyz-1`, `claude-~-1` 
 
 ## Renaming agents
 
-Use `tmux-rename <agent> <new>` to rename a live agent. For example, `tmux-rename codex-~-1 main` produces `codex-~-main`; a matching prefix is kept, and `--exact` keeps the supplied name verbatim. The prefix uses the saved agent kind when available, so launch wrappers do not hide `claude` or `codex`; Codex profiles use `codex`. Agents pass `--from ME` and may rename themselves or descendants, never peers or ancestors. The user may rename any agent without `--from`.
+Use `tmux-rename <agent> <new>` to rename a live agent. For example, `tmux-rename codex-~-1 main` produces `codex-~-main`; a matching prefix is kept, and `--exact` keeps the supplied name verbatim. The prefix uses a recognised saved agent kind when available, so launch wrappers do not hide `claude` or `codex`; configured Codex profiles use `codex`. Unknown kinds or removed profiles fall back to the pane's current command. Agents pass `--from ME` and may rename themselves or descendants, never peers or ancestors. The user may rename any agent without `--from`.
 
 Renaming changes the live label and the label in its own session record, preserving its stable agent ID, parentage, queued message destinations and history. The agent and its peers receive notices, queued when busy. Use the new label in later commands, including `--from`; the old label has no alias. Only live names must be unique, so labels held by closed agents are free to reuse. `tmux-connect --as NEW` on a named pane uses the same rename helper but keeps its verbatim-name behaviour.
 

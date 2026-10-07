@@ -76,6 +76,14 @@ check 'suggested name uses recorded Claude kind' test "$(suggest_name "$new")" =
 tmux set-option -pu -t "$new" @agent
 check 'self lookup auto-names recorded wrapper pane' test "$(FROM_PANE=not-yet-named TMUX_PANE="$new" TMUX_AGENTS_PINNED=1 self_pane)" = "$new"
 check 'self lookup preserves Claude prefix' test "$(pane_name "$new")" = "claude-${tmp##*/}-1"
+# Invalid/stale records use the same current-command fallback as no record.
+for stale_kind in gemini codex-removed ''; do
+  record_set "$(pane_agent_id "$new")" kind "$stale_kind"
+  check "unknown kind '$stale_kind' renames using wrapper fallback" "$B/tmux-rename" "$(pane_name "$new")" fallback
+  check "unknown kind '$stale_kind' does not invent codex prefix" test "$(pane_name "$new")" = "${tmp##*/}-fallback"
+  check "unknown kind '$stale_kind' auto-name uses wrapper fallback" test "$(suggest_name "$new")" = "${tmp##*/}-1"
+done
+record_set "$(pane_agent_id "$new")" kind claude
 
 check 'plain Claude with opaque arguments begins idle' test "$(info "$new" state)" = idle
 check 'plain Claude has no active clock' test -z "$(info "$new" turn_start)"
@@ -128,6 +136,18 @@ check 'rename profile from Claude uses target kind' env TMUX_AGENTS_KIND=claude 
 check 'profile rename uses codex prefix' test "$(pane_name "$pane")" = "codex-${tmp##*/}-renamed"
 check 'suggested profile name uses codex prefix' test "$(suggest_name "$pane")" = "codex-${tmp##*/}-1"
 check 'restore profile label' "$B/tmux-rename" "$(pane_name "$pane")" "$profile_name"
+# A non-codex-prefixed profile is recognised through the tmux option too.
+tmux set-option -g @tmux_agents_codex_homes "extra=$tmp/profile"
+check 'option-only profile rename' env TMUX_AGENTS_CODEX_HOMES= "$B/tmux-rename" "$profile_name" option-profile
+check 'option-only profile keeps codex prefix' test "$(pane_name "$pane")" = "codex-${tmp##*/}-option-profile"
+check 'option-only profile auto-name' test "$(TMUX_AGENTS_CODEX_HOMES='' suggest_name "$pane")" = "codex-${tmp##*/}-1"
+# A nonempty environment mapping overrides the option and removes extra.
+check 'removed profile rename falls back' env TMUX_AGENTS_CODEX_HOMES="remaining=$tmp/profile" "$B/tmux-rename" "$(pane_name "$pane")" removed-profile
+check 'removed profile does not retain codex prefix' test "$(pane_name "$pane")" = "${tmp##*/}-removed-profile"
+check 'removed profile auto-name falls back' test "$(TMUX_AGENTS_CODEX_HOMES="remaining=$tmp/profile" suggest_name "$pane")" = "${tmp##*/}-1"
+check 'restore configured profile label' "$B/tmux-rename" "$(pane_name "$pane")" "$profile_name"
+tmux set-option -gu @tmux_agents_codex_homes
+
 check 'profile CODEX_HOME' test "$(cat "$tmp/$pane.home")" = "$tmp/profile"
 check 'profile independent parent' test -z "$(info "$pane" parent)"
 check 'profile independent peers' test -z "$(info "$pane" peers)"

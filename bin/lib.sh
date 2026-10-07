@@ -33,18 +33,29 @@ pane_command() {
   tmux display-message -p -t "$1" '#{pane_current_command}' 2>/dev/null
 }
 
+# Return a validated naming kind. Profile callers resolve codex_homes first,
+# using the same mapping as start/spawn (including their forwarded settings).
+name_kind_for() {
+  case "$1" in
+    claude|codex) printf '%s\n' "$1" ;;
+    '') return 1 ;;
+    *) codex_home_for "$1" >/dev/null || return 1; printf '%s\n' codex ;;
+  esac
+}
+
 # Naming must describe the target agent, not a foreground launch wrapper.
-# start/spawn save the logical kind (including Codex profiles) by stable ID.
-# Unrecorded panes retain the current-command naming fallback.
+# start/spawn validate kinds when writing records. An unrecognised kind is
+# stale (e.g. a removed profile): use the existing unrecorded-pane fallback,
+# not a prefix invented from unvalidated data.
 pane_name_kind() {
-  local aid kind=""
+  local aid kind="" codex_homes
   aid="$(pane_agent_id "$1")"
   if valid_agent_id "$aid"; then kind="$(record_get "$aid" kind)"; fi
   case "$kind" in
-    '') pane_command "$1" ;;
-    claude) printf '%s\n' claude ;;
-    *) printf '%s\n' codex ;;
+    ''|claude|codex) ;;
+    *) resolve_codex_homes codex_homes ;;
   esac
+  name_kind_for "$kind" || pane_command "$1"
 }
 
 pane_location() {

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Keep agent kinds in names.** Renaming and automatic naming use the saved agent kind when a launch wrapper is the foreground command. Claude keeps `claude-`; Codex profiles use `codex-`, including unnamed starts and spawns.
+- **Keep agent kinds in names.** Renaming and automatic naming use a recognised saved agent kind when a launch wrapper is the foreground command; unknown or removed profiles fall back to the current command. Claude keeps `claude-`; Codex profiles use `codex-`, including unnamed starts and spawns.
 
 ## v1.12.1 (2026-10-06)
 
