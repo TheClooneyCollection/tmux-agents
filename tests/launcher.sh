@@ -66,7 +66,11 @@ hooks=json.loads(args[args.index(b'--settings')+1]); assert set(hooks['hooks'])=
 PY
 check 'Claude argv exactness, hooks and default permission mode' test "$?" = 0
 # start stays as a Bash foreground wrapper while the real agent runs below it.
-check 'Claude launcher exposes the wrapper command' test "$(pane_command "$new")" = bash
+# Only macOS tmux reports that wrapper as the pane command; Linux tmux reads
+# the foreground process group differently, so check the precondition there
+# only. The rename checks below must pass on both.
+wrapper_check() { [ "$(uname)" != Darwin ] || check "$1" test "$(pane_command "$2")" = bash; }
+wrapper_check 'Claude launcher exposes the wrapper command' "$new"
 claude_name="claude-${tmp##*/}-main"
 check 'rename uses recorded Claude kind through wrapper' "$B/tmux-rename" --from exactness exactness main
 check 'Claude rename retains kind prefix' test "$(pane_name "$new")" = "$claude_name"
@@ -130,7 +134,7 @@ check 'Codex stub marker' bash -c 'tmux capture-pane -p -t "$1" | grep -q "FAKE 
 check 'plain profile with opaque arguments begins idle' test "$(info "$pane" state)" = idle
 check 'plain profile has no active clock' test -z "$(info "$pane" turn_start)"
 check 'profile has no internal chain marker' test "$(cat "$tmp/$pane.chain-marker")" = unset
-check 'profile launcher exposes the wrapper command' test "$(pane_command "$pane")" = bash
+wrapper_check 'profile launcher exposes the wrapper command' "$pane"
 profile_name="codex-${tmp##*/}-profile"
 check 'rename profile from Claude uses target kind' env TMUX_AGENTS_KIND=claude "$B/tmux-rename" "$profile_name" renamed
 check 'profile rename uses codex prefix' test "$(pane_name "$pane")" = "codex-${tmp##*/}-renamed"
