@@ -6,7 +6,7 @@ How the `tmux-*` scripts work, why they work that way, and the traps found while
 
 - Agents (Claude, Codex, anything) in ordinary tmux panes can message each other.
 - The user can watch every pane and answer any agent in its own UI. Sub agents start in auto mode (Claude's auto permission mode, Codex's auto review), so they rarely ask; when they do, or need the user, they're flagged.
-- Any number of panes, connected ad hoc. There is no fixed layout or session launcher.
+- Any number of panes, connected ad hoc. No fixed layout is required; `start` launches a tracked agent, and `start chain` opens a window for the chain workflow.
 - No server to run. Live state is on the panes; the only files are what must outlive a pane (session records for reopening, the message queue) and one background process that animates the chip, restarted on demand.
 - Sub agents are real agents in their own panes, hidden by default but one keystroke away, so their full history stays readable.
 

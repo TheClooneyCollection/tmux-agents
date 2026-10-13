@@ -151,7 +151,7 @@ Long-lived team members use `tmux-spawn --member`. They stay out of the default 
 
 Closed sub agents and members stay in a `closed` section at the bottom for 7 days: `enter` reopens one with its whole conversation. Or ask its parent to reopen it.
 
-Status: `⠹` working · `○` idle (no task yet) · `✓` done · `⚠` waiting for permission (red) · `◆` needs you (amber) · `✉` message waiting for you to stop typing or scrolling · `✗` exited · `-` untracked (no worked time; messaging still works)
+Status: `⠹` working · `○` idle (waiting for a task or the next user prompt) · `✓` done · `⚠` waiting for permission (red) · `◆` needs you (amber) · `✉` message waiting for you to stop typing or scrolling · `✗` exited · `-` untracked (no worked time; messaging still works)
 
 ## Commands
 

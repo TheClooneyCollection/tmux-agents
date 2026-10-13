@@ -29,3 +29,27 @@ set -g @tmux_agents_name_format exact
 With `sub_auto` on, `tmux-spawn` adds Claude's `--permission-mode auto` or Codex's `-c approvals_reviewer="auto_review"`. With it off, neither flag is added. The setting applies to new and resumed agents, including members.
 
 `tmux-agents start PROFILE` uses the same Codex-home lookup and given-name preferences as `tmux-spawn`. The launcher runs in the current pane and supplies per-process identity pins and turn hooks without editing global agent config. It keeps the agent's permission defaults; pass agent-specific options after `--`. Shell wrappers are optional and provide identity pins only. See [Starting agents](guide.md#starting-agents).
+
+## Codex profiles
+
+First create and sign in to each Codex home using Codex's own setup. Map profile names to those existing directories. From a tmux shell:
+
+```sh
+tmux set -g @tmux_agents_codex_homes "work=$HOME/.codex-work"
+```
+
+To persist the setting, add this to `~/.tmux.conf`:
+
+```tmux
+set -g @tmux_agents_codex_homes "work=$HOME/.codex-work"
+```
+
+Use space-separated `name=path` pairs for several profiles. An environment override takes priority over the option:
+
+```sh
+export TMUX_AGENTS_CODEX_HOMES="work=$HOME/.codex-work"
+```
+
+The legacy `set-environment -g TMUX_AGENTS_CODEX_HOMES ...` fallback applies only when neither a local override nor the option is set. It does not override an environment value already inherited by a running agent.
+
+Rerun `./install.sh` from your installation checkout so each configured home gets the skills and Codex rules. Then use `tmux-agents start work` for a top-level agent, or `tmux-spawn work --from ME "task"` for a helper (`ME` is its parent's full name). Helpers inherit their parent's profile unless given another kind explicitly. The profile remains `work` for account selection, but generated names use the `codex` prefix.

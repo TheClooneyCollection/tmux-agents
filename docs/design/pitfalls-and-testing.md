@@ -32,6 +32,8 @@ Part of the [design notes](../../DESIGN.md).
 
 ## Testing
 
+The installer warns about missing fzf but still succeeds. Without it, the agent list shows installation instructions until a key is pressed, then exits with status 1. Redirected or piped input exits immediately with the same status. `tests/fzf-required.sh` checks these paths; connect's fallback picker, list output and status chips remain usable.
+
 - `tests/needs-you.sh` runs the real scripts on an isolated server with `cat` panes as agents, simulating Claude's hooks and Codex's notify, and checks the "needs you" state machine: normal workflows that must not flag a sub agent (replying, waiting on its own sub agents, requests or `--waiting` work, notices, Codex's title thread) and real cases that must.
 Tests never touch the user's server:
 

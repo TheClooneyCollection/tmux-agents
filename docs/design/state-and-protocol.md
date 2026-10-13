@@ -48,14 +48,14 @@ Timing transitions checkpoint `started`, `state_since`, `worked`, `last_turn`, `
 
 ## Naming
 
-- `suggest_name` builds `<command>-<dir>-<N>`:
+- `suggest_name` builds `<kind>-<dir>-<N>`:
   - `dir` is the cwd basename, or `~` for `$HOME`.
-  - Shells (`fish`, `zsh`, `bash`, ...) are left out of the prefix, because a pane about to start an agent still reports its shell.
+  - `pane_name_kind` prefers a recognised recorded kind: `claude`, `codex`, or a configured profile mapped to `codex` by `name_kind_for`. Launch wrappers therefore keep the agent prefix. Unknown kinds and removed profiles fall back to `pane_current_command`; shell commands (`fish`, `zsh`, `bash`, ...) then contribute no prefix.
   - `N` is one past the highest number in use with that prefix. Gaps are not reused.
   - Extra arguments count as taken, so two suggestions made in the same run don't collide.
 - `sanitize_name` maps anything outside `A-Za-z0-9._~-` to `-`.
 - `set_name` names an unnamed pane and refuses names held by another pane. Existing identities change through `rename_agent`, including `tmux-connect --as`.
-- `format_given_name` is shared by spawn and rename. It sanitises short names and adds the command/directory prefix unless the name already has it; exact mode validates without sanitising; `--exact` wins over `TMUX_AGENTS_NAME_FORMAT`, then `@tmux_agents_name_format`, then the `prefixed` default. Spawn uses the new agent's kind (`codex` for a Codex profile), then adds a unique suffix if necessary. Rename refuses collisions with live labels; closed labels may be reused.
+- `format_given_name` is shared by spawn and rename. It sanitises short names and adds the resolved kind/directory prefix unless the name already has it; exact mode validates without sanitising; `--exact` wins over `TMUX_AGENTS_NAME_FORMAT`, then `@tmux_agents_name_format`, then the `prefixed` default. Spawn uses the new agent's kind (`codex` for a Codex profile), then adds a unique suffix if necessary. Rename refuses collisions with live labels; closed labels may be reused.
 - `tmux-rename --from ME` authorizes self or descendants through pane-id ancestry; without `--from`, the user may rename any agent. It changes `@agent` and its own record's `name=`, refreshes labels, and sends durable notices from `tmux-rename` to the agent and its peers. Its ID and all references remain unchanged. Old labels stop resolving immediately; there are no aliases.
 - **Checked step by step.** `auto_name` runs inside `$(...)`, where `set -e` doesn't apply, so it returns failure explicitly when `set_name` fails, and every caller dies on it. Checking a name and writing it isn't atomic, so after writing it confirms no other pane holds the same name; otherwise it clears its own and retries with the next number after a short random pause.
 - **Unnamed panes name themselves.** A freshly opened agent has no `@agent`. When its `$TMUX_PANE` can be trusted (Claude, or Codex with `TMUX_AGENTS_PINNED`), `tmux-ask`, `tmux-peers`, `tmux-spawn`, and any command given an unknown `--from` give that pane a generated name (`auto_name`) and print it, so the agent can carry on with it. This came up when an unnamed Claude copied `--from claude` from the skill's example and `tmux-spawn` failed on `no agent named 'claude'`; the examples now use a placeholder. Unpinned Codex still gets an error, since its `$TMUX_PANE` may be another agent's pane (see [environment](environment.md#codex-runs-commands-in-a-shared-daemon)).
@@ -67,6 +67,10 @@ An agent gets `@agent_id` when first named, including auto naming, connecting, s
 Session records live at `sessions/<agent-id>`. `agent_id=` explicitly marks the new format, `name=` holds the label, `parent=` holds a parent's agent ID, and `parent_name=` is a display fallback. `id=` remains the Claude/Codex conversation ID, not the agent ID. Lookup by label may return several saved records, so resume-by-name must refuse ambiguity; `--resume-id` chooses one record. Reopening preserves the agent ID and conversation ID, using a suffix if its label is already live.
 
 On the first command needing identities, `ensure_agent_ids` migrates legacy state under the exclusive identity lock, before message commands take their shared lock. It assigns missing live IDs, rewrites name-keyed records with preserved conversation IDs and parent relationships, and converts `@awaiting`, `@closed` and this server's queue metadata references. Flat-root legacy queues are never rewritten because their server identity is unknown. Before any rewrite, it saves the original record files once in `sessions/.pre-ids-v1/`, retained for recovery. Unresolved parent labels remain in `parent_name=` without a guessed ID. Replacement records are written before legacy files are removed; `sessions/.ids-v1` marks completion, and rerunning migration is idempotent. The library does no migration just by being sourced, preserving the picker's early first frame.
+
+### Recovery
+
+Before the first rewrite, original record files are copied once to `sessions/.pre-ids-v1/` under `${XDG_STATE_HOME:-~/.local/state}/tmux-agents/<server>/`. This backup is retained and never replaced by later runs. To recover the old records, preserve a separate copy of the backup, stop that tmux server and use the previous version with the backup files restored into a clean sessions directory. Do not overlay old records or remove the migration marker while the server is running. The backup covers session records, not live pane state or message queues. Only this server's queue directory is migrated; shared flat-root legacy files remain untouched.
 
 ## Configuration lookup
 
