@@ -61,6 +61,10 @@ In a new shell: `command -v tmux-ask tmux-spawn` finds both, and in tmux `tmux l
 
 Tell the user that agents already running (you included) won't see the new PATH, wrapper, skill or permissions until they are restarted. Suggest restarting with `tmux-agents start claude` or `tmux-agents start codex` (or their profile) inside tmux and saying "tmux-agents quick start" to continue.
 
+## Other executables
+
+`start`, `tmux-spawn`, chain roles and `chain-config` also accept executable basenames on PATH; configured profiles win over same-named executables. Explain [limited support](../../docs/agents.md) when the user selects one: no automatic tracking, worked time, permission setup, resume or skill integration. No initial spawn task or unknown-main chain prompt is sent. Once it reaches its prompt, the sender must manually send the actual brief with `tmux-ask`; paste followed by Enter may not suit every TUI. Use exact names or pane IDs for connections and explicit `--from` for messages. Main/secondary coordination is not guaranteed, and an untracked child can leave a tracked parent working indefinitely. The tour below describes Claude/Codex.
+
 ## 6. Quick start
 
 Walk the user through it one step at a time. Say what to do, then wait for them to do it before the next step. Keep explanations to a sentence or two.
@@ -72,6 +76,6 @@ Walk the user through it one step at a time. Say what to do, then wait for them 
 5. **Needs you.** If a sub agent waits for permission the line turns red; if it ends its turn without answering its parent, amber. Open it from the list to answer.
 6. **Clean up.** The parent closes its sub agents when it is done with them. You can close one yourself with `ctrl-x` in the list, or every finished one with `ctrl-d`.
 
-For an independent top-level agent, the user can split the pane manually and run `tmux-agents start codex` in the new pane, then ask an agent to connect them. For a new chain, `tmux-agents start chain [DIR] [--main AGENT] [--secondary AGENT] [--worker AGENT]` opens a window in DIR (default current directory) and prompts the selected main to create both members. Each role accepts Claude, Codex or a configured Codex profile; defaults are Claude / Claude / Codex. Run `tmux-agents chain-config --sources` standalone to inspect settings. The agent-chain skill explains instruction-file member preferences; an existing agent receiving "start the chain" remains main. Codex mains report progress at the beginning of each user request because Codex has no turn-start hook. Agents launched without hooks show `-` with no worked time; they can still exchange messages.
+For an independent top-level agent, the user can split the pane manually and run `tmux-agents start codex` in the new pane, then ask an agent to connect them. For a new chain, `tmux-agents start chain [DIR] [--main AGENT] [--secondary AGENT] [--worker AGENT]` opens a window in DIR (default current directory) and prompts a Claude/Codex main to create both members; other executables require the manual brief described above. Each role accepts Claude, Codex, a configured Codex profile or an executable basename on PATH; defaults are Claude / Claude / Codex. Run `tmux-agents chain-config --sources` standalone to inspect settings. The agent-chain skill explains instruction-file member preferences; an existing agent receiving "start the chain" remains main. Codex mains report progress at the beginning of each user request because Codex has no turn-start hook. Agents launched without hooks show `-` with no worked time; they can still exchange messages.
 
 Finish by pointing them to the README for the full command list and more than one Codex account.

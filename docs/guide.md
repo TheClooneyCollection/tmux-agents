@@ -17,12 +17,12 @@ Requires tmux 3.2+ and bash; the agent list also needs fzf. Other commands work 
 From a tmux shell:
 
 ```sh
-tmux-agents start claude|codex|PROFILE [--name NAME [--exact]] [-- AGENT ARGS]
+tmux-agents start AGENT [--name NAME [--exact]] [-- AGENT ARGS]
 ```
 
-Choose one kind or configured Codex profile. The launcher names the pane, pins its identity and supplies turn tracking without editing global agent configuration. It keeps the agent's permission defaults. Arguments after `--` pass through unchanged, including resume arguments; top-level sessions cannot be reopened with `tmux-spawn --resume`.
+Choose `claude`, `codex`, a configured Codex profile or an executable basename on PATH; profiles take precedence over same-named executables. The launcher names the pane. For Claude/Codex it pins identity and supplies turn tracking without editing global agent configuration. Other executables have [limited support](agents.md), without automatic tracking, permission setup or resume. It keeps the agent's permission defaults. Arguments after `--` pass through unchanged, including resume arguments; top-level sessions cannot be reopened with `tmux-spawn --resume`.
 
-Plain launches start idle. Incoming requests, progress reports or turn-start hooks start work; opaque agent arguments do not change the initial state. Agents without tracking show `-` and no worked time, but can still exchange messages. Codex shell wrappers pin identity only; prefer `start` for tracking.
+Plain Claude/Codex launches start idle. Incoming requests, progress reports or turn-start hooks start work; opaque agent arguments do not change the initial state. Agents without tracking show `-` and no worked time, but can still exchange messages. Codex shell wrappers pin identity only; prefer `start` for tracking.
 
 Exiting saves work, clears agent state and returns to the shell. Reusing a named pane from its own terminal retains its name and connections; `--name` can rename it first. Invalid or taken names refuse without changing it. Another terminal cannot take over a named pane.
 
@@ -32,9 +32,9 @@ For another independent agent, split manually and run `start` there. For a conne
 tmux-agents start chain [DIR] [--main AGENT] [--secondary AGENT] [--worker AGENT]
 ```
 
-This opens a window named after DIR (default `$PWD`) and starts the selected main with the chain request. The [agent-chain skill](../skills/agent-chain/SKILL.md) creates its secondary and worker members. Each role accepts Claude, Codex or a configured Codex profile; defaults are `claude`/`claude`/`codex`. Inspect them with `tmux-agents chain-config --sources`; see [Chain roles](configuration.md#chain-roles) for precedence and instruction-file preferences.
+This opens a window named after DIR (default `$PWD`) and starts the selected main. A Claude/Codex main receives the chain request; other executables receive no initial prompt, so send the actual brief manually with `tmux-ask` after they reach their prompt. For Claude/Codex, the [agent-chain skill](../skills/agent-chain/SKILL.md) creates its secondary and worker members. Each role accepts Claude, Codex, a configured Codex profile or an executable basename on PATH; defaults are `claude`/`claude`/`codex`. Inspect them with `tmux-agents chain-config --sources`; see [Chain roles](configuration.md#chain-roles) for precedence and instruction-file preferences.
 
-Saying “start the chain” to an existing top-level agent keeps it as main. Role settings affect new chains only. Main keeps its permission defaults; members use `sub_auto` (default `on`). Codex main has identity pins and turn-end notify, but no turn-start hook, so main reports progress for each new user task with `tmux-agent-report --from ME "<task>"`.
+Saying “start the chain” to an existing top-level agent keeps it as main. Role settings affect new chains only. Main keeps its permission defaults; Claude/Codex members use `sub_auto` (default `on`). Codex main has identity pins and turn-end notify, but no turn-start hook, so main reports progress for each new user task with `tmux-agent-report --from ME "<task>"`.
 
 ## Connecting agents
 
@@ -42,7 +42,7 @@ Press `prefix + A` to connect existing panes. The popup previews this window's p
 
 Or tell your agent “connect codex and ask it to review this diff”. It runs `tmux-connect --from ME codex`, then sends the request. Agent mode generates names without a form. `claude`/`codex` selects that type in this window; multiple matches require choosing an exact name or pane ID.
 
-For another window, use `codex@stone-age` (project name or part), `claude@2` (window) or `claude@work:2` (session and window). `tmux-connect --from ME --list` lists candidates when the description is less specific. Cross-window connections send the other agent a notice.
+For another window, use `codex@stone-age` (project name or part), `claude@2` (window) or `claude@work:2` (session and window). `tmux-connect --from ME --list` lists candidates when the description is less specific. Cross-window connections send the other agent a notice. Type and `kind@window` shortcuts are Claude/Codex only; connect other agents by exact name or pane ID.
 
 Borders show `name ⇄ peers`. Links are one-to-one: A↔B and B↔C do not link A↔C. See [naming](#renaming-agents) for generated labels.
 
@@ -66,7 +66,7 @@ tmux-spawn --from ME --name auth-review "Review src/auth.ts"
 
 ### Start a helper
 
-Helpers inherit the caller's agent kind and Codex profile. They open hidden, one window each in a project session such as `agents-api`. Use the full name printed by spawn; [naming rules](#renaming-agents) apply.
+Helpers inherit the caller's agent kind and Codex profile. To choose another, put `claude`, `codex`, a configured profile or an executable basename before the options. For other executables, a supplied spawn task is not sent: use the printed full name and resend the actual brief with `tmux-ask` once the agent is at its prompt. See [manual task delivery](agents.md#sending-the-first-task). They open hidden, one window each in a project session such as `agents-api`. Use the full name printed by spawn; [naming rules](#renaming-agents) apply.
 
 | Spawn option | Effect |
 | --- | --- |
@@ -74,7 +74,7 @@ Helpers inherit the caller's agent kind and Codex profile. They open hidden, one
 | `--right` / `--below` | Choose direction with `--split`; right is the default. |
 | `--size N%` | Choose its share with `--split`; default 50%. |
 
-Splits keep the same ownership and depth rules and do not switch your focus. New and resumed helpers, including members, default to auto permissions. [Set `sub_auto` off](configuration.md) to use agent defaults; this setting does not affect top-level `start`.
+Splits keep the same ownership and depth rules and do not switch your focus. New and resumed Claude/Codex helpers, including members, default to auto permissions. [Set `sub_auto` off](configuration.md) to use agent defaults; this setting does not affect top-level `start`.
 
 ### Watch and navigate
 
@@ -152,7 +152,7 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 
 | Command | Purpose |
 | --- | --- |
-| `tmux-agents start claude\|codex\|PROFILE [-- AGENT ARGS]` | Launch a tracked independent agent. |
+| `tmux-agents start AGENT [-- AGENT ARGS]` | Launch an independent agent; Claude/Codex have tracking. |
 | `tmux-agents start chain [DIR] [--main AGENT] [--secondary AGENT] [--worker AGENT]` | Start a chain in a new window. |
 | `tmux-connect [target] [--as NAME] [--all]` | User's connection picker or direct target. |
 | `tmux-connect --from ME TARGET` | Agent connection by type, name or pane. |
@@ -163,7 +163,7 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 | `tmux-ask --pending` | Inspect queued/undelivered messages. |
 | `tmux-ask --retry [--to PEER]` | Retry saved messages. |
 | `tmux-peek --from ME PEER [lines]` | Read peer output; default 40 lines. |
-| `tmux-spawn [claude\|codex\|PROFILE] --from ME [--member] [task]` | Spawn; accepts stdin, `--name`, `--split` and `--for`. |
+| `tmux-spawn [AGENT] --from ME [--member] [task]` | Spawn; accepts stdin, `--name`, `--split` and `--for`. |
 | `tmux-spawn --list-closed` | List saved conversations. |
 | `tmux-spawn --from ME --resume PEER` / `--resume-id ID` | Reopen a conversation. |
 | `tmux-agent-report --from ME [--waiting] "text"` | Report progress or a work wait. |

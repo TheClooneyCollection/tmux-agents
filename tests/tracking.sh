@@ -69,7 +69,13 @@ for tracked in 0 1; do
   stem="$q/$(date +%s)-$$-retry-$tracked"
   printf '[request from boss to legacy via tmux-ask]\nretry-%s\n' "$tracked" >"$stem.undelivered"
   printf 'from_id=%s\nto_id=%s\nkind=request\n' "$(pane_agent_id %0)" "$(pane_agent_id %1)" >"$stem.meta"
-  "$B/tmux-ask" --retry --to legacy </dev/null >/dev/null
+  # Retry's batch lock is shared across sockets. Another isolated suite can
+  # legitimately hold it; a busy response does not promise delivery.
+  for attempt in {1..100}; do
+    "$B/tmux-ask" --retry --to legacy </dev/null >"$tmp/retry-result"
+    grep -q '^retry already running;' "$tmp/retry-result" || break
+    sleep .05
+  done
   [ ! -f "$stem.undelivered" ]
   [ -z "$(opt waiting_on)" ]
   if [ "$tracked" = 1 ]; then [ "$(opt state)" = working ]; else [ "$(opt state)" = idle ]; fi

@@ -21,7 +21,9 @@ Names follow `<kind>-<project>-<role>`, e.g. `claude-~-main`, `claude-~-secondar
 
 ## Choosing agents
 
-Each role accepts `claude`, `codex` or a configured Codex profile, including names without a `codex` prefix. Defaults are `claude` / `claude` / `codex` for main / secondary / worker. See [Configuration](../../docs/configuration.md) for profile mappings and role settings.
+Each role accepts `claude`, `codex`, a configured Codex profile or an executable basename on PATH. Profiles take precedence over same-named executables. Defaults are `claude` / `claude` / `codex` for main / secondary / worker. See [Configuration](../../docs/configuration.md) for profile mappings and role settings.
+
+Other executables have [limited support](../../docs/agents.md), with no agent-chain skill integration, automatic tracking, worked time, permission setup or resume. Main and secondary are especially risky because their coordination is not guaranteed. An unknown main receives no initial chain prompt; the user must send the actual brief manually with `tmux-ask` once it reaches its prompt. A spawn task for an unknown secondary is not sent either: the main must retain and manually send the role and actual goal after the prompt is ready. For an unknown worker, its owner sends the first task after verifying its prompt. Do not tell these agents to load this skill; use a self-contained task and explicit sender names. Existing waiting logic can leave a tracked parent working indefinitely while an untracked child remains live.
 
 The agent receiving "start the chain" remains main. The main setting only chooses the new agent launched from a shell; instruction-file preferences cannot change that first launch. If the user explicitly wants another main type, explain that they need a new chain window using the launcher.
 
@@ -42,13 +44,13 @@ New profiles need the installer run for their existing Codex home so they receiv
 
 ## Starting from a shell
 
-`tmux-agents start chain [DIR] [--main AGENT] [--secondary AGENT] [--worker AGENT]` opens a new window in DIR (default `$PWD`), names it after DIR's basename and launches the selected main with an initial role snapshot and sources. Shell resolution is explicit flag > nonempty environment > nonempty tmux option > default. The main follows the steps below, preserving explicit choices and applying instruction-file member preferences as above. This convenience command is for starting a new chain from a shell, never for secondary or worker role briefs joining an existing chain.
+`tmux-agents start chain [DIR] [--main AGENT] [--secondary AGENT] [--worker AGENT]` opens a new window in DIR (default `$PWD`), names it after DIR's basename and launches the selected main. Claude/Codex receive an initial role snapshot and sources; other executables receive no initial prompt. Shell resolution is explicit flag > nonempty environment > nonempty tmux option > default. The main follows the steps below, preserving explicit choices and applying instruction-file member preferences as above. This convenience command is for starting a new chain from a shell, never for secondary or worker role briefs joining an existing chain.
 
-The main keeps its agent's permission defaults. Spawned members default to auto mode unless `@tmux_agents_sub_auto off` or `TMUX_AGENTS_SUB_AUTO=off` selects agent defaults.
+The main keeps its agent's permission defaults. Spawned Claude/Codex members default to auto mode unless `@tmux_agents_sub_auto off` or `TMUX_AGENTS_SUB_AUTO=off` selects agent defaults.
 
 ## Starting the chain (main agent)
 
-`<me>` is your current name (`tmux-peers` shows it).
+`<me>` is your current name (`tmux-peers` shows it). The skill-loading briefs below are for Claude/Codex. For other executables, follow the manual task delivery rules above: no supplied spawn brief is sent to the new agent, and an unknown recipient must not be told to load this skill.
 
 1. `tmux-rename --from <me> <me> main` renames you to `<kind>-<project>-main`. Use the new name as `<me>` from then on.
 2. Spawn the resolved secondary to your right; use its printed full name as `<secondary>`:
@@ -71,13 +73,13 @@ The main keeps its agent's permission defaults. Spawned members default to auto 
    The worker becomes the secondary's long-lived member, connected to the secondary only (not to you), and starts without a task. The secondary gets the brief, introduces itself to the worker (including that it is the worker in the agent chain and splits independent parts across sub agents by default) and sends the first task.
 4. Tell the user the three printed names and end your turn. The layout, all in your window: you on the left half, the secondary top right, the worker bottom right.
 
-Spawn both from the top-level main agent (no `@parent` and no `@member`); only top-level callers can spawn members. The restriction checks the caller, not the `--for` owner, so the main can give the secondary a worker member. `--for` makes the worker the secondary's member, but depth always counts from the caller plus one. Both chain members are depth 1; the worker's ordinary helpers are depth 2, the normal default limit. Helpers do not inherit membership. The main agent doesn't message the worker; it goes through the secondary (`tmux-ask --any` only if the user asks). Each brief names the agent's role in the agent chain, so it loads this skill; beyond that, it only needs the other agents' names and the current goal.
+Spawn both from the top-level main agent (no `@parent` and no `@member`); only top-level callers can spawn members. The restriction checks the caller, not the `--for` owner, so the main can give the secondary a worker member. `--for` makes the worker the secondary's member, but depth always counts from the caller plus one. Both chain members are depth 1; the worker's ordinary helpers are depth 2, the normal default limit. Helpers do not inherit membership. The main agent doesn't message the worker; it goes through the secondary (`tmux-ask --any` only if the user asks). Each Claude/Codex brief names the agent's role in the agent chain, so it loads this skill; beyond that, it only needs the other agents' names and the current goal.
 
 The secondary and worker are long-lived members: they stay out of the default sub-agent list, ordinary chip counts and `--done` cleanup. Find them with `ctrl-a` in the agent list, labelled `member of <owner>`; attention still pins them in the list and chip.
 
 ## Ending the chain
 
-`tmux-dismiss --from <me> <secondary>` closes the secondary, the worker and the worker's sub agents. Each can be reopened with `tmux-spawn --resume <name> --from <me>`, preserving membership. Existing chains keep their sub-agent status until restarted; there is no conversion command.
+`tmux-dismiss --from <me> <secondary>` closes the secondary, the worker and the worker's sub agents. Claude/Codex members with resumable conversations can be reopened with `tmux-spawn --resume <name> --from <me>`, preserving membership. Existing chains keep their sub-agent status until restarted; there is no conversion command.
 
 ## Messages
 

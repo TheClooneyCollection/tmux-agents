@@ -8,9 +8,9 @@ settings_get MAX_DEPTH TMUX_AGENTS_MAX_DEPTH @tmux_agents_max_depth 2
 
 usage() {
   cat <<'EOF'
-usage: tmux-spawn [claude|codex|PROFILE] [--from ME] [--name NAME] [--exact] [task...]
-       tmux-spawn [claude|codex|PROFILE] --for OWNER [--from ME] [--name NAME] [--exact] [brief...]
-       tmux-spawn [claude|codex|PROFILE] --split PANE [--right | --below] [--size N%] [task...]
+usage: tmux-spawn [AGENT] [--from ME] [--name NAME] [--exact] [task...]
+       tmux-spawn [AGENT] --for OWNER [--from ME] [--name NAME] [--exact] [brief...]
+       tmux-spawn [AGENT] --split PANE [--right | --below] [--size N%] [task...]
        tmux-spawn --resume NAME | --resume-id ID [--from ME | --parent NAME]
        tmux-spawn --list-closed
 
@@ -21,6 +21,8 @@ replies with tmux-ask --reply when done. The agent defaults to the
 same kind as the caller, in auto mode (Claude --permission-mode auto,
 Codex approvals_reviewer=auto_review). Set @tmux_agents_sub_auto or
 TMUX_AGENTS_SUB_AUTO to off to keep the agent's permission defaults.
+Other executable command names on PATH are accepted without agent-specific
+flags or an initial task; send their first task with tmux-ask at their prompt.
 
   --from ME     your own name (needed where $TMUX_PANE is wrong, e.g. Codex)
   --name NAME   short task name, e.g. auth-review, becomes <agent>-<dir>-NAME;
@@ -74,13 +76,18 @@ if [ "${1:-}" = "--run" ]; then
   prompt=""
   [ -z "$file" ] || { prompt="$(cat "$file")"; rm -f "$file"; }
   [ -z "${6:-}" ] || ensure_agent_id "$TMUX_PANE" "$6" >/dev/null
-  tmux set-option -p -t "$TMUX_PANE" @tracked 1
-  # Initialize before the agent can issue hooks; the parent call is idempotent.
-  if [ "$mode" = new ]; then
-    if [ -n "$prompt" ]; then agent_start_work "$TMUX_PANE" working
-    else agent_start_work "$TMUX_PANE" idle; fi
+  if full_agent_kind "$agent"; then
+    tmux set-option -p -t "$TMUX_PANE" @tracked 1
+    # Initialize before the agent can issue hooks; the parent call is idempotent.
+    if [ "$mode" = new ]; then
+      if [ -n "$prompt" ]; then agent_start_work "$TMUX_PANE" working
+      else agent_start_work "$TMUX_PANE" idle; fi
+    else
+      agent_restore_work "$TMUX_PANE" "${6:?resume agent ID required}"
+    fi
   else
-    agent_restore_work "$TMUX_PANE" "${6:?resume agent ID required}"
+    tmux set-option -p -t "$TMUX_PANE" @tracked 0
+    prompt=""
   fi
   build_agent_command "$agent" spawn "$sid" "$mode"
   if [ -n "$prompt" ]; then exec "${agent_command[@]}" "$prompt"; else exec "${agent_command[@]}"; fi
@@ -92,7 +99,11 @@ split_target="" split_pane="" split_direction="" split_size="50%" split_options=
 case "${1:-}" in
   claude|codex) agent="$1"; shift ;;
   -*|'') ;;
-  *) if codex_home_for "$1" >/dev/null; then agent="$1"; shift; fi ;;
+  *) case "$1" in
+       *[[:space:]]*) ;; # Preserve a quoted task supplied without a kind.
+       *) name_kind_for "$1" >/dev/null || die "unknown agent '$1': not a configured profile or executable on PATH"
+          agent="$1"; shift ;;
+     esac ;;
 esac
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -157,6 +168,7 @@ adopt() {
 # running $4 with depth $5. Prints the pane id.
 open_window() {
   local env_args=(-e "TMUX_AGENTS_DEPTH=$5" -e "TMUX_SPAWN_CODEX_HOMES=$codex_homes")
+  if [ -n "$agent" ] && ! full_agent_kind "$agent"; then env_args+=(-e "PATH=$PATH"); fi
   env_args+=(-e "TMUX_AGENTS_CHAIN_MAIN=${TMUX_AGENTS_CHAIN_MAIN:-}" -e "TMUX_AGENTS_CHAIN_SECONDARY=${TMUX_AGENTS_CHAIN_SECONDARY:-}" -e "TMUX_AGENTS_CHAIN_WORKER=${TMUX_AGENTS_CHAIN_WORKER:-}")
   [ -z "${TMUX_SPAWN_BIN:-}" ] || env_args+=(-e "TMUX_SPAWN_BIN=$TMUX_SPAWN_BIN")
   [ -z "${TMUX_AGENTS_SUB_AUTO:-}" ] || env_args+=(-e "TMUX_AGENTS_SUB_AUTO=$TMUX_AGENTS_SUB_AUTO")
@@ -172,6 +184,7 @@ open_window() {
 # Directory, command and environment match open_window.
 open_split() {
   local direction=-h env_args=(-e "TMUX_AGENTS_DEPTH=$4" -e "TMUX_SPAWN_CODEX_HOMES=$codex_homes")
+  if [ -n "$agent" ] && ! full_agent_kind "$agent"; then env_args+=(-e "PATH=$PATH"); fi
   env_args+=(-e "TMUX_AGENTS_CHAIN_MAIN=${TMUX_AGENTS_CHAIN_MAIN:-}" -e "TMUX_AGENTS_CHAIN_SECONDARY=${TMUX_AGENTS_CHAIN_SECONDARY:-}" -e "TMUX_AGENTS_CHAIN_WORKER=${TMUX_AGENTS_CHAIN_WORKER:-}")
   [ "$split_direction" != --below ] || direction=-v
   [ -z "${TMUX_SPAWN_BIN:-}" ] || env_args+=(-e "TMUX_SPAWN_BIN=$TMUX_SPAWN_BIN")
@@ -228,6 +241,7 @@ if [ -n "$resume$resume_id" ]; then
   [ "$(record_get "$resume_id" member)" != 1 ] || member=1
   resume="$(record_get "$resume_id" name)"
   kind="$(record_get "$resume_id" kind)" sid="$(record_get "$resume_id" id)"
+  full_agent_kind "$kind" || die "cannot resume '$resume': no conversation adapter for '$kind'"
   dir="$(record_get "$resume_id" dir)" rdepth="$(record_get "$resume_id" depth)"
   [ -n "$sid" ] || die "can't reopen '$resume': its session id was never recorded (Codex records it when its first turn ends)"
   [ -d "$dir" ] || die "can't reopen '$resume': its directory $dir is gone"
@@ -289,7 +303,7 @@ if [ -z "$agent" ]; then
     case "$(pane_command "$self")" in
       *claude*) agent=claude ;;
       *codex*) agent=codex ;;
-      *) die "can't tell which agent you are; pass claude, codex or a TMUX_AGENTS_CODEX_HOMES profile" ;;
+      *) die "can't tell which agent you are; pass an agent command or configured Codex profile" ;;
     esac
   fi
 fi
@@ -324,7 +338,7 @@ fi
 spawn_depth="$((depth + 1))"
 
 cwd="$(tmux display-message -p -t "$self" '#{pane_current_path}')"
-kind="$(name_kind_for "$agent")"
+kind="$(name_kind_for "$agent")" || die "unknown agent '$agent': not a configured profile or executable on PATH"
 if [ -n "$name" ]; then
   name="$(format_given_name "$kind" "$cwd" "$name" "$exact")"
   name="$(unique_name "$name")"
@@ -332,6 +346,10 @@ else
   name="$(name_for "$kind" "$cwd")"
 fi
 session="$(agents_session_for "$cwd")"
+
+# Other commands have no portable initial-prompt argv contract.
+manual_task=0
+if ! full_agent_kind "$agent" && [ -n "$task" ]; then manual_task=1; task=""; fi
 
 # Hand the prompt over in a file, so no shell ever has to quote it.
 file="$(mktemp "${TMPDIR:-/tmp}/tmux-spawn.XXXXXX")"
@@ -371,10 +389,11 @@ else
   location="hidden in session \"$session\""
 fi
 
-if [ -z "$task" ]; then
-  agent_start_work "$pane" idle
+if full_agent_kind "$agent"; then
+  if [ -z "$task" ]; then agent_start_work "$pane" idle
+  else agent_start_work "$pane" working; fi
 else
-  agent_start_work "$pane" working
+  tmux set-option -p -t "$pane" @tracked 0
 fi
 
 if [ -n "$for_name" ]; then
@@ -382,16 +401,28 @@ if [ -n "$for_name" ]; then
   role="sub agent"
   [ "$member" -eq 0 ] || role="member"
   msg="I spawned $name ($agent) for you: it is your $role now, connected to you (not to me), and it has no task yet. Introduce yourself to it (who you are, your role, how you'll work together), then send it its first task: tmux-ask --from $owner_name $name. It replies to you; close it with tmux-dismiss --from $owner_name $name when you're done with it."
+  if ! full_agent_kind "$agent"; then
+    msg="$msg Wait until it is at its prompt before sending; no skill or initial task was supplied."
+  fi
   [ -z "$brief" ] || msg="$msg
 
 My brief for it:
 $brief"
   printf '%s\n' "$msg" | "$here/tmux-ask" --from "$self" "$owner_name" >/dev/null \
     || die "spawned $name ($pane) for $owner_name, but couldn't tell $owner_name; tell it yourself"
-  printf 'spawned %s (%s) as %s for %s, %s. Told %s to introduce itself and send the first task; %s replies to %s, not to you. View: tmux-agents or prefix + a.\n' \
-    "$agent" "$pane" "$name" "$owner_name" "$location" "$owner_name" "$name" "$owner_name"
+  if full_agent_kind "$agent"; then
+    printf 'spawned %s (%s) as %s for %s, %s. Told %s to introduce itself and send the first task; %s replies to %s, not to you. View: tmux-agents or prefix + a.\n' \
+      "$agent" "$pane" "$name" "$owner_name" "$location" "$owner_name" "$name" "$owner_name"
+  else
+    printf 'spawned %s (%s) as %s for %s, %s; task was not sent to it. Told %s to send it with tmux-ask once the agent is at its prompt. View: tmux-agents or prefix + a.\n' "$agent" "$pane" "$name" "$owner_name" "$location" "$owner_name"
+  fi
   exit 0
 fi
 
-printf 'spawned %s (%s) as %s, %s; it will reply via tmux-ask. View: tmux-agents or prefix + a.\n' \
-  "$agent" "$pane" "$name" "$location"
+if full_agent_kind "$agent"; then
+  printf 'spawned %s (%s) as %s, %s; it will reply via tmux-ask. View: tmux-agents or prefix + a.\n' "$agent" "$pane" "$name" "$location"
+elif [ "$manual_task" = 1 ]; then
+  printf 'spawned %s (%s) as %s, %s; task was not sent: send it with tmux-ask --from %s %s once the agent is at its prompt. View: tmux-agents or prefix + a.\n' "$agent" "$pane" "$name" "$location" "$me" "$name"
+else
+  printf 'spawned %s (%s) as %s, %s; send its first task with tmux-ask once it is at its prompt. View: tmux-agents or prefix + a.\n' "$agent" "$pane" "$name" "$location"
+fi

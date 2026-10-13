@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Limited support for other agents.** `start`, `tmux-spawn`, chain roles and `chain-config` accept executable basenames on PATH; configured Codex profiles take precedence. Other agents launch without injected prompts or Claude/Codex flags and have no automatic tracking, worked time, permission setup or resume. Spawn tasks and unknown-main chain requests must be sent manually with `tmux-ask` once the agent is at its prompt. See [agent support](docs/agents.md) for capabilities and limitations. Claude/Codex and configured profiles keep their existing behavior.
+
 ## v1.13.1 (2026-10-13)
 
 - **`install.sh` keeps links that already point to the install.** A command or skill link that resolves to the right target, such as a relative link tracked in dotfiles, is left as is instead of being rewritten as an absolute path on every upgrade. Links to anything else are still replaced.

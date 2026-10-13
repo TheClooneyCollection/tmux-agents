@@ -33,13 +33,29 @@ pane_command() {
   tmux display-message -p -t "$1" '#{pane_current_command}' 2>/dev/null
 }
 
-# Return a validated naming kind. Profile callers resolve codex_homes first,
-# using the same mapping as start/spawn (including their forwarded settings).
+# Full adapters retain priority over same-named PATH executables.
+full_agent_kind() {
+  case "$1" in claude|codex) return 0 ;; esac
+  codex_home_for "$1" >/dev/null
+}
+
+# Accept a command basename, not shell syntax or an arbitrary path. Search
+# external executables only; querying a kind must never execute that command.
+agent_executable() {
+  case "$1" in ''|-*|*[!a-zA-Z0-9._+-]*) return 1 ;; esac
+  local executable
+  executable="$(PATH="${TMUX_SPAWN_BIN:+$TMUX_SPAWN_BIN:}$PATH" type -P "$1")" || return 1
+  [ -f "$executable" ] && [ -x "$executable" ] || return 1
+  printf '%s\n' "$executable"
+}
+
+# Return the naming prefix while preserving configured profile priority.
 name_kind_for() {
   case "$1" in
     claude|codex) printf '%s\n' "$1" ;;
     '') return 1 ;;
-    *) codex_home_for "$1" >/dev/null || return 1; printf '%s\n' codex ;;
+    *) if codex_home_for "$1" >/dev/null; then printf '%s\n' codex
+       else agent_executable "$1" >/dev/null || return 1; printf '%s\n' "$1"; fi ;;
   esac
 }
 
@@ -1165,6 +1181,13 @@ build_agent_command() {
   export PATH
   # Test hook: put stand-in agent binaries first.
   [ -z "${TMUX_SPAWN_BIN:-}" ] || printf -v PATH '%s:%s' "$TMUX_SPAWN_BIN" "$PATH"
+  if ! full_agent_kind "$agent"; then
+    [ "$mode" != resume ] || die "cannot resume '$agent': no conversation adapter"
+    agent_command=("$(agent_executable "$agent")") || die "unknown agent '$agent': not an executable on PATH"
+    export TMUX_AGENTS_KIND="$agent"
+    unset TMUX_AGENTS_PINNED CLAUDECODE
+    return 0
+  fi
   # Codex runs commands in a shared app-server daemon that keeps the env of
   # whichever pane started it; pin this pane's identity for its commands.
   # Pin absent overrides too: a shared daemon must not lend another chain

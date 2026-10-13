@@ -6,6 +6,7 @@ Each file: the context, the decision, why, and what was rejected. Name new ones 
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-13 | [Limited support for other agents](2026-10-13-other-agents.md) |
 | 2026-10-13 | [Configurable chain roles](2026-10-13-configurable-chain-roles.md) |
 | 2026-10-07 | [Top-level agents go idle at turn end](2026-10-07-top-level-turn-end-idle.md) |
 | 2026-10-06 | [Starting agents through tmux-agents](2026-10-06-launcher.md) |

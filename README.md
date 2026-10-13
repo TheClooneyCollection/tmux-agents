@@ -6,6 +6,8 @@ English | [简体中文](README.zh-CN.md)
 
 tmux-agents runs each Claude or Codex sub agent in its own tmux window instead. Watch its work in a live preview, or switch in to give direction.
 
+Full features are available for Claude and Codex today; other agents have [limited support](docs/agents.md).
+
 Agents send tasks and updates to each other. Their panes stay until you close them, and their conversations remain afterward: in Codex you can find them in `codex resume`, in Claude in `claude --resume`.
 
 See the work. Keep the history. Pick it up again.
@@ -119,7 +121,7 @@ See [Configuration](docs/configuration.md) for tmux settings, defaults and envir
 4. Press `prefix + a` to watch it. Enter opens it in a popup, `prefix + d` goes back.
 5. Tell your original agent: "start the chain". It becomes the main agent you talk to, with a secondary that coordinates and a worker that implements, side by side in your window (the `agent-chain` skill).
 
-From a shell, `tmux-agents start chain [DIR] [--main AGENT] [--secondary AGENT] [--worker AGENT]` opens a new window in DIR (default: the current directory), named after its basename, and starts your selected main with the chain request. Each role accepts Claude, Codex or a configured profile; defaults are `claude`/`claude`/`codex`. Inspect them with `tmux-agents chain-config --sources`. For another independent agent, split the pane manually and run `tmux-agents start codex` in the new pane, then ask either agent to connect them. See [Starting agents](docs/guide.md#starting-agents) for names, profiles, arguments and exit behavior.
+From a shell, `tmux-agents start chain [DIR] [--main AGENT] [--secondary AGENT] [--worker AGENT]` opens a new window in DIR (default: the current directory), named after its basename, and starts your selected main, giving a Claude/Codex main the chain request. Each role accepts Claude, Codex, a configured profile or an executable basename on PATH; defaults are `claude`/`claude`/`codex`. Inspect them with `tmux-agents chain-config --sources`. For another independent agent, split the pane manually and run `tmux-agents start codex` in the new pane, then ask either agent to connect them. See [Starting agents](docs/guide.md#starting-agents) for names, profiles, arguments and exit behavior.
 
 Or let your agent show you: say "tmux-agents quick start".
 

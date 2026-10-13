@@ -88,7 +88,7 @@ tmux set-option -pu -t "$new" @agent
 check 'self lookup auto-names recorded wrapper pane' test "$(FROM_PANE=not-yet-named TMUX_PANE="$new" TMUX_AGENTS_PINNED=1 self_pane)" = "$new"
 check 'self lookup preserves Claude prefix' test "$(pane_name "$new")" = "claude-${tmp##*/}-1"
 # Invalid/stale records use the same current-command fallback as no record.
-for stale_kind in gemini codex-removed ''; do
+for stale_kind in missing-agent-xyz codex-removed ''; do
   record_set "$(pane_agent_id "$new")" kind "$stale_kind"
   check "unknown kind '$stale_kind' renames using wrapper fallback" "$B/tmux-rename" "$(pane_name "$new")" fallback
   check "unknown kind '$stale_kind' does not invent codex prefix" test "$(pane_name "$new")" = "${tmp##*/}-fallback"
