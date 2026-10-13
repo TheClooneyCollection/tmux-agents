@@ -123,6 +123,18 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 
 也可以让 agent 带你走一遍：对它说 "tmux-agents quick start"。
 
+## 常见使用场景
+
+直接用自然语言告诉 agent 要做什么，它会执行下面带 `--from` 的示例。`ME`、`PEER` 和 `CHILD` 分别代表它自己的名字、已连接 agent 的名字，以及命令打印的完整子 agent 名字。启动和配置命令则在 tmux 的 shell 中运行。
+
+- **跟踪自己正在使用的 agent。** 运行 `tmux-agents start claude` 或 `tmux-agents start codex`，即可记录状态和工作时长。见[启动 agent](docs/guide.md#starting-agents)。
+- **让另一个 agent 帮忙 review。** 同一窗口的另一个 pane 已有 Codex 时，对 Claude 说“连接 codex，让它 review 当前 diff”。它会先运行 `tmux-connect --from ME codex`，再运行 `tmux-ask --from ME PEER "Review the current diff"`。也可以用 `prefix + A` 连接 pane。见[连接 agent](docs/guide.md#connecting-agents)。
+- **派出一个能随时查看的子 agent。** 对它说“开一个 Codex 子 agent 给 parser 加测试”。它会运行 `tmux-spawn codex --from ME --name parser-tests "Add parser tests"`；按 `prefix + a` 就能浏览它的 pane 和实时预览。见[子 agent](docs/guide.md#sub-agents)。
+- **关闭已完成的子 agent，以后再接着做。** 让它的父 agent 用 `tmux-dismiss --from ME CHILD` 关闭它，之后用 `tmux-spawn --resume CHILD --from ME` 重开保存的对话。见[重新打开](docs/guide.md#sub-agents)。
+- **让协调和实现各有人负责。** 说“start the chain”，或运行 `tmux-agents start chain . --worker codex`：main agent 和你对话，secondary 负责协调，worker 负责实现。见[启动 agent chain](docs/guide.md#starting-agents)。
+- **使用第二个 Codex 账号。** [配置好该账号的 Codex home](docs/guide.md#more-than-one-codex-account) 后，运行 `tmux set -g @tmux_agents_codex_homes "work=$HOME/.codex-work"`，再运行 `tmux-agents start work`。也可以通过[环境变量](docs/configuration.md) `TMUX_AGENTS_CODEX_HOMES` 覆盖配置。
+- **跨项目询问另一个 agent。** 不同窗口中运行着独立 agent 时，说“连接 stone-age 项目的 codex，让它 review API contract”。它会先运行 `tmux-connect --from ME codex@stone-age`，再运行 `tmux-ask --from ME PEER "Review the API contract"`。见[跨窗口连接](docs/guide.md#connecting-agents)。
+
 ## 快捷键
 
 | 按键 | |

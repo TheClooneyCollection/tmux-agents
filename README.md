@@ -123,6 +123,18 @@ From a shell, `tmux-agents start chain [DIR] [--worker AGENT]` opens a new windo
 
 Or let your agent show you: say "tmux-agents quick start".
 
+## Common use cases
+
+Ask your agent in plain language; it runs the `--from` examples below. `ME`, `PEER` and `CHILD` stand for its own name, the connected agent's name and the full sub-agent name printed by the commands. Run launch and configuration commands in a tmux shell.
+
+- **Track your own agent's work.** Run `tmux-agents start claude` or `tmux-agents start codex` to get state and worked-time tracking. [Starting agents](docs/guide.md#starting-agents).
+- **Get a second opinion.** With Codex in another pane in this window, tell Claude "connect codex and ask it to review this diff". It runs `tmux-connect --from ME codex`, then `tmux-ask --from ME PEER "Review the current diff"`. You can also connect panes with `prefix + A`. [Connecting agents](docs/guide.md#connecting-agents).
+- **Delegate a task you can watch.** Say "spawn a Codex sub agent to add parser tests". It runs `tmux-spawn codex --from ME --name parser-tests "Add parser tests"`; use `prefix + a` to browse its pane and live preview. [Sub agents](docs/guide.md#sub-agents).
+- **Close a finished helper and return later.** Ask its parent to close it with `tmux-dismiss --from ME CHILD`, then later reopen its saved conversation with `tmux-spawn --resume CHILD --from ME`. [Reopening](docs/guide.md#sub-agents).
+- **Separate coordination from implementation.** Say "start the chain", or run `tmux-agents start chain . --worker codex`: a main agent talks to you, a secondary coordinates, and a worker implements. [Starting a chain](docs/guide.md#starting-agents).
+- **Use a second Codex account.** After [setting up its Codex home](docs/guide.md#more-than-one-codex-account), run `tmux set -g @tmux_agents_codex_homes "work=$HOME/.codex-work"`, then `tmux-agents start work`. `TMUX_AGENTS_CODEX_HOMES` is the [environment override](docs/configuration.md).
+- **Ask across projects.** For independent agents in different windows, say "connect the codex in stone-age and ask it to review the API contract". It runs `tmux-connect --from ME codex@stone-age`, then `tmux-ask --from ME PEER "Review the API contract"`. [Cross-window connections](docs/guide.md#connecting-agents).
+
 ## Keys
 
 | Key | |

@@ -15,6 +15,7 @@ SECTIONS = [
     (3, "If popups feel slow", "如果 popup 打开很慢"),
     (2, "Configuration", "配置"),
     (2, "Quick start", "快速上手"),
+    (2, "Common use cases", "常见使用场景"),
     (2, "Keys", "快捷键"),
     (2, "Commands", "命令"),
     (2, "License", "许可证"),
