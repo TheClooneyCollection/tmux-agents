@@ -39,6 +39,21 @@ rm "$HOME/.codex/skills/tmux-agents"
 ln -s "$tmp/missing" "$HOME/.codex/skills/tmux-agents"
 install
 check 'broken link repaired' all_skills "$HOME/.codex/skills"
+# Links that already resolve to the install, e.g. relative ones kept in
+# dotfiles, stay untouched; links to anything else are replaced.
+mkdir -p "$tmp/elsewhere/agent-chain"
+ln -sfn "$(cd "$here/skills/tmux-agents" && pwd -P)" "$tmp/via"
+ln -sfn "../../../via" "$HOME/.claude/skills/tmux-agents"
+rel_bin="$(readlink "$BIN_DIR/tmux-ask")"
+ln -sfn "$tmp/via/../../bin/tmux-ask" "$BIN_DIR/tmux-ask"
+ln -sfn "$tmp/elsewhere/agent-chain" "$HOME/.claude/skills/agent-chain"
+install
+check 'resolving skill link kept' test "$(readlink "$HOME/.claude/skills/tmux-agents")" = ../../../via
+check 'resolving command link kept' test "$(readlink "$BIN_DIR/tmux-ask")" = "$tmp/via/../../bin/tmux-ask"
+check 'kept link reported' contains "$tmp/output" "kept $HOME/.claude/skills/tmux-agents"
+check 'link to another target replaced' test "$(readlink "$HOME/.claude/skills/agent-chain")" = "$here/skills/agent-chain"
+ln -sfn "$rel_bin" "$BIN_DIR/tmux-ask"
+ln -sfn "$here/skills/tmux-agents" "$HOME/.claude/skills/tmux-agents"
 rm "$CODEX_HOME/rules/tmux-agents.rules"
 printf 'preserve target\n' >"$tmp/old-rules"
 ln -s "$tmp/old-rules" "$CODEX_HOME/rules/tmux-agents.rules"

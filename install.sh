@@ -32,8 +32,11 @@ fi
 run() { if [ "$dry" -eq 1 ]; then echo "would: $*"; else "$@"; fi; }
 
 # Link $1 at $2, replacing an older link but never a real file unless --force.
+# A link that already resolves to $1 is kept as is, so relative links survive.
 link() {
-  if [ -L "$2" ] || [ ! -e "$2" ] || [ "$force" -eq 1 ]; then
+  if [ -L "$2" ] && [ "$2" -ef "$1" ]; then
+    echo "kept $2"
+  elif [ -L "$2" ] || [ ! -e "$2" ] || [ "$force" -eq 1 ]; then
     run mkdir -p "$(dirname "$2")"
     if [ ! -L "$2" ] && [ -e "$2" ]; then
       local backup
