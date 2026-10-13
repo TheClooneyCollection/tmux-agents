@@ -117,9 +117,9 @@ See [Configuration](docs/configuration.md) for tmux settings, defaults and envir
 2. Tell your original agent: "ask the Codex you just opened to review this diff". The request lands in Codex's pane, and the reply comes back to your original agent.
 3. Tell your original agent: "spawn a sub agent to add tests for the parser". It runs in a hidden window, and a line above your status bar shows how it's doing.
 4. Press `prefix + a` to watch it. Enter opens it in a popup, `prefix + d` goes back.
-5. Tell your original agent: "start the chain". It becomes the main agent you talk to, with a secondary that coordinates and a Codex worker that implements, side by side in your window (the `agent-chain` skill).
+5. Tell your original agent: "start the chain". It becomes the main agent you talk to, with a secondary that coordinates and a worker that implements, side by side in your window (the `agent-chain` skill).
 
-From a shell, `tmux-agents start chain [DIR] [--worker AGENT]` opens a new window in DIR (default: the current directory), named after its basename, and starts Claude with the initial prompt "start the chain" and your worker choice. For another independent agent, split the pane manually and run `tmux-agents start codex` in the new pane, then ask either agent to connect them. See [Starting agents](docs/guide.md#starting-agents) for names, profiles, arguments and exit behavior.
+From a shell, `tmux-agents start chain [DIR] [--main AGENT] [--secondary AGENT] [--worker AGENT]` opens a new window in DIR (default: the current directory), named after its basename, and starts your selected main with the chain request. Each role accepts Claude, Codex or a configured profile; defaults are `claude`/`claude`/`codex`. Inspect them with `tmux-agents chain-config --sources`. For another independent agent, split the pane manually and run `tmux-agents start codex` in the new pane, then ask either agent to connect them. See [Starting agents](docs/guide.md#starting-agents) for names, profiles, arguments and exit behavior.
 
 Or let your agent show you: say "tmux-agents quick start".
 
@@ -163,7 +163,7 @@ Agents run these for you; each takes `--help`.
 | `tmux-rename` | Change an agent's label while keeping its identity, history and links |
 | `tmux-ask` | Send a message to a connected agent |
 | `tmux-spawn` | Start a sub agent, or a long-lived `--member`, hidden or with `--split` |
-| `tmux-agents` | The agent list (`prefix + a`); `start` launches a tracked agent or chain |
+| `tmux-agents` | The agent list (`prefix + a`); `start` launches a tracked agent or chain; `chain-config` queries role choices |
 | `tmux-peers`, `tmux-peek` | Show connections; read another pane |
 | `tmux-dismiss`, `tmux-disconnect` | Close a sub agent; unlink panes |
 | `tmux-agent-report` | Report progress for the status line |

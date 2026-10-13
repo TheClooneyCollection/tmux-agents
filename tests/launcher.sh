@@ -14,6 +14,12 @@ for a in claude codex; do
 printf 'FAKE %s\n' "${0##*/}"
 printf '%s\0' "$@" > "$TEST_LOG/$TMUX_PANE.args"
 printf '%s\n' "${CODEX_HOME:-}" > "$TEST_LOG/$TMUX_PANE.home"
+python3 - "$TEST_LOG/$TMUX_PANE.env" <<'ENV'
+import json, os, sys
+keys = ['TMUX_AGENTS_CHAIN_MAIN', 'TMUX_AGENTS_CHAIN_SECONDARY', 'TMUX_AGENTS_CHAIN_WORKER', 'TMUX_AGENTS_CODEX_HOMES']
+with open(sys.argv[1], 'w') as f:
+    json.dump({k: os.environ.get(k, '') for k in keys}, f)
+ENV
 printf '%s\n' "${TMUX_AGENTS_NAME_FORMAT-unset}" > "$TEST_LOG/$TMUX_PANE.name-format"
 printf '%s\n' "${TMUX_START_NAME_EXACT-unset}" > "$TEST_LOG/$TMUX_PANE.name-marker"
 printf '%s\n' "${TMUX_START_CHAIN_WORK-unset}" > "$TEST_LOG/$TMUX_PANE.chain-marker"
@@ -24,6 +30,7 @@ STUB
 done
 unset TMUX TMUX_PANE CLAUDECODE TMUX_AGENTS_KIND TMUX_AGENTS_PINNED TMUX_AGENTS_DEPTH
 unset TMUX_AGENTS_NAME_FORMAT TMUX_START_NAME_EXACT TMUX_START_CHAIN_WORK
+unset TMUX_AGENTS_CHAIN_MAIN TMUX_AGENTS_CHAIN_SECONDARY TMUX_AGENTS_CHAIN_WORKER
 export XDG_STATE_HOME="$tmp/state" TMUX_SPAWN_BIN="$tmp/bin" TEST_LOG="$tmp"
 export TMUX_AGENTS_CODEX_HOMES="extra=$tmp/profile"
 tmux -L "$sock" -f /dev/null new-session -d -s work -x 180 -y 70 -c "$tmp" cat
@@ -192,9 +199,88 @@ check 'chain starts Claude' bash -c 'tmux capture-pane -p -t "$1" | grep -q "FAK
 python3 - "$tmp/$chain.args" <<'PY'
 import sys
 args=open(sys.argv[1],'rb').read().split(b'\0')[:-1]
-assert args[-1]==b'start the chain; use extra as the worker'
+prompt=args[-1].decode().lower()
+assert 'main' in prompt and 'secondary' in prompt and 'worker' in prompt
+assert 'extra' in prompt and 'explicit' in prompt and 'default' in prompt
 PY
 check 'chain initial prompt includes worker' test "$?" = 0
+# Invalid roles are rejected before new-window, without changing the source pane.
+chain_before="$(tmux list-panes -a -F '#{pane_id} #{@agent_id} #{@tracked}')"
+for role in main secondary worker; do
+  if TMUX_PANE=%0 "$B/tmux-agents" start chain "$tmp" "--$role" missing >"$tmp/error" 2>&1; then
+    check "unknown $role rejected before launch" false
+  fi
+  check "invalid $role creates no window or identity" test "$(tmux list-panes -a -F '#{pane_id} #{@agent_id} #{@tracked}')" = "$chain_before"
+done
+# Each chain carries its own caller environment, not the tmux server's stale map.
+# The second chain leaves worker unset so option source remains option, even
+# while the server advertises a stale role environment.
+tmux set -g @tmux_agents_chain_worker claude
+tmux set-environment -g TMUX_AGENTS_CHAIN_WORKER stale-worker
+tmux set-environment -g TMUX_AGENTS_CODEX_HOMES 'stale=/does/not/exist'
+home_a="$tmp/账户甲-home'a\"slash\\one"
+home_b="$tmp/账户乙-home'b\"slash\\two"
+map_a="extra=$home_a"
+map_b="extra=$home_b"
+TMUX_PANE=%0 TMUX_AGENTS_CHAIN_MAIN=extra TMUX_AGENTS_CHAIN_SECONDARY=codex TMUX_AGENTS_CHAIN_WORKER=extra TMUX_AGENTS_CODEX_HOMES="$map_a" "$B/tmux-agents" start chain "$tmp"
+chain_a="$(tmux display -p '#{pane_id}')"
+wait_file "$tmp/$chain_a.init"
+TMUX_PANE=%0 TMUX_AGENTS_CHAIN_MAIN=codex TMUX_AGENTS_CHAIN_SECONDARY=extra TMUX_AGENTS_CODEX_HOMES="$map_b" "$B/tmux-agents" start chain "$tmp"
+chain_b="$(tmux display -p '#{pane_id}')"
+wait_file "$tmp/$chain_b.init"
+for chain_codex in "$chain_a" "$chain_b"; do
+  check 'configured chain Codex stub ready' bash -c 'tmux capture-pane -p -S - -t "$1" | grep -q "FAKE codex"' _ "$chain_codex"
+  check 'Codex main starts working' test "$(info "$chain_codex" state)" = working
+  check 'Codex main starts clock' test -n "$(info "$chain_codex" turn_start)"
+done
+check 'profile main retains quoted CODEX_HOME' test "$(cat "$tmp/$chain_a.home")" = "$home_a"
+python3 - "$tmp" "$chain_a" "$chain_b" "$map_a" "$map_b" <<'PYTEST'
+import json, subprocess, sys
+from pathlib import Path
+root=Path(sys.argv[1])
+for pane, main, secondary, worker, homes in [
+    (sys.argv[2], 'extra', 'codex', 'extra', sys.argv[4]),
+    (sys.argv[3], 'codex', 'extra', '', sys.argv[5]),
+]:
+    args=(root/(pane+'.args')).read_bytes().split(b'\0')[:-1]
+    env=json.loads((root/(pane+'.env')).read_text())
+    expected=dict(TMUX_AGENTS_CHAIN_MAIN=main, TMUX_AGENTS_CHAIN_SECONDARY=secondary,
+                  TMUX_AGENTS_CHAIN_WORKER=worker, TMUX_AGENTS_CODEX_HOMES=homes)
+    assert env==expected, (env, expected)
+    pins={}
+    for arg in args:
+        if arg.startswith(b'shell_environment_policy.set.'):
+            key,value=arg.decode().split('=',1)
+            pins[key.removeprefix('shell_environment_policy.set.')]=json.loads(value)
+    for key,value in expected.items():
+        assert pins.get(key)==value, (pane,key,pins.get(key),value)
+    assert not any(b'approvals_reviewer' in a for a in args)
+    prompt=args[-1].decode().lower()
+    assert all(role in prompt for role in ['main', 'secondary', 'worker'])
+    assert 'env' in prompt and ('option' in prompt if not worker else 'extra' in prompt)
+    notify=json.loads(next(a for a in args if a.startswith(b'notify=')).split(b'=',1)[1])
+    assert notify[1]=='--agent-id'
+    subprocess.run(notify+[json.dumps({'type':'agent-turn-complete', 'thread-id':'chain-'+pane,
+                   'input-messages':['ordinary initial chain prompt'], 'last-assistant-message':'Done'})],check=True)
+PYTEST
+check 'two chains preserve separate env maps, safely encoded pins and actual notify' test "$?" = 0
+for chain_codex in "$chain_a" "$chain_b"; do
+  check 'Codex main notify ends idle' test "$(info "$chain_codex" state)" = idle
+  check 'Codex main notify clears clock' test -z "$(info "$chain_codex" turn_start)"
+  check 'Codex main notify has no attention' test -z "$(info "$chain_codex" attention_since)"
+  "$B/tmux-agent-report" --from "$(info "$chain_codex" agent)" 'next user task' >/dev/null
+  check 'Codex main progress wakes idle' test "$(info "$chain_codex" state)" = working
+  check 'Codex main progress starts clock' test -n "$(info "$chain_codex" turn_start)"
+  tmux set -p -t "$chain_codex" @waiting_on background-job
+  "$B/tmux-agent-report" --pane "$chain_codex" --turn-end </dev/null
+  check 'Codex main pending task stays working' test "$(info "$chain_codex" state)" = working
+  tmux set -pu -t "$chain_codex" @waiting_on
+  "$B/tmux-agent-report" --pane "$chain_codex" --turn-end </dev/null
+  check 'Codex main completed follow-up returns idle' test "$(info "$chain_codex" state)" = idle
+done
+tmux set -gu @tmux_agents_chain_worker
+tmux set-environment -gu TMUX_AGENTS_CHAIN_WORKER
+tmux set-environment -g TMUX_AGENTS_CODEX_HOMES "$TMUX_AGENTS_CODEX_HOMES"
 # Shared builder keeps spawn auto mode and resume semantics.
 (
   here="$B"
@@ -254,10 +340,11 @@ check 'rejected split allocates no pane' test "$(tmux list-panes -a -F '#{pane_i
 check 'rejected split leaves no agent state' test -z "$(info %0 agent_id)$(info %0 agent)$(info %0 tracked)"
 check 'launcher help omits --split' bash -c '! "$1/tmux-agents-start" --help | grep -q -- --split' _ "$B"
 # Unnamed profile launches use the same codex prefix as explicit short names.
+expected_auto_name="$(suggest_name "$plain")"
 auto_pane="$(tmux new-window -d -P -F '#{pane_id}' -c "$tmp" "'$B/tmux-agents-start' extra; exec cat")"
 wait_file "$tmp/$auto_pane.init"
 check 'auto profile stub ready' bash -c 'tmux capture-pane -p -t "$1" | grep -q "FAKE codex"' _ "$auto_pane"
-check 'auto profile launch uses codex prefix' test "$(pane_name "$auto_pane")" = "codex-${tmp##*/}-1"
+check 'auto profile launch uses codex prefix' test "$(pane_name "$auto_pane")" = "$expected_auto_name"
 # A real top-level launch completes its turn without asking for attention.
 printf '%s\n' '{"prompt":"user task"}' | "$B/tmux-agent-report" --pane "$auto_pane" --turn-start
 "$B/tmux-agent-report" --pane "$auto_pane" --turn-end </dev/null

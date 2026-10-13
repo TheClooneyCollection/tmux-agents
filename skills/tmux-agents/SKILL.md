@@ -27,12 +27,13 @@ Pass `--from <your name>` to every `tmux-ask`, `tmux-peers`, `tmux-peek` and `tm
 
 Recommend `tmux-agents start claude|codex|PROFILE [--name NAME [--exact]] [-- AGENT ARGS]` from a tmux shell. It supplies the same hooks, identity pins and profile lookup as `tmux-spawn`, without editing global agent settings. It keeps the agent's permission defaults, runs it as a child in the current pane and saves work and clears pane state on exit, returning to the shell. For another independent agent, split the pane manually and run `tmux-agents start` there. For a connected sub agent beside you, use `tmux-spawn --split` when the user requests that layout. Use `tmux-connect` only when requested. These top-level records are not resumable sub agents; use the agent's resume arguments after `--`.
 
-`tmux-agents start chain [DIR] [--worker AGENT]` opens a new window in DIR (default `$PWD`), named after its basename, and starts Claude with the initial prompt to start the chain. The agent-chain skill creates its members. Existing secondary/worker role briefs join that chain; they must not launch another one.
+`tmux-agents start chain [DIR] [--main AGENT] [--secondary AGENT] [--worker AGENT]` opens a new window in DIR (default `$PWD`), named after its basename, and starts the selected main with the initial role snapshot and sources. Defaults are Claude main, Claude secondary and Codex worker; each role accepts either agent or a configured Codex profile. The agent-chain skill resolves member preferences and has the main create both members. An existing agent receiving "start the chain" stays main. Existing secondary/worker role briefs join that chain; they must not launch another one.
 
 `@tracked=1` is set by start/spawn and by the first turn-start, turn-end or notify hook report. Untracked agents show `-`, no worked time and no inferred needs-you state; messages still work, but requests do not mark them working. Optional Codex wrappers pin identity only for direct `codex` invocation; recommend `start codex` or `start PROFILE` for tracking.
 
 ## Commands
 
+- `tmux-agents chain-config [main|secondary|worker] [--main AGENT] [--secondary AGENT] [--worker AGENT] [--sources]`: read-only role query and explicit-choice validation, no `--from` needed. Full output is TSV role/value; `--sources` adds `explicit|env|option|default`. A selected role alone prints its value, or role/value/source with `--sources`. Run it standalone and read its output as data, never `eval` it. See the agent-chain skill for instruction-file preferences and launcher snapshots.
 - `tmux-peers --from ME`: your name and the agents you can reach. Names come from here. Add `--ids` to see stable agent IDs when identifying an agent across renames or reopenings.
 - `tmux-ask --from ME <name> "message"`: send a request. For anything multi-line, use stdin:
   ```sh
@@ -137,5 +138,5 @@ Replies use `[reply from X to Y ...]` and `[end of reply from X to Y]` the same 
 
 ## Codex sandbox
 
-Only for Codex. The Codex sandbox blocks the tmux socket. tmux-agents' rules file (`~/.codex/rules/tmux-agents.rules`) allows the commands agents use, so they should run without a prompt.
+Only for Codex. The Codex sandbox blocks the tmux socket. tmux-agents' rules file (`~/.codex/rules/tmux-agents.rules`) allows the commands agents use, including the exact `tmux-agents chain-config` prefix, so they should run without a prompt. It does not allow all `tmux-agents` subcommands. For a new Codex profile, rerun the installer for that existing home to install skills and copy the rules file; setting `CODEX_HOME` alone is insufficient.
 If one still fails with `error connecting to /private/tmp/tmux-501/... (Operation not permitted)`, rerun it with escalated permissions (outside the sandbox) and a short justification such as "send message to peer agent via tmux".

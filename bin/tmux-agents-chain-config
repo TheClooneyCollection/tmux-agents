@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Read chain preferences without naming a pane or entering the picker.
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+. "$here/lib.sh"
+usage() {
+  echo 'usage: tmux-agents chain-config [main|secondary|worker] [--main AGENT] [--secondary AGENT] [--worker AGENT] [--sources]'
+  echo 'TSV role/value, optionally source; one role without --sources prints its value.'
+  echo 'Outside tmux (TMUX unset), only environment/defaults apply; an inaccessible TMUX is an error.'
+}
+role="" sources=0
+args=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    --sources) [ "$sources" = 0 ] || die 'duplicate --sources'; sources=1; shift ;;
+    --main|--secondary|--worker)
+      [ "$#" -ge 2 ] && [ -n "$2" ] || die "$1 needs an agent"
+      args+=("$1" "$2"); shift 2 ;;
+    main|secondary|worker)
+      [ -z "$role" ] || die 'select only one chain role'
+      role="$1"; shift ;;
+    *) die "unknown chain role or argument '$1'" ;;
+  esac
+done
+if [ -n "${TMUX:-}" ]; then
+  require_tmux
+else
+  # No session context: never accidentally consult the default user server.
+  _TMUX_SETTINGS_LOADED=1
+  _TMUX_SETTING_KEYS=() _TMUX_SETTING_VALUES=()
+fi
+chain_options_parse "${args[@]+"${args[@]}"}"
+chain_roles_resolve "$role"
+chain_roles_print "$role" "$sources"

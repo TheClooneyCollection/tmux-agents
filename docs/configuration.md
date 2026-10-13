@@ -10,6 +10,9 @@ set -g @tmux_agents_name_format exact
 | --- | --- | --- | --- |
 | `@tmux_agents_name_format` | `TMUX_AGENTS_NAME_FORMAT` | `prefixed` | Given-name format: `exact` or `prefixed` |
 | `@tmux_agents_sub_auto` | `TMUX_AGENTS_SUB_AUTO` | `on` | Spawned and resumed agents, including members: `on` adds auto permission flags; `off` uses agent defaults. Does not affect `start`. |
+| `@tmux_agents_chain_main` | `TMUX_AGENTS_CHAIN_MAIN` | `claude` | Main agent for a new `start chain` window |
+| `@tmux_agents_chain_secondary` | `TMUX_AGENTS_CHAIN_SECONDARY` | `claude` | Secondary for a new chain |
+| `@tmux_agents_chain_worker` | `TMUX_AGENTS_CHAIN_WORKER` | `codex` | Worker for a new chain |
 | `@tmux_agents_max_depth` | `TMUX_AGENTS_MAX_DEPTH` | `2` | Maximum sub agent depth |
 | `@tmux_agents_codex_homes` | `TMUX_AGENTS_CODEX_HOMES` | `none` | Extra accounts as `PROFILE=CODEX_HOME` pairs |
 | `@tmux_agents_session_prefix` | `TMUX_AGENTS_PREFIX` | `agents` | Hidden session name prefix |
@@ -52,4 +55,53 @@ export TMUX_AGENTS_CODEX_HOMES="work=$HOME/.codex-work"
 
 The legacy `set-environment -g TMUX_AGENTS_CODEX_HOMES ...` fallback applies only when neither a local override nor the option is set. It does not override an environment value already inherited by a running agent.
 
-Rerun `./install.sh` from your installation checkout so each configured home gets the skills and Codex rules. Then use `tmux-agents start work` for a top-level agent, or `tmux-spawn work --from ME "task"` for a helper (`ME` is its parent's full name). Helpers inherit their parent's profile unless given another kind explicitly. The profile remains `work` for account selection, but generated names use the `codex` prefix.
+Rerun `./install.sh` from your installation checkout so each configured home gets the skills and Codex rules. Then use `tmux-agents start work` for a top-level agent, or `tmux-spawn work --from ME "task"` for a helper (`ME` is its parent's full name). Launched agents receive the resolved profile map as a process-local environment snapshot for subsequent helpers and queries; restart them to pick up changes to the mapping option. Helpers inherit their parent's profile unless given another kind explicitly. The profile remains `work` for account selection, but generated names use the `codex` prefix.
+
+## Chain roles
+
+Each role accepts `claude`, `codex` or an exact configured Codex profile name, including names such as `work` that do not start with `codex`. A name beginning with `codex` is not valid unless it is `codex` itself or a configured profile. Profiles retain their account selection; generated names use the `codex` prefix.
+
+```tmux
+set -g @tmux_agents_chain_main codex
+set -g @tmux_agents_chain_secondary claude
+set -g @tmux_agents_chain_worker work
+```
+
+Configure the `work` profile first as above. Settings apply to new chains, not existing members or resumed agents. From a shell, override any role for this chain:
+
+```sh
+tmux-agents start chain . --main codex --secondary claude --worker work
+```
+
+The order of preference is this-chain explicit user choice or CLI flag, then an applicable user's `CLAUDE.md`/`AGENTS.md` role preference, then a non-empty environment override, then a non-empty tmux option, then the built-in default. The skill passes instruction-file preferences as explicit overrides; the CLI does not read Markdown. Conflicting instruction files follow the agent's normal instruction hierarchy.
+
+The main setting only selects the agent launched by `tmux-agents start chain`. The shell cannot apply instruction files that the main has not read yet, so configure that initial main with an option, environment override or `--main`. Saying “start the chain” to an existing top-level agent keeps that agent as main. To use a different main, launch a new chain window.
+
+### Inspecting the choices
+
+```sh
+tmux-agents chain-config [main|secondary|worker] [--main AGENT] [--secondary AGENT] [--worker AGENT] [--sources]
+```
+
+This read-only query needs no `--from` and creates no window, pane or agent record. With no role argument, it prints TSV rows in `main`, `secondary`, `worker` order, with role and value columns. `--sources` adds `explicit`, `env`, `option` or `default` as a third column. A selected role without `--sources` prints only its value; with `--sources` it prints the full three-column row. Explicit flags validate hypothetical choices without changing settings. File preferences passed by the skill appear as `explicit`.
+
+```sh
+tmux-agents chain-config --sources
+tmux-agents chain-config worker
+tmux-agents chain-config worker --worker work --sources
+```
+
+A selected-role query validates that role only; an all-role query and `start chain` validate all three. Invalid choices fail with no partial stdout; launch validation happens before creating a window. Empty explicit values and repeated flags are errors. Empty environment overrides and options fall through to the next source. Outside tmux (`TMUX` unset), queries use environment values and defaults without consulting the default server; options are unavailable. If `TMUX` is set but its socket cannot be reached, the query fails rather than presenting defaults as resolved settings. Role settings have no tmux global-environment fallback.
+
+### Migrating an instruction-file preference
+
+An existing instruction such as “My worker runs on the second Codex account: `codex-2nd`” still wins over the worker option. To make settings the lasting source of that preference, configure the profile mapping, set the option, then remove that instruction or replace it with “Use the chain-config role settings”:
+
+```tmux
+set -g @tmux_agents_codex_homes "codex-2nd=$HOME/.codex-2nd"
+set -g @tmux_agents_chain_worker codex-2nd
+```
+
+Rerun `./install.sh` from your installation checkout after adding a profile so its home receives the skills and rules. Merely setting `CODEX_HOME` does not install them.
+
+The main keeps its agent permission defaults. Secondary and worker members use `sub_auto`, which defaults to `on`. Codex main uses identity pins and notify tracking, but has no turn-start hook: the main reports progress at the start of each new user task. See [Starting agents](guide.md#starting-agents).

@@ -29,10 +29,12 @@ Exiting saves work, clears agent state and returns to the shell. Reusing a named
 For another independent agent, split manually and run `start` there. For a connected helper, ask your agent to use `tmux-spawn --split`.
 
 ```sh
-tmux-agents start chain [DIR] [--worker AGENT]
+tmux-agents start chain [DIR] [--main AGENT] [--secondary AGENT] [--worker AGENT]
 ```
 
-This opens a window named after DIR (default `$PWD`) and starts Claude working on “start the chain”. The [agent-chain skill](../skills/agent-chain/SKILL.md) creates its secondary and worker members. `--worker` selects an agent or profile; otherwise the skill uses your worker preference, defaulting to Codex.
+This opens a window named after DIR (default `$PWD`) and starts the selected main with the chain request. The [agent-chain skill](../skills/agent-chain/SKILL.md) creates its secondary and worker members. Each role accepts Claude, Codex or a configured Codex profile; defaults are `claude`/`claude`/`codex`. Inspect them with `tmux-agents chain-config --sources`; see [Chain roles](configuration.md#chain-roles) for precedence and instruction-file preferences.
+
+Saying “start the chain” to an existing top-level agent keeps it as main. Role settings affect new chains only. Main keeps its permission defaults; members use `sub_auto` (default `on`). Codex main has identity pins and turn-end notify, but no turn-start hook, so main reports progress for each new user task with `tmux-agent-report --from ME "<task>"`.
 
 ## Connecting agents
 
@@ -151,7 +153,7 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 | Command | Purpose |
 | --- | --- |
 | `tmux-agents start claude\|codex\|PROFILE [-- AGENT ARGS]` | Launch a tracked independent agent. |
-| `tmux-agents start chain [DIR] [--worker AGENT]` | Start a chain in a new window. |
+| `tmux-agents start chain [DIR] [--main AGENT] [--secondary AGENT] [--worker AGENT]` | Start a chain in a new window. |
 | `tmux-connect [target] [--as NAME] [--all]` | User's connection picker or direct target. |
 | `tmux-connect --from ME TARGET` | Agent connection by type, name or pane. |
 | `tmux-rename --from ME PEER NAME [--exact]` | Rename yourself or a descendant. |

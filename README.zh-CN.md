@@ -117,9 +117,9 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 2. 对原来的 agent 说："让你刚打开的 Codex review 这个 diff"。请求会出现在 Codex 的 pane 里，回复会回到原来的 agent。
 3. 对原来的 agent 说："开一个子 agent 给 parser 加测试"。它在隐藏窗口里运行，状态栏上方那一行会显示它的进度。
 4. 按 `prefix + a` 查看它。按 Enter 用 popup 打开，按 `prefix + d` 返回。
-5. 对原来的 agent 说："start the chain"。它会成为和你对话的 main agent，再开一个负责协调的 secondary 和一个负责实现的 Codex worker，三个并排在你的窗口里（`agent-chain` skill）。
+5. 对原来的 agent 说："start the chain"。它会成为和你对话的 main agent，再开一个负责协调的 secondary 和一个负责实现的 worker，三个并排在你的窗口里（`agent-chain` skill）。
 
-在 shell 中运行 `tmux-agents start chain [DIR] [--worker AGENT]`，会在 DIR（默认当前目录）中新开窗口，以目录 basename 命名，并把 "start the chain" 和 worker 选择作为 Claude 的初始提示。要再开一个独立 agent，可以手动分屏，在新 pane 中运行 `tmux-agents start codex`，再让任一 agent 连接对方。名称、profile、参数和退出行为见[启动 agent](docs/guide.md#starting-agents)。
+在 shell 中运行 `tmux-agents start chain [DIR] [--main AGENT] [--secondary AGENT] [--worker AGENT]`，会在 DIR（默认当前目录）中新开窗口，以目录 basename 命名，并把启动 chain 的请求交给所选 main。各角色都可使用 Claude、Codex 或已配置的 profile，默认是 `claude`/`claude`/`codex`。用 `tmux-agents chain-config --sources` 查看选择及来源。要再开一个独立 agent，可以手动分屏，在新 pane 中运行 `tmux-agents start codex`，再让任一 agent 连接对方。名称、profile、参数和退出行为见[启动 agent](docs/guide.md#starting-agents)。
 
 也可以让 agent 带你走一遍：对它说 "tmux-agents quick start"。
 
@@ -163,7 +163,7 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 | `tmux-rename` | 修改 agent 标签，保留身份、历史和连接 |
 | `tmux-ask` | 给已连接的 agent 发消息 |
 | `tmux-spawn` | 在隐藏窗口或 `--split` 分屏中启动子 agent，或用 `--member` 创建长期成员 |
-| `tmux-agents` | agent 列表（`prefix + a`）；`start` 启动可跟踪的 agent 或 chain |
+| `tmux-agents` | agent 列表（`prefix + a`）；`start` 启动可跟踪的 agent 或 chain；`chain-config` 查询角色选择 |
 | `tmux-peers`、`tmux-peek` | 查看连接关系；读取另一个 pane 的内容 |
 | `tmux-dismiss`、`tmux-disconnect` | 关闭子 agent；断开 pane 之间的连接 |
 | `tmux-agent-report` | 报告进度，显示在状态行上 |

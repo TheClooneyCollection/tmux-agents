@@ -45,11 +45,17 @@ Verified live: a Codex on a second account, restarted through the wrapper, saw `
 
 `@tracked=1` is set before start/spawn launches and by the first turn-start, turn-end or notify report. This also recognizes externally configured hooks. Requests only mark tracked receivers working; untracked panes show `-`, omit worked time and cannot become needs-you from a missing turn end. Messaging remains available. See the [launcher decision](../decisions/2026-10-06-launcher.md).
 
-`start chain` creates a window in the requested directory (default `$PWD`), named after its basename. Claude receives the chain request as its initial prompt; the skill creates the members without a timed message delivery.
+`start chain` creates a window in the requested directory (default `$PWD`), named after its basename. The resolved main receives the chain request as its initial prompt through the shared launcher; the skill creates the members without a timed message delivery. All three roles are resolved and validated before the window is created. The prompt contains a snapshot of role values and sources: CLI choices are explicit, while environment, option and default choices remain subject to applicable instruction-file preferences.
+
+The launcher forwards explicitly supplied role environment overrides and the resolved profile mapping into the new main. The shared builder exports that profile-map snapshot to launched agents so their later helpers and queries use the same accounts. Codex shell policy pins keep them isolated from another session's shared daemon environment; absent role overrides are pinned empty so option/default lookup still works. Resolved role option/default values must not become environment overrides. No role setting uses the legacy tmux global-environment fallback reserved for Codex-home mapping. Internal launch markers are consumed at the launch boundary, not inherited as a helper's chain identity. Cross-window arguments are shell-quoted, and Codex policy values are encoded safely for TOML/JSON.
+
+`chain-config` uses the same resolver without list initialization or identity mutation. The CLI never parses instruction files; the skill passes any applicable role preference as an explicit override. See [the role decision](../decisions/2026-10-13-configurable-chain-roles.md).
+
+Codex main retains identity pins and a stable agent ID for notify even when the initial prompt has no message header. Notify handles turn completion; it does not provide Claude's turn-start hook. Main reports progress at the start of each new user task, and Codex reports `--waiting` explicitly when waiting for background work. Main keeps agent permission defaults; member auto permissions still follow `sub_auto`.
 
 ## Permissions
 
-- **Allowed for agents** (`integrations/claude/settings.json`, `integrations/codex/tmux-agents.rules`): `tmux-ask`, `tmux-peers`, `tmux-peek`, `tmux-spawn`, `tmux-agent-report`, and the `--from` forms of `tmux-connect` and `tmux-dismiss`. `tmux-connect --from` is the [agent mode](state-and-protocol.md#agent-mode) used when the user asks an agent to connect; `tmux-dismiss --from` checks the agent spawned what it closes.
+- **Allowed for agents** (`integrations/claude/settings.json`, `integrations/codex/tmux-agents.rules`): `tmux-ask`, `tmux-peers`, `tmux-peek`, `tmux-spawn`, `tmux-agent-report`, the read-only `tmux-agents chain-config` prefix, and the `--from` forms of `tmux-connect` and `tmux-dismiss`. `tmux-connect --from` is the [agent mode](state-and-protocol.md#agent-mode) used when the user asks an agent to connect; `tmux-dismiss --from` checks the agent spawned what it closes.
 - **Left to the user:** interactive `tmux-connect`, `tmux-disconnect`, plain `tmux-dismiss` and `--done`.
 
 ## Layout

@@ -96,7 +96,7 @@ tmux set-environment -gu TMUX_AGENTS_CODEX_HOMES
 tmux set -g @tmux_agents_codex_homes "work=$tmp/option-home"
 expect_spawn codex-project-option-profile codex work --name option-profile
 check 'option profile reaches the launched agent' grep -Fq "HOME=$tmp/option-home " "$tmp/screen"
-check 'option profile is not exported as an override' test "$(grep -Fc "HOMES=work=$tmp/option-home" "$tmp/screen" || true)" = 0
+check 'resolved option profile map reaches child helpers' grep -Fq "HOMES=work=$tmp/option-home" "$tmp/screen"
 TMUX_AGENTS_CODEX_HOMES="work=$tmp/env-home" expect_spawn codex-project-env-profile codex work --name env-profile
 check 'environment profile wins and reaches the child' grep -Fq "HOME=$tmp/env-home HOMES=work=$tmp/env-home" "$tmp/screen"
 tmux set-environment -g TMUX_AGENTS_CODEX_HOMES "work=$tmp/legacy-home"

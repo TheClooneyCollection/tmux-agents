@@ -42,7 +42,7 @@ ready() {
   local i
   for ((i=0; i<100; i++)); do
     # Requests/notices may scroll the startup marker off the visible screen.
-    if tmux capture-pane -p -S - -t "$1" | grep -q "FAKE claude"; then
+    if tmux capture-pane -p -S - -t "$1" | grep -q "FAKE ${2:-claude}"; then
       return 0
     fi
     sleep .05
@@ -155,5 +155,48 @@ check 'keep-children also skips protected ancestor' grep -q 'skipped ordinary.*s
 check 'keep-children preserves ancestor' alive "$ordinary"
 "$B/tmux-dismiss" --from main ordinary >/dev/null
 check 'explicit ancestor dismissal closes protected member' gone "$protected"
+# Configured Codex chain uses the same member ownership rules. The main is
+# genuinely launched through start; all three roles run stub binaries only.
+export TMUX_AGENTS_CODEX_HOMES="extra=$tmp/extra-home"
+tmux set -g @tmux_agents_codex_homes "$TMUX_AGENTS_CODEX_HOMES"
+main_codex="$(tmux new-window -d -P -F '#{pane_id}' -c "$tmp" "'$B/tmux-agents-start' codex --name codex-main --exact; exec cat")"
+ready "$main_codex" codex || { echo 'ABORT: Codex main stub not ready'; exit 1; }
+"$B/tmux-spawn" codex --from codex-main --member --exact --name codex-secondary </dev/null >/dev/null
+secondary_codex="$(pane_of codex-secondary)"
+ready "$secondary_codex" codex || { echo 'ABORT: Codex secondary stub not ready'; exit 1; }
+"$B/tmux-spawn" extra --from codex-main --member --for codex-secondary --exact --name profile-worker </dev/null >/dev/null
+profile_worker="$(pane_of profile-worker)"
+ready "$profile_worker" codex || { echo 'ABORT: profile worker stub not ready'; exit 1; }
+check 'Codex secondary owned by Codex main' test "$(info "$secondary_codex" @parent)" = "$main_codex"
+check 'Codex secondary connected to main and its worker' test "$(info "$secondary_codex" @peers)" = "$main_codex $profile_worker"
+check 'profile worker belongs to secondary' test "$(info "$profile_worker" @parent)" = "$secondary_codex"
+check 'profile worker connected only to secondary' test "$(info "$profile_worker" @peers)" = "$secondary_codex"
+check 'profile name survives in record kind' test "$(record_get "$(info "$profile_worker" @agent_id)" kind)" = extra
+for pane in "$secondary_codex" "$profile_worker"; do
+  check 'Codex chain role remains member' test "$(info "$pane" @member)" = 1
+  check 'Codex chain member depth stays caller based' grep -qx 'depth=1' "$(record_for "$pane")"
+done
+if "$B/tmux-spawn" codex --from codex-secondary --member --name forbidden </dev/null >"$tmp/error" 2>&1; then
+  check 'Codex secondary cannot create members' false
+else
+  check 'Codex secondary restriction explained' grep -q 'only a top-level agent' "$tmp/error"
+fi
+TMUX_AGENTS_DEPTH=1 "$B/tmux-spawn" codex --from profile-worker --exact --name codex-helper </dev/null >/dev/null
+codex_helper="$(pane_of codex-helper)"
+ready "$codex_helper" codex || { echo 'ABORT: Codex helper stub not ready'; exit 1; }
+check 'profile worker helper is ordinary' test "$(info "$codex_helper" @member)" = 0
+check 'profile worker helper depth two' grep -qx 'depth=2' "$(record_for "$codex_helper")"
+"$B/tmux-agent-report" --from codex-secondary 'processing assigned work' >/dev/null
+"$B/tmux-agent-report" --pane "$secondary_codex" --turn-end </dev/null
+# Creating the worker sends a request to secondary; clear that pending work
+# with its reply before asserting the idle-member attention transition.
+"$B/tmux-ask" --from codex-secondary --reply codex-main 'chain prepared' >/dev/null
+check 'Codex member reply marks done' test "$(info "$secondary_codex" @state)" = "done"
+"$B/tmux-ask" --from profile-worker --reply codex-secondary 'worker completed' >/dev/null
+"$B/tmux-ask" --from codex-main codex-secondary 'new assigned work' >/dev/null
+"$B/tmux-agent-report" --pane "$secondary_codex" --turn-end </dev/null
+check 'Codex member unfinished turn needs owner' test "$(info "$secondary_codex" @state)" = needs_you
+"$B/tmux-dismiss" --from codex-main codex-secondary >/dev/null
+for pane in "$secondary_codex" "$profile_worker" "$codex_helper"; do check 'Codex chain dismiss closes descendants' gone "$pane"; done
 [ "$fail" -ne 0 ] || echo "all $count checks passed"
 exit "$fail"

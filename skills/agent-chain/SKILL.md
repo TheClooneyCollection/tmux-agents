@@ -15,25 +15,46 @@ Names follow `<kind>-<project>-<role>`, e.g. `claude-~-main`, `claude-~-secondar
 
 ## Roles
 
-- **Main agent** (the agent the user started, usually Claude). The agent that receives "start the chain" is the main agent. It talks to the user and the other agents: it clarifies intent, turns it into self-contained tasks and relays the user's decisions. It doesn't investigate or implement.
-- **Secondary** (Claude). Coordinates the worker and owns the main checkout. It merges the worker's commits, runs the project's steps (importers, backups, server relaunches, tests) and records decisions in docs. Anything that needs a user decision goes to the main agent, not to the user.
-- **Worker** (Codex by default, plus its own sub agents). The main implementer. By default it splits a task with independent parts across its own sub agents (`tmux-spawn`), one per part by file ownership, after agreeing the interfaces between them, then integrates and runs the full checks itself. It works alone only on short, strictly sequential or same-file tasks, and says why.
+- **Main agent** (the agent the user started). The agent that receives "start the chain" is the main agent. It talks to the user and the other agents: it clarifies intent, turns it into self-contained tasks and relays the user's decisions. It doesn't investigate or implement.
+- **Secondary**. Coordinates the worker and owns the main checkout. It merges the worker's commits, runs the project's steps (importers, backups, server relaunches, tests) and records decisions in docs. Anything that needs a user decision goes to the main agent, not to the user.
+- **Worker** (plus its own sub agents). The main implementer. By default it splits a task with independent parts across its own sub agents (`tmux-spawn`), one per part by file ownership, after agreeing the interfaces between them, then integrates and runs the full checks itself. It works alone only on short, strictly sequential or same-file tasks, and says why.
 
-The worker's agent is `codex` unless the user has named another (another agent kind, or a Codex profile from `@tmux_agents_codex_homes`, e.g. `codex-work`), for example in their CLAUDE.md or AGENTS.md. Use theirs if so. See [Configuration](../../docs/configuration.md) for Codex profiles and other user settings.
+## Choosing agents
+
+Each role accepts `claude`, `codex` or a configured Codex profile, including names without a `codex` prefix. Defaults are `claude` / `claude` / `codex` for main / secondary / worker. See [Configuration](../../docs/configuration.md) for profile mappings and role settings.
+
+The agent receiving "start the chain" remains main. The main setting only chooses the new agent launched from a shell; instruction-file preferences cannot change that first launch. If the user explicitly wants another main type, explain that they need a new chain window using the launcher.
+
+Before spawning either member, resolve secondary and worker:
+
+- Use the launcher's initial role/value/source snapshot when present. Otherwise query `tmux-agents chain-config secondary --sources` and `tmux-agents chain-config worker --sources` as separate standalone commands. Do not revalidate the main setting: an existing main is already selected.
+- This-chain explicit CLI or user choices win over applicable CLAUDE.md / AGENTS.md role preferences, which win over the snapshot's env / option / default values. Follow your normal instruction hierarchy for file preferences. A file saying the worker uses `codex-2nd` still applies unless this chain explicitly chooses otherwise. The CLI does not read Markdown.
+- Validate both final member choices with selected-role queries before spawning, preserving the snapshot and applying any natural-language or instruction-file overrides:
+  ```sh
+  tmux-agents chain-config secondary --secondary <secondary agent> --sources
+  tmux-agents chain-config worker --worker <worker agent> --sources
+  ```
+  On validation failure, resolve the reported role/profile problem before creating members. Keep profile names as returned; do not replace a profile with `codex`.
+
+The query is read-only and needs no `--from`. Full output is TSV role/value, with `--sources` adding `explicit|env|option|default`. A selected role alone prints its value, for example `tmux-agents chain-config worker`; adding `--sources` prints role/value/source. Read the output as data, never `eval` it. Run queries on their own, without command substitution, pipes or shell command chains.
+
+New profiles need the installer run for their existing Codex home so they receive skills and the real rules file. Setting `CODEX_HOME` alone does not install them. The shared launcher carries profile mappings and role environment pins, including for Codex's shared daemon; do not recreate those with skill-level exports. Role settings affect new chains, not existing members or resumed records.
 
 ## Starting from a shell
 
-`tmux-agents start chain [DIR] [--worker AGENT]` opens a new window in DIR (default `$PWD`), names it after DIR's basename and launches tracked Claude with "start the chain" and the worker choice as its initial prompt. The main follows the steps below. Without `--worker`, use the user's worker preference or Codex by default. This convenience command is for starting a new chain from a shell, never for secondary or worker role briefs joining an existing chain.
+`tmux-agents start chain [DIR] [--main AGENT] [--secondary AGENT] [--worker AGENT]` opens a new window in DIR (default `$PWD`), names it after DIR's basename and launches the selected main with an initial role snapshot and sources. Shell resolution is explicit flag > nonempty environment > nonempty tmux option > default. The main follows the steps below, preserving explicit choices and applying instruction-file member preferences as above. This convenience command is for starting a new chain from a shell, never for secondary or worker role briefs joining an existing chain.
+
+The main keeps its agent's permission defaults. Spawned members default to auto mode unless `@tmux_agents_sub_auto off` or `TMUX_AGENTS_SUB_AUTO=off` selects agent defaults.
 
 ## Starting the chain (main agent)
 
 `<me>` is your current name (`tmux-peers` shows it).
 
 1. `tmux-rename --from <me> <me> main` renames you to `<kind>-<project>-main`. Use the new name as `<me>` from then on.
-2. Spawn the secondary to your right:
+2. Spawn the resolved secondary to your right; use its printed full name as `<secondary>`:
 
    ```sh
-   tmux-spawn claude --from <me> --member --split <me> --right --name secondary <<'MSG'
+   tmux-spawn <secondary agent> --from <me> --member --split <me> --right --name secondary <<'MSG'
    You are the secondary in the agent chain (agent-chain skill). Main: <me>.
    Current goal: <goal>
    MSG
@@ -48,7 +69,7 @@ The worker's agent is `codex` unless the user has named another (another agent k
    ```
 
    The worker becomes the secondary's long-lived member, connected to the secondary only (not to you), and starts without a task. The secondary gets the brief, introduces itself to the worker (including that it is the worker in the agent chain and splits independent parts across sub agents by default) and sends the first task.
-4. Tell the user the three names. The layout, all in your window: you on the left half, the secondary top right, the worker bottom right.
+4. Tell the user the three printed names and end your turn. The layout, all in your window: you on the left half, the secondary top right, the worker bottom right.
 
 Spawn both from the top-level main agent (no `@parent` and no `@member`); only top-level callers can spawn members. The restriction checks the caller, not the `--for` owner, so the main can give the secondary a worker member. `--for` makes the worker the secondary's member, but depth always counts from the caller plus one. Both chain members are depth 1; the worker's ordinary helpers are depth 2, the normal default limit. Helpers do not inherit membership. The main agent doesn't message the worker; it goes through the secondary (`tmux-ask --any` only if the user asks). Each brief names the agent's role in the agent chain, so it loads this skill; beyond that, it only needs the other agents' names and the current goal.
 
@@ -60,6 +81,7 @@ The secondary and worker are long-lived members: they stay out of the default su
 
 ## Messages
 
+- At the beginning of each new user request, the main runs `tmux-agent-report --from <me> "<what you are doing>"`. Codex has no turn-start hook; its completion notify alone does not mark new direct user requests working. Use explicit `--waiting` when ending a turn for background work, as the tmux-agents skill describes.
 - Everything goes through `tmux-ask`. Long reports go in a file; the message is a short summary plus the path.
 - The user reads the secondary's messages to the main agent directly, so the main agent doesn't restate them; it brings up a decision as a one-line summary plus options.
 - Send FYIs as notices (`tmux-ask --notice`), not requests: a request makes the receiver work again and the sender wait for a reply, even if it says "no reply needed". A decision request states the default and what is blocked meanwhile.

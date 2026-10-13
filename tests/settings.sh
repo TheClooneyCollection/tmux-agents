@@ -35,8 +35,14 @@ while read -r key env default sample; do
     value="$(env "$env=override" /bin/bash -c '. "$1"; settings_get result "$2" "$3" "$4"; printf %s "$result"' settings "$B/lib.sh" "$env" "@tmux_agents_$key" "${default/NONE/}")"
     check "$key environment wins" test "$value" = override
   fi
+  tmux set -g "@tmux_agents_$key" ''
+  value="$(/bin/bash -c '. "$1"; settings_get result "$2" "$3" "$4"; printf %s "$result"' settings "$B/lib.sh" "${env/-/}" "@tmux_agents_$key" "${default/NONE/}")"
+  check "$key empty option falls back" test "$value" = "${default/NONE/}"
   tmux set -gu "@tmux_agents_$key"
 done <<'MAP'
+chain_main TMUX_AGENTS_CHAIN_MAIN claude codex
+chain_secondary TMUX_AGENTS_CHAIN_SECONDARY claude codex
+chain_worker TMUX_AGENTS_CHAIN_WORKER codex claude
 name_format TMUX_AGENTS_NAME_FORMAT prefixed exact
 max_depth TMUX_AGENTS_MAX_DEPTH 2 4
 codex_homes TMUX_AGENTS_CODEX_HOMES NONE work=/tmp/home

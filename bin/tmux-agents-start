@@ -5,7 +5,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 . "$here/lib.sh"
 usage() {
   echo 'usage: tmux-agents start claude|codex|PROFILE [--name NAME [--exact]] [-- ARGS...]'
-  echo '       tmux-agents start chain [DIR] [--worker AGENT]'
+  echo '       tmux-agents start chain [DIR] [--main AGENT] [--secondary AGENT] [--worker AGENT]'
 }
 case "${1:-}" in -h|--help) usage; exit 0 ;; '') usage >&2; exit 1 ;; esac
 require_tmux
@@ -26,24 +26,21 @@ kind="$1"; shift
 name="" window="" dir="$PWD"
 explicit_exact=0
 if [ "$kind" = chain ]; then
-  worker=""
   if [ $# -gt 0 ] && [[ $1 != -* ]]; then dir="$1"; shift; fi
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --worker) [ -n "${2:-}" ] || die '--worker needs an agent'; worker="$2"; shift 2 ;;
-      *) die "unknown chain argument '$1'" ;;
-    esac
-  done
+  chain_options_parse "$@"
+  chain_roles_resolve
   [ -d "$dir" ] || die "directory does not exist: $dir"
   dir="$(cd "$dir" && pwd)"
-  if [ -n "$worker" ]; then
-    case "$worker" in claude|codex) ;; *) codex_home_for "$worker" >/dev/null || die "unknown worker '$worker'" ;; esac
-  fi
   window="${dir##*/}"; window="${window:-root}"
   start_chain_work=1
-  prompt='start the chain'
-  [ -z "$worker" ] || prompt="$prompt; use $worker as the worker"
-  kind=claude
+  prompt="start the chain. You are the main agent. Load the agent-chain skill.
+Role snapshot (role, agent, source):
+$(chain_roles_print '' 1)
+Explicit choices are for this chain and override instruction-file preferences.
+For env/option/default choices, apply applicable CLAUDE.md/AGENTS.md member preferences before spawning. The current agent remains main."
+  # Assigned dynamically by chain_roles_resolve.
+  # shellcheck disable=SC2154
+  kind="$chain_main"
   set -- "$prompt"
 else
   while [ $# -gt 0 ]; do
@@ -61,7 +58,7 @@ pane="$(self_pane)"
 if [ -n "$window" ]; then
   # tmux executes its command through a shell; quote each argument once.
   # The new pane then runs a child agent and returns to its own shell.
-  args=(env TMUX_START_NAME_EXACT=1 "TMUX_START_CHAIN_WORK=$start_chain_work" "TMUX_START_CODEX_HOMES=$codex_homes" "TMUX_SPAWN_BIN=${TMUX_SPAWN_BIN:-}" "XDG_STATE_HOME=${XDG_STATE_HOME:-$HOME/.local/state}" "$here/tmux-agents-start" "$kind")
+  args=(env "TMUX_AGENTS_CHAIN_MAIN=${TMUX_AGENTS_CHAIN_MAIN:-}" "TMUX_AGENTS_CHAIN_SECONDARY=${TMUX_AGENTS_CHAIN_SECONDARY:-}" "TMUX_AGENTS_CHAIN_WORKER=${TMUX_AGENTS_CHAIN_WORKER:-}" TMUX_START_NAME_EXACT=1 "TMUX_START_CHAIN_WORK=$start_chain_work" "TMUX_START_CODEX_HOMES=$codex_homes" "TMUX_SPAWN_BIN=${TMUX_SPAWN_BIN:-}" "XDG_STATE_HOME=${XDG_STATE_HOME:-$HOME/.local/state}" "$here/tmux-agents-start" "$kind")
   [ -z "$name" ] || args+=(--name "$name")
   args+=(-- "$@")
   command=""

@@ -157,6 +157,7 @@ adopt() {
 # running $4 with depth $5. Prints the pane id.
 open_window() {
   local env_args=(-e "TMUX_AGENTS_DEPTH=$5" -e "TMUX_SPAWN_CODEX_HOMES=$codex_homes")
+  env_args+=(-e "TMUX_AGENTS_CHAIN_MAIN=${TMUX_AGENTS_CHAIN_MAIN:-}" -e "TMUX_AGENTS_CHAIN_SECONDARY=${TMUX_AGENTS_CHAIN_SECONDARY:-}" -e "TMUX_AGENTS_CHAIN_WORKER=${TMUX_AGENTS_CHAIN_WORKER:-}")
   [ -z "${TMUX_SPAWN_BIN:-}" ] || env_args+=(-e "TMUX_SPAWN_BIN=$TMUX_SPAWN_BIN")
   [ -z "${TMUX_AGENTS_SUB_AUTO:-}" ] || env_args+=(-e "TMUX_AGENTS_SUB_AUTO=$TMUX_AGENTS_SUB_AUTO")
   [ -z "${TMUX_AGENTS_CODEX_HOMES:-}" ] || env_args+=(-e "TMUX_AGENTS_CODEX_HOMES=$TMUX_AGENTS_CODEX_HOMES")
@@ -171,6 +172,7 @@ open_window() {
 # Directory, command and environment match open_window.
 open_split() {
   local direction=-h env_args=(-e "TMUX_AGENTS_DEPTH=$4" -e "TMUX_SPAWN_CODEX_HOMES=$codex_homes")
+  env_args+=(-e "TMUX_AGENTS_CHAIN_MAIN=${TMUX_AGENTS_CHAIN_MAIN:-}" -e "TMUX_AGENTS_CHAIN_SECONDARY=${TMUX_AGENTS_CHAIN_SECONDARY:-}" -e "TMUX_AGENTS_CHAIN_WORKER=${TMUX_AGENTS_CHAIN_WORKER:-}")
   [ "$split_direction" != --below ] || direction=-v
   [ -z "${TMUX_SPAWN_BIN:-}" ] || env_args+=(-e "TMUX_SPAWN_BIN=$TMUX_SPAWN_BIN")
   [ -z "${TMUX_AGENTS_SUB_AUTO:-}" ] || env_args+=(-e "TMUX_AGENTS_SUB_AUTO=$TMUX_AGENTS_SUB_AUTO")

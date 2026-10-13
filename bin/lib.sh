@@ -978,6 +978,7 @@ settings_load() {
   done < <(tmux show-options -g 2>/dev/null | perl -ne '
     next unless /^(@tmux_agents_\S+)\s+(.*)$/;
     my ($key, $value) = ($1, $2);
+    $value = "" if $value eq "\047\047";
     if ($value =~ /^"(.*)"$/s) {
       $value = $1;
       $value =~ s/\\([0-7]{3}|.)/$1 =~ m{^[0-7]{3}$} ? chr(oct($1)) : $1 eq "n" ? "\n" : $1 eq "r" ? "\r" : $1 eq "t" ? "\t" : $1/ge;
@@ -1008,6 +1009,66 @@ settings_get() {
   else
     option_get "$1" "$3" "$4"
   fi
+}
+
+# Shared CLI parsing and resolution for chain-config and start chain.
+# These globals are per invocation, never exported as preferences.
+chain_options_parse() {
+  local flag role var
+  for role in main secondary worker; do printf -v "chain_${role}_override" %s ""; done
+  while [ "$#" -gt 0 ]; do
+    flag="$1"
+    case "$flag" in
+      --main|--secondary|--worker)
+        role="${flag#--}"; var="chain_${role}_override"
+        [ -z "${!var}" ] || die "duplicate $flag"
+        [ "$#" -ge 2 ] && [ -n "$2" ] || die "$flag needs an agent"
+        printf -v "$var" '%s' "$2"
+        shift 2 ;;
+      *) die "unknown chain argument '$flag'" ;;
+    esac
+  done
+}
+
+# Resolve all roles, or just $1, without printing partial results on failure.
+chain_roles_resolve() {
+  local role value source env_key override default
+  resolve_codex_homes codex_homes
+  for role in ${1:-main secondary worker}; do
+    case "$role" in
+      main) env_key=TMUX_AGENTS_CHAIN_MAIN; default=claude ;;
+      secondary) env_key=TMUX_AGENTS_CHAIN_SECONDARY; default=claude ;;
+      worker) env_key=TMUX_AGENTS_CHAIN_WORKER; default=codex ;;
+      *) die "unknown chain role '$role'" ;;
+    esac
+    override="chain_${role}_override"
+    if [ -n "${!override:-}" ]; then
+      value="${!override}"; source=explicit
+    elif [ -n "${!env_key:-}" ]; then
+      value="${!env_key}"; source="env"
+    else
+      option_get value "@tmux_agents_chain_$role" ""
+      source=option
+      [ -n "$value" ] || { value="$default"; source=default; }
+    fi
+    # Only validated kinds may enter prompts or launch commands. Keep the
+    # profile label, not name_kind_for's canonical naming prefix.
+    name_kind_for "$value" >/dev/null || die "unknown $role '$value' (source: $source)"
+    case "$value" in *$'\t'*|*$'\n'*|*$'\r'*) die "invalid $role '$value' (source: $source)" ;; esac
+    printf -v "chain_$role" '%s' "$value"
+    printf -v "chain_${role}_source" '%s' "$source"
+  done
+}
+
+chain_roles_print() {
+  local role value source
+  for role in ${1:-main secondary worker}; do
+    value="chain_$role"; source="chain_${role}_source"
+    if [ "${2:-0}" = 1 ]; then
+      printf '%s\t%s\t%s\n' "$role" "${!value}" "${!source}"
+    elif [ -n "${1:-}" ]; then printf '%s\n' "${!value}"
+    else printf '%s\t%s\n' "$role" "${!value}"; fi
+  done
 }
 
 # Resolve profile=CODEX_HOME mappings exactly as tmux-spawn does. A direct
@@ -1106,13 +1167,26 @@ build_agent_command() {
   [ -z "${TMUX_SPAWN_BIN:-}" ] || printf -v PATH '%s:%s' "$TMUX_SPAWN_BIN" "$PATH"
   # Codex runs commands in a shared app-server daemon that keeps the env of
   # whichever pane started it; pin this pane's identity for its commands.
-  codex_env=(
-    -c "shell_environment_policy.set.TMUX_PANE=\"${TMUX_PANE:-}\""
-    -c "shell_environment_policy.set.TMUX=\"${TMUX:-}\""
-    -c "shell_environment_policy.set.TMUX_AGENTS_DEPTH=\"${TMUX_AGENTS_DEPTH:-0}\""
-    -c 'shell_environment_policy.set.TMUX_AGENTS_PINNED="1"'
-    -c "shell_environment_policy.set.TMUX_AGENTS_KIND=\"$agent\""
-  )
+  # Pin absent overrides too: a shared daemon must not lend another chain
+  # its preferences. Do not promote role option/default values into env.
+  export TMUX_AGENTS_CHAIN_MAIN="${TMUX_AGENTS_CHAIN_MAIN:-}"
+  export TMUX_AGENTS_CHAIN_SECONDARY="${TMUX_AGENTS_CHAIN_SECONDARY:-}"
+  export TMUX_AGENTS_CHAIN_WORKER="${TMUX_AGENTS_CHAIN_WORKER:-}"
+  export TMUX_AGENTS_CODEX_HOMES="${codex_homes:-}"
+  local pin
+  while IFS= read -r -d '' pin; do
+    codex_env+=(-c "$pin")
+  done < <(/usr/bin/perl -MJSON::PP -MEncode -e '
+    while (@ARGV) {
+      my ($key, $value) = splice(@ARGV, 0, 2);
+      print "shell_environment_policy.set.$key=", encode_json(Encode::decode("UTF-8", $value)), "\0";
+    }
+  ' TMUX_PANE "${TMUX_PANE:-}" TMUX "${TMUX:-}" \
+    TMUX_AGENTS_DEPTH "${TMUX_AGENTS_DEPTH:-0}" TMUX_AGENTS_PINNED 1 \
+    TMUX_AGENTS_KIND "$agent" TMUX_AGENTS_CHAIN_MAIN "$TMUX_AGENTS_CHAIN_MAIN" \
+    TMUX_AGENTS_CHAIN_SECONDARY "$TMUX_AGENTS_CHAIN_SECONDARY" \
+    TMUX_AGENTS_CHAIN_WORKER "$TMUX_AGENTS_CHAIN_WORKER" \
+    TMUX_AGENTS_CODEX_HOMES "$TMUX_AGENTS_CODEX_HOMES")
   # Only sub agents consume the auto-mode preference; top-level starts keep
   # agent defaults. Read here so tmux options also resolve inside the child.
   if [ "$launch_mode" = spawn ]; then

@@ -2,10 +2,9 @@
 # Browse agent panes: live preview, open hidden ones in a popup, jump, dismiss.
 set -euo pipefail
 here="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
-if [ "${1:-}" = start ]; then
-  shift
-  exec "$here/tmux-agents-start" "$@"
-fi
+case "${1:-}" in
+  start|chain-config) subcommand="$1"; shift; exec "$here/tmux-agents-$subcommand" "$@" ;;
+esac
 . "$here/lib.sh"
 
 usage() {

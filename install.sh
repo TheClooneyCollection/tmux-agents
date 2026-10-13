@@ -109,7 +109,10 @@ Almost done. Add these to your own config:
 4. In tmux, start agents with tracking and identity pins:
      tmux-agents start claude
      tmux-agents start codex   (or a configured Codex profile)
-   Start a chain in a new window: tmux-agents start chain [DIR] [--worker AGENT]
+   Start a chain in a new window:
+     tmux-agents start chain [DIR] [--main AGENT] [--secondary AGENT] [--worker AGENT]
+   Inspect role choices: tmux-agents chain-config --sources
+   New Codex profiles need this installer rerun after their home exists.
    Launch hooks are passed per process; global agent hook config is not edited.
 
    Optional, for typing codex directly: a wrapper pins identity only, without tracking:
