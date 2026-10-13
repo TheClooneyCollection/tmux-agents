@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## v1.14.0 (2026-10-13)
 
 - **Limited support for other agents.** `start`, `tmux-spawn`, chain roles and `chain-config` accept executable basenames on PATH; configured Codex profiles take precedence. Other agents launch without injected prompts or Claude/Codex flags and have no automatic tracking, worked time, permission setup or resume. Spawn tasks and unknown-main chain requests must be sent manually with `tmux-ask` once the agent is at its prompt. See [agent support](docs/agents.md) for capabilities and limitations. Claude/Codex and configured profiles keep their existing behavior.
+- **Behaviour change: `tmux-spawn`'s first bare word is an agent.** A single leading word is now validated as an agent selector (Claude, Codex, a configured profile or an executable on PATH), so `tmux-spawn summarize` fails and `tmux-spawn test` would launch `test`. Previously a word that was not a profile became the task. Put options first or pass the task on stdin.
 
 ## v1.13.1 (2026-10-13)
 
