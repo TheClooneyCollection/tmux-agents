@@ -36,7 +36,7 @@ Before spawning either member, resolve secondary and worker:
   ```
   On validation failure, resolve the reported role/profile problem before creating members. Keep profile names as returned; do not replace a profile with `codex`.
 
-The query is read-only and needs no `--from`. Full output is TSV role/value, with `--sources` adding `explicit|env|option|default`. A selected role alone prints its value, for example `tmux-agents chain-config worker`; adding `--sources` prints role/value/source. Read the output as data, never `eval` it. Run queries on their own, without command substitution, pipes or shell command chains.
+The query is read-only and needs no `--from`. Full output is TSV role/value, with `--sources` adding `explicit|env|option|default`. A selected role alone prints its value, for example `tmux-agents chain-config worker`; adding `--sources` prints role/value/source. It shows the settings new chains start from, not the running chain's members; use `tmux-peers` for those. Read the output as data, never `eval` it. Run queries on their own, without command substitution, pipes or shell command chains.
 
 New profiles need the installer run for their existing Codex home so they receive skills and the real rules file. Setting `CODEX_HOME` alone does not install them. The shared launcher carries profile mappings and role environment pins, including for Codex's shared daemon; do not recreate those with skill-level exports. Role settings affect new chains, not existing members or resumed records.
 

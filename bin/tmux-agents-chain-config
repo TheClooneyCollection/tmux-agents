@@ -7,6 +7,7 @@ usage() {
   echo 'usage: tmux-agents chain-config [main|secondary|worker] [--main AGENT] [--secondary AGENT] [--worker AGENT] [--sources]'
   echo 'TSV role/value, optionally source; one role without --sources prints its value.'
   echo 'Outside tmux (TMUX unset), only environment/defaults apply; an inaccessible TMUX is an error.'
+  echo 'Shows the settings new chains start from, not a running chain'\''s members; use tmux-peers for those.'
 }
 role="" sources=0
 args=()

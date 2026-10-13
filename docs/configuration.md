@@ -85,6 +85,8 @@ tmux-agents chain-config [main|secondary|worker] [--main AGENT] [--secondary AGE
 
 This read-only query needs no `--from` and creates no window, pane or agent record. With no role argument, it prints TSV rows in `main`, `secondary`, `worker` order, with role and value columns. `--sources` adds `explicit`, `env`, `option` or `default` as a third column. A selected role without `--sources` prints only its value; with `--sources` it prints the full three-column row. Explicit flags validate hypothetical choices without changing settings. File preferences passed by the skill appear as `explicit`.
 
+The output shows the settings new chains start from, not the members of a running chain: a chain launched with `--secondary codex`, or whose worker came from an instruction-file preference, still reports the plain settings afterwards. Use `tmux-peers` to see the live members.
+
 ```sh
 tmux-agents chain-config --sources
 tmux-agents chain-config worker

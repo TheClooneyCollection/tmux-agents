@@ -3,6 +3,8 @@
 ## Unreleased
 
 - **Configurable chain roles.** Choose Claude, Codex or a configured profile independently for main, secondary and worker through settings or `start chain --main/--secondary/--worker`. Inspect choices with the read-only `tmux-agents chain-config --sources`. Defaults stay `claude`/`claude`/`codex`; existing instruction-file preferences and existing mains are preserved. This adds options and is a minor release feature.
+- **`chain-config` shows settings, not live members.** It reports what new chains start from; use `tmux-peers` to see a running chain's members.
+- **Re-run `./install.sh` after updating:** run it from the installed checkout (after checking out the new tag for a tag-pinned install) to refresh the Codex rules it copies into each Codex home. Without it, Codex mains and secondaries cannot run `tmux-agents chain-config` in the sandbox. For Claude, merge the new `Bash(tmux-agents chain-config:*)` allow rule from `integrations/claude/settings.json` into your settings.
 
 ## v1.12.2 (2026-10-07)
 
