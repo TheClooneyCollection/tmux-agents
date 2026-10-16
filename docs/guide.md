@@ -50,7 +50,7 @@ Press `prefix + d` to detach and leave the shell running. `prefix + a` shows she
 
 History is whatever your configured shell normally saves. There is no dedicated saved-command log; forced closure with `ctrl-x` or owner dismissal may lose history that the shell has not written. Exit normally when you want the shell to flush its history according to its own configuration.
 
-Shells show only their name in the pane border and are not listed as agent peers. `tmux-ask` refuses shell targets before delivering text, including `--any`, `--reply` and `--retry`. `tmux-connect`, `tmux-rename` and `tmux-spawn --for` or `--split` also refuse shell targets. `tmux-peek` may read a shell pane.
+Shells show only their name in the pane border and are not listed as agent peers. `tmux-ask` refuses shell targets before delivering text, including `--any`, `--reply` and `--retry`. `tmux-connect`, `tmux-rename` and `tmux-spawn --for` or `--split` also refuse shell targets. `tmux-peek --from ME SHELL` may read a shell owned by you or one of your descendants.
 
 ## Connecting agents
 

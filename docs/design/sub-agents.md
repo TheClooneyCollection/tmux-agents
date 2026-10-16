@@ -43,7 +43,7 @@ Ownership and placement are separate: `--from AGENT` explicitly sets an owner, w
 
 Detaching with `prefix + d` keeps the shell running. Enter in the list reattaches its popup; `ctrl-x` or shell exit removes the pane. Shells do not enter the closed-record or resume paths and do not persist agent session records. History belongs to the configured shell, with no extra command log; forced closure need not flush it. See the [shell pane decision](../decisions/2026-10-16-shell-panes.md) and [usage](../guide.md#shell-panes).
 
-Shells show only their name in the pane border and are not listed as agent peers. `tmux-ask` refuses shell targets before delivering text, including `--any`, `--reply` and `--retry`. `tmux-connect`, `tmux-rename` and `tmux-spawn --for` or `--split` also refuse shell targets. `tmux-peek` may read a shell pane.
+Shells show only their name in the pane border and are not listed as agent peers. `tmux-ask` refuses shell targets before delivering text, including `--any`, `--reply` and `--retry`. `tmux-connect`, `tmux-rename` and `tmux-spawn --for` or `--split` also refuse shell targets. `tmux-peek --from ME SHELL` may read a shell owned by you or one of your descendants.
 
 ## Browsing: `tmux-agents`
 

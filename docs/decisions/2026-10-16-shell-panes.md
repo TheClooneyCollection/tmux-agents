@@ -12,7 +12,7 @@
 - Shell exit removes the pane entirely. There is no closed shell record, resume workflow, agent state, task protocol, permission state or worked-time accounting.
 - Command history follows the configured shell's ordinary history settings. There is no dedicated saved-command log, and forced closure may lose history that the shell has not written.
 
-- Shells have plain name borders and are excluded from agent peers. Messaging, including `--any`, `--reply` and `--retry`, refuses them before text delivery. Connect, rename and spawn `--for`/`--split` also refuse shell targets; peek remains allowed.
+- Shells have plain name borders and are excluded from agent peers. Messaging, including `--any`, `--reply` and `--retry`, refuses them before text delivery. Connect, rename and spawn `--for`/`--split` also refuse shell targets; explicit `tmux-peek --from ME SHELL` remains allowed for shells owned by the caller or its descendants.
 - Agent permission rules allow only `tmux-shell --from`, matching the explicit-owner form used for dismiss.
 
 **Why.** Reusing the project session and list provides a persistent interactive terminal without adding agent lifecycle semantics to a shell. Explicit ownership keeps user shells independent and lets agent cleanup cover resources it owns.
