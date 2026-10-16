@@ -29,6 +29,15 @@ pane_name() {
   tmux display-message -p -t "$1" '#{@agent}' 2>/dev/null
 }
 
+# Plain shell panes may be inspected, but must never receive agent prompts.
+require_agent_pane() {
+  local name
+  if [ "$(tmux show-options -pqv -t "$1" @shell 2>/dev/null)" = 1 ]; then
+    name="$(pane_name "$1")"
+    die "${name:-$1} is a shell, not an agent"
+  fi
+}
+
 pane_command() {
   tmux display-message -p -t "$1" '#{pane_current_command}' 2>/dev/null
 }
@@ -275,7 +284,8 @@ get_peers() {
   local raw id live=""
   raw="$(tmux display-message -p -t "$1" '#{@peers}' 2>/dev/null)"
   for id in $raw; do
-    if pane_alive "$id"; then
+    if pane_alive "$id" && [ "$(tmux show-options -pqv -t "$id" @shell)" != 1 ] &&
+        [ "$(tmux show-options -pqv -t "$1" @shell)" != 1 ]; then
       live="$live $id"
       printf '%s\n' "$id"
     fi
@@ -391,7 +401,7 @@ resolve_peer() {
 }
 
 # Pane border label: "name ⇄ peer1, peer2" on named panes, blank on others.
-BORDER_FORMAT='#{?#{@agent}, #[bold]#{@agent}#[nobold]#{?#{@peer_names}, ⇄ #{@peer_names}, (not connected)} ,}'
+BORDER_FORMAT='#{?#{@agent}, #[bold]#{@agent}#[nobold]#{?#{==:#{@shell},1},,#{?#{@peer_names}, ⇄ #{@peer_names}, (not connected)}} ,}'
 
 # Store each named pane's peer names in @peer_names for the border label,
 # and show a border line only in windows that hold named panes.

@@ -28,6 +28,7 @@ case "${1:-}" in
          done
          require_tmux
          initial_self="$(self_pane)"
+         require_agent_pane "$initial_self"
          if [ -z "$(pane_name "$initial_self")" ]; then
            trusted_pane || die "this pane has no name; run tmux-connect first, or pass --from <your name>"
            auto_name "$initial_self" >/dev/null
@@ -51,11 +52,14 @@ settings_get ask_max_lines TMUX_ASK_MAX_LINES @tmux_agents_ask_max_lines 60
 # would go to tmux instead of the program.
 deliver() {
   local buf="tmux-ask-$$-${1#%}"
+  (require_agent_pane "$1") || return 1
   printf '%s' "$2" | tmux load-buffer -b "$buf" - || return 1
+  (require_agent_pane "$1") || { tmux delete-buffer -b "$buf"; return 1; }
   tmux paste-buffer -p -d -b "$buf" -t "$1" || return 1
   # settings_get assigns this variable by name.
   # shellcheck disable=SC2154
   sleep "$ask_enter_delay"
+  (require_agent_pane "$1") || return 1
   tmux send-keys -t "$1" Enter
 }
 
@@ -179,17 +183,18 @@ publish() {
 }
 
 bounce() {
-  local source="$1" kept sender text reopen
+  local source="$1" reason="${2:-is gone}" kept sender text reopen
   kept="${source%.msg}.undelivered"
   queue_info "$source"
   mv "$source" "$kept" || return 1
   sender=""
   if [ -n "$from_id" ]; then sender="$(find_pane_by_id "$from_id")"; fi
-  text="your ${kind:-message} to ${to_name:-$to_pane} wasn't delivered: ${to_name:-$to_pane} is gone. The text is kept at $kept."
+  text="your ${kind:-message} to ${to_name:-$to_pane} wasn't delivered: ${to_name:-$to_pane} $reason. The text is kept at $kept."
   reopen=""
   if valid_agent_id "$to_id"; then reopen="$(record_get "$to_id" id)"; fi
   [ -z "$reopen" ] || text="$text It will be delivered if $to_name is reopened; you needn't resend it."
-  if [ -n "$sender" ] && [ "$from_name" != tmux-ask ]; then
+  if [ -n "$sender" ] && [ "$from_name" != tmux-ask ] &&
+      [ "$(tmux show-options -pqv -t "$sender" @shell)" != 1 ]; then
     # A bounce is an ordinary durable notice, with no request-state effects.
     to_id="$from_id" from_id="" to_pane="$sender" to_name="$(pane_name "$sender")" from_pane="" from_name=tmux-ask kind=notice queued_at="$(date +%s)"
     publish "$(notice_body tmux-ask "$text" "$to_name")" || { printf 'bounce could not be queued; original retained at %s\n' "$kept" >&2; return 1; }
@@ -217,6 +222,10 @@ try_delivery_locked() {
   done
   [ -f "$source" ] || return 0
   queue_info "$source"
+  if ! (require_agent_pane "$peer"); then
+    bounce "$source" 'is a shell, not an agent' || return 1
+    return 0
+  fi
   if [ -z "$to_id" ] || ! pane_alive "$peer" || [ "$(pane_agent_id "$peer")" != "$to_id" ]; then
     if ! bounce "$source"; then return 1; fi
     return 0
@@ -247,6 +256,7 @@ if [ "${1:-}" = --system-notice ]; then
   [ "$#" = 3 ] || die 'invalid system notice'
   require_tmux
   to_pane="$(resolve_pane "$2")" to_name="$(pane_name "$2")"
+  require_agent_pane "$to_pane"
   to_id="$(pane_agent_id "$to_pane")" from_id=""
   from_pane="" from_name=tmux-rename kind=notice queued_at="$(date +%s)"
   publish "$(notice_body tmux-rename "$3" "$to_name")"
@@ -298,6 +308,7 @@ if [ "${1:-}" = --retry-locked ]; then
       printf 'unplaced: receiver %s is absent\n' "$filter"
       exit 0
     fi
+    require_agent_pane "$filter_pane"
     filter_id="$(pane_agent_id "$filter_pane")"
   fi
   # Also restart persisted queued work whose worker failed to launch or died.
@@ -323,6 +334,10 @@ if [ "${1:-}" = --retry-locked ]; then
     fi
     if [ -z "$receiver" ]; then
       printf 'unplaced: %s (receiver %s is absent)\n' "$source" "${to_name:-unknown}"
+      continue
+    fi
+    if ! (require_agent_pane "$receiver"); then
+      printf 'unplaced: %s (receiver is a shell, not an agent)\n' "$source"
       continue
     fi
     # The batch lock serializes oldest-first retries, including legacy files.
@@ -449,6 +464,10 @@ fi
 
 require_tmux
 self="$(self_pane)"
+require_agent_pane "$self"
+# Check named shells before peer filtering hides stale connections.
+named_target="$(find_pane "$target")"
+[ -z "$named_target" ] || require_agent_pane "$named_target"
 me="$(pane_name "$self")"
 if [ -z "$me" ]; then
   trusted_pane || die "this pane has no name; run tmux-connect first, or pass --from <your name>"
@@ -456,9 +475,14 @@ if [ -z "$me" ]; then
 fi
 if [ "$any" -eq 1 ]; then
   peer="$(resolve_pane "$target")"
+  require_agent_pane "$peer"
   [ "$peer" != "$self" ] || die "that's you"
   [ -n "$(pane_name "$peer")" ] || die "pane $peer has no name, so it couldn't reply; name it with tmux-connect first"
 else
+  if is_target "$target"; then
+    candidate="$(resolve_pane "$target")"
+    require_agent_pane "$candidate"
+  fi
   peer="$(resolve_peer "$self" "$target")"
 fi
 
