@@ -60,7 +60,7 @@ To list the available skills without installing them, add `--list`. This preview
 
 ### By hand
 
-Needs tmux 3.2+ and bash. The agent list and command picker require `fzf`: install it with `brew install fzf` (macOS) or `apt install fzf` (Debian/Ubuntu). The history picker also needs Python 3.6+. Plain shell mode and direct commands do not need fzf.
+Needs tmux 3.2+ and bash. The agent list and command picker require `fzf`: install it with `brew install fzf` (macOS) or `apt install fzf` (Debian/Ubuntu). Plain shell mode and direct commands do not need fzf.
 
 ```sh
 git clone https://github.com/TheClooneyCollection/tmux-agents.git

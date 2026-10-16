@@ -5,7 +5,7 @@
 - **Chain help.** `tmux-agents start chain --help` and `-h` now print usage and succeed without needing a tmux server.
 
 - **Commands in shell popups.** `prefix + C-s` now chooses from saved fish/bash/zsh history or accepts a new command; plain shell mode moves to `prefix + S`. `@tmux_agents_shell_key` keeps its meaning but defaults to `S`; the new `@tmux_agents_command_key` defaults to `C-s`. Re-source the configuration after updating; both shortcuts support environment overrides and `none`. Agents can run `tmux-shell --from NAME --command CMD` directly.
-- Successful commands show a configurable countdown (three seconds by default); any key keeps the pane open as an interactive shell. Failures stay open with a shell prompt. Command/status records remain in the panel after the pane exits; `ctrl-x` clears them, and owner dismissal clears owned records. These are not resumable agent sessions. The history picker requires Python 3.6+ and fzf.
+- Successful commands show a configurable countdown (three seconds by default); any key keeps the pane open as an interactive shell. Failures stay open with a shell prompt. Command/status records remain in the panel after the pane exits; `ctrl-x` clears them, and owner dismissal clears owned records. These are not resumable agent sessions. The history picker uses fish for fish history and Perl for bash/zsh history, with fzf for selection; it needs no Python runtime.
 
 ## v1.16.0 (2026-10-16)
 

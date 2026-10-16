@@ -59,7 +59,7 @@ Saying “start the chain” to an existing top-level agent keeps it as main. Ro
 
 ## Shell panes
 
-Press `prefix + C-s` to choose a command from saved shell history or type a new command. The picker supports fish, bash and zsh, deduplicated newest first. Enter accepts the selected history entry, or your query when nothing matches. Alt-Enter always runs the query; Esc cancels without creating a pane. The history picker requires Python 3.6+ and fzf.
+Press `prefix + C-s` to choose a command from saved shell history or type a new command. The picker supports fish, bash and zsh, deduplicated newest first. Enter accepts the selected history entry, or your query when nothing matches. Alt-Enter always runs the query; Esc cancels without creating a pane. The history picker uses fish for fish history and Perl for bash/zsh history, with fzf for selection; it needs no Python runtime.
 
 Press `prefix + S` for a plain interactive shell. Both modes run in a hidden `agents-<project>` session, in the opener's current directory, and show a popup. The lowercase `prefix + s` keeps tmux's session picker. [Configure both shortcuts](configuration.md#shell-popup-key) before sourcing the tmux configuration; `none` disables either one.
 
@@ -77,7 +77,7 @@ A command exiting zero shows `ok` and counts down for three seconds before closi
 
 `prefix + d` detaches while work continues. `prefix + a` shows command text and `running`, `ok` or `failed N`. Enter reopens a live pane. After a command pane exits, its result stays listed until `ctrl-x` clears it; a completed record only shows details and cannot reopen or rerun a command. `ctrl-x` on a live command closes it and clears its record. Plain shells leave no record when they exit. Command records are not agent conversations and have no resume, task protocol or worked-time accounting.
 
-The picker reads only saved history files; commands still buffered by another shell are not visible. `HISTFILE` overrides bash/zsh defaults when exported; fish uses its exported history name and XDG data directory. Timestamped bash history can preserve multiline entries; without timestamps each line is treated as a separate entry because command boundaries are ambiguous. History is never sourced or executed while loading, and unsupported shells still allow a new query. This records command text and result, not terminal output or a transcript of later interactive commands.
+The picker asks the configured fish shell for `history --null`; this starts fish with its non-interactive configuration, so custom history functions and startup settings can affect the result. Bash/zsh history files are parsed as data using Perl. Commands still buffered by another shell may not be visible. `HISTFILE` overrides bash/zsh defaults when exported; fish uses its exported history name and XDG data directory. Timestamped bash history can preserve multiline entries; without timestamps each line is treated as a separate entry because command boundaries are ambiguous. History entries are not executed while loading, and unsupported shells still allow a new query. This records command text and result, not terminal output or a transcript of later interactive commands.
 
 All shell message and target guards also apply to command panes. Borders show only their name; they are not agent peers. `tmux-ask` refuses them, including `--any`, `--reply` and queued retries. `tmux-connect`, `tmux-rename` and `tmux-spawn --for` or `--split` refuse shell targets. `tmux-peek --from ME SHELL` may read a live shell owned by you or one of your descendants.
 

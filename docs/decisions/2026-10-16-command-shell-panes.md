@@ -13,7 +13,7 @@ Users need to pick or type a short command, watch it run, and keep its result vi
 - Show command and status in the list. Completed command records persist after the pane closes until `ctrl-x` clears them; they cannot be resumed. Clearing a live command closes it too. Recursive owner dismissal clears owned commands and their records.
 - User-created panes are independent; `--from` assigns ownership. Command panes retain all plain-shell message and agent-target guards, with no agent work accounting.
 - Read command records and agent records in one batch alongside one pane snapshot. Batch pane-option updates and schedule the popup before label refresh to reduce startup calls.
-- History selection reads saved files without executing history text. Keep ordinary interactive shell history behavior; do not capture terminal output or introduce resumable command sessions.
+- Use the configured fish shell’s `history --null` for fish history and Perl for bash/zsh files, avoiding a new Python runtime dependency. Fish runs its non-interactive startup configuration; history entries are data, not executed commands. Keep ordinary interactive shell history behavior; do not capture terminal output or introduce resumable command sessions.
 
 ## Why
 
