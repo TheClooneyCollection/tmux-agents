@@ -34,6 +34,9 @@ check 'fresh default Codex links every skill' all_skills "$HOME/.codex/skills"
 check 'selected home with spaces links every skill' all_skills "$CODEX_HOME/skills"
 check 'rules are real files' test ! -L "$CODEX_HOME/rules/tmux-agents.rules"
 check 'installed rules allow exact chain query' contains "$CODEX_HOME/rules/tmux-agents.rules" '["tmux-agents", "chain-config"]'
+for rules_home in "$HOME/.codex" "$CODEX_HOME"; do
+  check 'installed rules allow owned shell creation' contains "$rules_home/rules/tmux-agents.rules" 'prefix_rule(pattern=["tmux-shell", "--from"], decision="allow")'
+done
 check 'rules content copied' cmp -s "$here/integrations/codex/tmux-agents.rules" "$CODEX_HOME/rules/tmux-agents.rules"
 rm "$HOME/.codex/skills/tmux-agents"
 ln -s "$tmp/missing" "$HOME/.codex/skills/tmux-agents"
@@ -103,6 +106,7 @@ install
 check 'environment mapping works without tmux' all_skills "$tmp/extra/skills"
 check 'non-codex-prefix profile installs real rules' test ! -L "$tmp/extra/rules/tmux-agents.rules"
 check 'non-codex-prefix profile gets query permission' contains "$tmp/extra/rules/tmux-agents.rules" '["tmux-agents", "chain-config"]'
+check 'extra profile gets owned shell permission' contains "$tmp/extra/rules/tmux-agents.rules" 'prefix_rule(pattern=["tmux-shell", "--from"], decision="allow")'
 check 'duplicate home reported once' test "$(grep -Fc "Codex home: $tmp/extra" "$tmp/output")" = 1
 check 'missing home explicitly skipped' contains "$tmp/output" "skipped $tmp/missing: no such Codex home"
 unset TMUX_AGENTS_CODEX_HOMES

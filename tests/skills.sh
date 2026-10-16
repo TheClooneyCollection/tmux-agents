@@ -68,3 +68,19 @@ END {
   exit (failures != 0)
 }
 ' "${files[@]}"
+
+# Shell creation is agent-authorized only with explicit ownership.
+python3 - "$here" <<'PYRULES'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+allow = json.loads((root / "integrations/claude/settings.json").read_text())["permissions"]["allow"]
+assert "Bash(tmux-shell --from:*)" in allow, "missing owned-shell Claude permission"
+assert "Bash(tmux-shell:*)" not in allow, "unrestricted Claude shell permission"
+rules = (root / "integrations/codex/tmux-agents.rules").read_text().splitlines()
+assert 'prefix_rule(pattern=["tmux-shell", "--from"], decision="allow")' in rules, "missing owned-shell Codex permission"
+assert 'prefix_rule(pattern=["tmux-shell"], decision="allow")' not in rules, "unrestricted Codex shell permission"
+print("ok    shell permissions require --from")
+PYRULES

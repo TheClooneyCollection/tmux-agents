@@ -77,6 +77,8 @@ The user can press `prefix + C-s` to create an independent shell, including from
 
 A shell is an interactive terminal with no task delivery, delegation, agent permission states or worked-time counters. Do not send it `tmux-ask` requests or wait for an agent reply. Shell exit removes it entirely, with no closed record or `tmux-spawn --resume`. History uses only the configured shell's usual settings; there is no dedicated command log, and forced closure may lose unwritten history. See [Shell panes](../../docs/guide.md#shell-panes).
 
+Shells show only their name in the pane border and are not listed as agent peers. `tmux-ask` refuses shell targets before delivering text, including `--any`, `--reply` and `--retry`. `tmux-connect`, `tmux-rename` and `tmux-spawn --for` or `--split` also refuse shell targets. `tmux-peek` may read a shell pane.
+
 ## Sub agents
 
 Whenever you would start a sub agent (your built-in Agent/Task tool, spawned or delegated agents, parallel workers), use `tmux-spawn` instead. The user wants every sub agent in its own tmux pane so they can read its full history and approve its permissions.

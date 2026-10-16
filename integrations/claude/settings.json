@@ -8,6 +8,7 @@
       "Bash(tmux-agent-report:*)",
       "Bash(tmux-connect --from:*)",
       "Bash(tmux-dismiss --from:*)",
+      "Bash(tmux-shell --from:*)",
       "Bash(tmux-rename --from:*)",
       "Bash(tmux-agents chain-config:*)"
     ]
