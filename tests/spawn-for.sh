@@ -14,7 +14,17 @@ tmp="$(mktemp -d "${TMPDIR:-/tmp}/tmux-agents-test.XXXXXX")"
 # Stub agents: print their arguments, then wait like an idle agent.
 mkdir -p "$tmp/bin"
 for a in claude codex; do
-  printf '#!/bin/sh\necho "FAKE %s $*"\nexec cat\n' "$a" > "$tmp/bin/$a"
+  cat > "$tmp/bin/$a" <<'STUB'
+#!/bin/sh
+kind="${0##*/}"
+echo "FAKE $kind $*"
+# Force the startup banner out of the viewport without depending on timing.
+i=0
+while [ "$i" -lt 100 ]; do echo "scroll-output-$i"; i=$((i+1)); done
+echo SCROLL_COMPLETE
+printf '%s\n' "$kind" > "${0%/*}/$TMUX_PANE.ready"
+exec cat
+STUB
   chmod +x "$tmp/bin/$a"
 done
 
@@ -31,7 +41,19 @@ export TMUX="$S,1,0"
 . "$here/tests/helpers/cleanup.sh"
 # Invoked by the EXIT trap.
 # shellcheck disable=SC2329
-cleanup() { cleanup_test_server || return; rm -rf "$tmp"; }
+cleanup() {
+  local status=$? pane
+  if [ "$status" -ne 0 ]; then
+    tmux list-panes -a -F '#{pane_id} #{pane_height} #{history_size} #{@agent}' > "$tmp/panes.log" 2>&1 || true
+    for pane in $(tmux list-panes -a -F '#{pane_id}'); do
+      tmux capture-pane -p -S - -t "$pane" > "$tmp/$pane.screen" 2>&1 || true
+      tmux show-options -p -t "$pane" > "$tmp/$pane.options" 2>&1 || true
+    done
+  fi
+  cleanup_test_server || return
+  if [ "$status" -eq 0 ]; then rm -rf "$tmp"
+  else echo "Retained failure diagnostics: $tmp" >&2; fi
+}
 trap cleanup EXIT
 tmux set -g default-shell /bin/sh
 
@@ -41,25 +63,43 @@ bad() { echo "FAIL  $1"; fail=1; }
 pane_of() { tmux list-panes -a -F '#{pane_id} #{@agent}' | awk -v n="$1" '$2 == n { print $1 }'; }
 peers_of() { TMUX_PANE="$1" "$B/tmux-peers" 2>/dev/null | awk 'NR > 2 { print $1 }' | tr '\n' ' '; }
 
+# Readiness belongs to this exact stub/pane, independent of terminal history.
+wait_ready() {
+  local pane="$1" kind="$2" i
+  for ((i=0; i<100; i++)); do
+    if [ -f "$tmp/bin/$pane.ready" ] && grep -qx "$kind" "$tmp/bin/$pane.ready"; then return 0; fi
+    sleep .05
+  done
+  return 1
+}
+# The regression must prove the old visible-screen predicate is false after
+# output has been processed, while the real startup marker exists in history.
+check_scrolled() {
+  local pane="$1" kind="$2" i
+  for ((i=0; i<100; i++)); do
+    tmux capture-pane -p -S - -t "$pane" | grep -q '^SCROLL_COMPLETE$' && break
+    sleep .05
+  done
+  tmux capture-pane -p -S - -t "$pane" | grep -q '^SCROLL_COMPLETE$' || return 1
+  tmux capture-pane -p -S - -t "$pane" | grep -q "FAKE $kind" || return 1
+  ! tmux capture-pane -p -t "$pane" | grep -q "FAKE $kind"
+}
+
 # main (%0, depth 0) and secondary (%1, its depth-1 sub agent), connected.
 tmux set -p -t %0 @agent main
 . "$B/lib.sh"
 ensure_agent_ids "$tmp/empty-queue"
 CLAUDECODE=1 TMUX_PANE=%0 "$B/tmux-spawn" --exact --name secondary "assist" </dev/null >/dev/null
 coord="$(pane_of secondary)"
-for ((i=0; i<100; i++)); do
-  tmux capture-pane -p -t "$coord" | grep -q "FAKE claude" && break
-  sleep .05
-done
-tmux capture-pane -p -t "$coord" | grep -q "FAKE claude" || { bad "secondary stub not ready"; exit 1; }
+wait_ready "$coord" claude || { bad "secondary stub not ready"; exit 1; }
+check_scrolled "$coord" claude || { bad "secondary scroll regression not exercised"; exit 1; }
+ok "secondary ready with startup banner outside viewport"
 
 out="$(TMUX_PANE=%0 "$B/tmux-spawn" codex --for secondary --exact --name worker "build the parser" </dev/null)" || bad "spawn --for failed: $out"
 w="$(pane_of worker)"
-for ((i=0; i<100; i++)); do
-  tmux capture-pane -p -t "$w" | grep -q "FAKE codex" && break
-  sleep .05
-done
-tmux capture-pane -p -t "$w" | grep -q "FAKE codex" || { bad "worker stub not ready"; exit 1; }
+wait_ready "$w" codex || { bad "worker stub not ready"; exit 1; }
+check_scrolled "$w" codex || { bad "worker scroll regression not exercised"; exit 1; }
+ok "worker ready with startup banner outside viewport"
 if [ -n "$w" ]; then ok "worker spawned ($w)"; else bad "no worker pane"; exit 1; fi
 if [ "$(tmux show -pqv -t "$w" @state)" = idle ]; then ok "worker starts idle"; else bad "worker did not start idle"; fi
 listing="$(FZF_PROMPT='agents · all windows> ' "$B/tmux-agents" --list | tr '\0' '\n')"
@@ -87,7 +127,7 @@ case " $(peers_of "$w")" in *" secondary "*) ok "connected to the secondary" ;; 
 case " $(peers_of "$w")" in *" main "*) bad "connected to main" ;; *) ok "not connected to main" ;; esac
 case " $(peers_of %0)" in *" worker "*) bad "main lists the worker as a peer" ;; *) ok "main has no link to it" ;; esac
 
-screen="$(tmux capture-pane -p -J -t "$w" -S -50)"
+screen="$(tmux capture-pane -p -J -t "$w" -S -)"
 case "$screen" in *"FAKE codex"*) ok "it runs the requested agent" ;; *) bad "stub agent not started" ;; esac
 case "$screen" in *"build the parser"*|*"[request from"*) bad "it got a task" ;; *) ok "it starts without a task" ;; esac
 

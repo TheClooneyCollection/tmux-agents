@@ -28,7 +28,11 @@ tmux show-options -w -v -t "$TMUX_PANE" allow-rename > "$TEST_LOG/$TMUX_PANE.all
 printf '%s\0' "$@" > "$TEST_LOG/$TMUX_PANE.args"
 printf '%s\n' "$PWD" > "$TEST_LOG/$TMUX_PANE.cwd"
 printf '\033]2;chain-title-race\007\033kchain-rename-race\033\\'
+# Force the kind banner into history before declaring readiness.
+i=0
+while [ "$i" -lt 100 ]; do echo "scroll-output-$i"; i=$((i+1)); done
 printf 'FAKE READY\n'
+printf '%s\n' "${0##*/}" > "$TEST_LOG/$TMUX_PANE.ready"
 exec cat
 STUB
   chmod +x "$tmp/bin/$agent"
@@ -40,7 +44,19 @@ case "$S" in ''|*/default) echo 'ABORT: unsafe socket'; tmux -L "$sock" kill-ser
 export TMUX="$S,1,0"
 . "$here/tests/helpers/cleanup.sh"
 # shellcheck disable=SC2329
-cleanup() { cleanup_test_server || return; rm -rf "$tmp"; }
+cleanup() {
+  local status=$? pane
+  if [ "$status" -ne 0 ]; then
+    tmux list-panes -a -F '#{pane_id} #{pane_height} #{history_size} #{@agent}' > "$tmp/panes.log" 2>&1 || true
+    for pane in $(tmux list-panes -a -F '#{pane_id}'); do
+      tmux capture-pane -p -S - -t "$pane" > "$tmp/$pane.screen" 2>&1 || true
+      tmux show-options -p -t "$pane" > "$tmp/$pane.options" 2>&1 || true
+    done
+  fi
+  cleanup_test_server || return
+  if [ "$status" -eq 0 ]; then rm -rf "$tmp"
+  else echo "Retained failure diagnostics: $tmp" >&2; fi
+}
 trap cleanup EXIT
 tmux set -g default-shell /bin/sh
 tmux set -g automatic-rename on
@@ -79,12 +95,19 @@ def selected(session):
 def ready(pane, kind):
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
-        screen = tmux('capture-pane', '-p', '-t', pane)
-        if ('FAKE ' + kind in screen and 'FAKE READY' in screen
+        marker = root / (pane + '.ready')
+        history = tmux('capture-pane', '-p', '-S', '-', '-t', pane)
+        if (marker.exists() and marker.read_text().strip() == kind
+                and 'FAKE READY' in history
                 and field(pane, 'pane_title') == 'chain-title-race'):
+            # Negative control: the previous viewport predicate misses this
+            # fully initialized stub after deterministic output scrolling.
+            assert 'FAKE ' + kind in history, (pane, history)
+            screen = tmux('capture-pane', '-p', '-t', pane)
+            assert 'FAKE ' + kind not in screen, (pane, screen)
             return
         time.sleep(.025)
-    raise AssertionError(('stub not ready', pane, screen))
+    raise AssertionError(('stub not ready', pane, history))
 
 def launch(args, *, name, cwd=project, kind='claude', environment=env, target=None):
     source_before, dest_before = selected('source'), selected('destination')
