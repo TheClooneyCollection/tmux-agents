@@ -89,6 +89,20 @@ check 'closed command record returns after pane exit' has "$tmp/closed" command:
 "$B/tmux-agents" --command-info command:c000000000001 >"$tmp/details"
 check 'closed details include full raw command' grep -q 'printf command-c000000000001' "$tmp/details"
 check 'closed details do not offer resume' grep -q 'cannot be reopened' "$tmp/details"
+check 'details show readable result' grep -q '^Result: ok$' "$tmp/details"
+check 'details show readable directory' grep -Fxq "Directory: $tmp" "$tmp/details"
+check 'independent command owner is clear' grep -q '^Owner: independent$' "$tmp/details"
+check 'details omit internal storage keys' test "$(grep -Ec '^(command_id|pane|origin_window|created|exit_code)=' "$tmp/details" || true)" = 0
+"$B/tmux-agents" --command-info command:c000000000002 >"$tmp/owned-details"
+check 'owned command identifies owner' grep -q '^Owner: main-b$' "$tmp/owned-details"
+check 'failed command identifies result' grep -q '^Result: failed 7$' "$tmp/owned-details"
+printf 'printf first\n\tprintf 中文\n\033]0;unsafe-title\007\033[2J\r\302\235bad-c1\n' >"$d/c000000000001.command"
+printf 'name=preview\033[2J\007\n' >>"$d/c000000000001.record"
+"$B/tmux-agents" --command-info command:c000000000001 >"$tmp/safe-details"
+check 'preview preserves multiline command first line' grep -q '^printf first$' "$tmp/safe-details"
+check 'preview preserves tabs and Unicode' grep -q $'^\tprintf 中文$' "$tmp/safe-details"
+check 'preview strips terminal controls from metadata and command' test "$(LC_ALL=C tr -cd '\000-\010\013-\037\177' <"$tmp/safe-details" | wc -c | tr -d ' ')" = 0
+check 'preview neutralizes encoded C1 OSC' test "$(grep -c $'\302\235' "$tmp/safe-details" || true)" = 0
 # Capture one list build: records share the same stat and awk process.
 mkdir "$tmp/bin"
 export COMMAND_UI_LOG="$tmp/calls"

@@ -455,11 +455,24 @@ case "${1:-}" in
     sock="${TMUX%%,*}"
     d="${XDG_STATE_HOME:-$HOME/.local/state}/tmux-agents/${sock##*/}/commands"
     [ -f "$d/$n.record" ] || exit 0
-    printf 'Command %s\n\n' "$n"
-    cat "$d/$n.record"
-    printf '\nCommand text:\n'
-    [ ! -f "$d/$n.command" ] || cat "$d/$n.command"
-    printf '\n\nctrl-x: clear command; saved commands cannot be reopened\n'
+    {
+      awk '
+        { at=index($0,"="); if (at) field[substr($0,1,at-1)]=substr($0,at+1) }
+        END {
+          print "Command: " field["name"]
+          print "Result: " field["status"]
+          print "Directory: " field["dir"]
+          print "Owner: " (field["parent"]=="" ? "independent" : (field["parent_name"]!="" ? field["parent_name"] : "unavailable"))
+          print "\nCommand text:"
+        }
+      ' "$d/$n.record"
+      [ ! -f "$d/$n.command" ] || cat "$d/$n.command"
+      printf '\n\nctrl-x: clear command; saved commands cannot be reopened\n'
+    } | LC_ALL=C awk '
+      # Keep tabs, newlines and UTF-8 text, but make terminal controls inert.
+      # This covers ESC/OSC, BEL, CR, DEL and UTF-8 encoded C1 controls.
+      { gsub(/\302[\200-\237]/,"?"); gsub(/[\000-\010\013-\037\177]/,"?"); print }
+    '
     exit 0
     ;;
   # Preview of a closed sub agent: what reopening it would bring back.
