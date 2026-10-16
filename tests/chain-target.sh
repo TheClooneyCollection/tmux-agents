@@ -132,8 +132,13 @@ outside.pop('TMUX', None)
 outside.pop('TMUX_PANE', None)
 launch(['--target', 'destination:8', project], name=project.name,
        environment=outside, target='destination')
+# These calls must exercise TMUX itself, not the wrapper's forced -L.
+# The unset-TMUX case above keeps its wrapper to avoid the user's server.
+assert socket and Path(socket).name != 'default' and Path(socket).is_socket(), socket
+real_path = os.pathsep.join(part for part in outside['PATH'].split(os.pathsep)
+                            if part != str(root / 'bin'))
 for socket_env in (socket, socket + ',1,0'):
-    no_pane = dict(outside, TMUX=socket_env)
+    no_pane = dict(outside, TMUX=socket_env, PATH=real_path)
     launch(['--target', 'destination', project], name=project.name,
            environment=no_pane, target='destination')
 
