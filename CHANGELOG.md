@@ -2,6 +2,11 @@
 
 ## v1.16.0 (2026-10-16)
 
+- **Chain help.** `tmux-agents start chain --help` and `-h` now print usage and succeed without needing a tmux server.
+
+- **Commands in shell popups.** `prefix + C-s` now chooses from saved fish/bash/zsh history or accepts a new command; plain shell mode moves to `prefix + S`. `@tmux_agents_shell_key` keeps its meaning but defaults to `S`; the new `@tmux_agents_command_key` defaults to `C-s`. Re-source the configuration after updating; both shortcuts support environment overrides and `none`. Agents can run `tmux-shell --from NAME --command CMD` directly.
+- Successful commands show a configurable countdown (three seconds by default); any key keeps the pane open as an interactive shell. Failures stay open with a shell prompt. Command/status records remain in the panel after the pane exits; `ctrl-x` clears them, and owner dismissal clears owned records. These are not resumable agent sessions. The history picker requires Python 3 and fzf.
+
 - **Target and name chain windows.** `tmux-agents start chain [DIR] --target session[:index] --name NAME` creates a detached window in an existing session, including from outside tmux; a bare session selects the next free index. Without a target, the launcher still opens and focuses a window in the current session. The default name remains the directory basename (`root` for `/`). Window renaming is disabled before startup. Flags can appear in any order, all role choices are validated before creation, and success prints exactly the new pane ID plus a newline. These new options are a minor release feature.
 
 ## v1.15.0 (2026-10-16)

@@ -8,6 +8,7 @@ usage() {
   echo '       tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--secondary AGENT] [--worker AGENT]'
 }
 case "${1:-}" in -h|--help) usage; exit 0 ;; '') usage >&2; exit 1 ;; esac
+case "${1:-}:${2:-}" in chain:-h|chain:--help) usage; exit 0 ;; esac
 require_tmux
 resolve_codex_homes codex_homes
 # Child panes get the caller-resolved profile mapping, not a stale server value.

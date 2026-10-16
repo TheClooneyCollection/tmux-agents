@@ -59,19 +59,27 @@ Saying “start the chain” to an existing top-level agent keeps it as main. Ro
 
 ## Shell panes
 
-Press `prefix + C-s` to create an independent shell in the opener's working directory. It runs in a hidden `agents-<project>` session and opens immediately in a popup. Press your prefix, then Ctrl-S. The lowercase `prefix + s` keeps tmux's session picker. [Configure the shortcut](configuration.md#shell-popup-key) with `@tmux_agents_shell_key` before sourcing the configuration; `none` disables it.
+Press `prefix + C-s` to choose a command from saved shell history or type a new command. The picker supports fish, bash and zsh, deduplicated newest first. Enter accepts the selected history entry, or your query when nothing matches. Alt-Enter always runs the query; Esc cancels without creating a pane. The history picker requires Python 3 and fzf.
+
+Press `prefix + S` for a plain interactive shell. Both modes run in a hidden `agents-<project>` session, in the opener's current directory, and show a popup. The lowercase `prefix + s` keeps tmux's session picker. [Configure both shortcuts](configuration.md#shell-popup-key) before sourcing the tmux configuration; `none` disables either one.
 
 ```sh
 tmux-shell [--from AGENT] [--client CLIENT] [--pane OPENER]
+tmux-shell --from ME --command 'printf "%s\n" "hello world"'
+tmux-shell --pick
 ```
 
-`--client` selects the client for the popup. `--pane` selects the opener and working directory; it does not assign ownership. A shell created by the user without `--from` stays independent even when its opener is an agent pane. Agents always pass their actual name with `tmux-shell --from ME`: that shell belongs to the agent and closes when its owner is recursively dismissed.
+Commands run through the configured default shell, so fish syntax and shell functions work as they do in that shell's command environment. Pass the entire command as one argument; quoting, dollar signs, semicolons and newlines are command data until that shell executes them. Agents pass `--command` directly instead of opening the picker.
 
-Press `prefix + d` to detach and leave the shell running. `prefix + a` shows shells distinctly; independent shells appear in their opener's window scope, and owned shells follow their owner. Enter reopens the running shell popup and `ctrl-x` closes it. You can also type `exit` inside the shell. Exit removes it entirely: shells have no closed records or resume, no tasks or delegation, no agent permission states and no worked-time counters.
+A command exiting zero shows `ok` and counts down for three seconds before closing. Press any key during the countdown to keep the pane and enter an interactive shell. A nonzero exit shows `failed N` and immediately leaves an interactive prompt in the same working directory. Configure the nonnegative integer `@tmux_agents_shell_close_secs` or `TMUX_AGENTS_SHELL_CLOSE_SECS`; `0` closes successful commands immediately.
 
-History is whatever your configured shell normally saves. There is no dedicated saved-command log; forced closure with `ctrl-x` or owner dismissal may lose history that the shell has not written. Exit normally when you want the shell to flush its history according to its own configuration.
+`--client` selects the popup client. `--pane` selects the opener and directory, never ownership. User-created panes are independent, even when opened from an agent pane. Agents always supply their actual name with `--from ME`; dismissing an owner recursively closes its command and shell panes and clears owned command records.
 
-Shells show only their name in the pane border and are not listed as agent peers. `tmux-ask` refuses shell targets before delivering text, including `--any`, `--reply` and `--retry`. `tmux-connect`, `tmux-rename` and `tmux-spawn --for` or `--split` also refuse shell targets. `tmux-peek --from ME SHELL` may read a shell owned by you or one of your descendants.
+`prefix + d` detaches while work continues. `prefix + a` shows command text and `running`, `ok` or `failed N`. Enter reopens a live pane. After a command pane exits, its result stays listed until `ctrl-x` clears it; a completed record only shows details and cannot reopen or rerun a command. `ctrl-x` on a live command closes it and clears its record. Plain shells leave no record when they exit. Command records are not agent conversations and have no resume, task protocol or worked-time accounting.
+
+The picker reads only saved history files; commands still buffered by another shell are not visible. `HISTFILE` overrides bash/zsh defaults when exported; fish uses its exported history name and XDG data directory. Timestamped bash history can preserve multiline entries; without timestamps each line is treated as a separate entry because command boundaries are ambiguous. History is never sourced or executed while loading, and unsupported shells still allow a new query. This records command text and result, not terminal output or a transcript of later interactive commands.
+
+All shell message and target guards also apply to command panes. Borders show only their name; they are not agent peers. `tmux-ask` refuses them, including `--any`, `--reply` and queued retries. `tmux-connect`, `tmux-rename` and `tmux-spawn --for` or `--split` refuse shell targets. `tmux-peek --from ME SHELL` may read a live shell owned by you or one of your descendants.
 
 ## Connecting agents
 

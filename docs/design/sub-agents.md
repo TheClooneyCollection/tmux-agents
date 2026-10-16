@@ -37,13 +37,11 @@ What `--run` sets up (hooks, pins and profile setup are shared with `tmux-agents
 
 ## Shell panes
 
-`tmux-shell` places an interactive shell in the hidden project session and opens its popup immediately. Shells share popup navigation and the list with agents. They have a distinct shell row and no agent state, permission attention, task/delegation protocol or worked-time accounting. The list build must retain its existing snapshot and process budget when including shells.
+`tmux-shell` opens a plain shell; `--command CMD` runs a command, and `--pick` selects history or a query first. Both use hidden project windows, `@shell=1`, explicit `--from` ownership, and opener directory/window scope. They have no agent identity, conversation record, task protocol or work counters. Message delivery and agent-target operations reject them; borders show plain names and peers exclude them. Peek permits only owned descendant shells.
 
-Ownership and placement are separate: `--from AGENT` explicitly sets an owner, while `--pane OPENER` selects the opener and directory. User-created shells remain independent even if opened from an agent. Independent shells use their opener's window for list scope; owned shells follow their owner's subtree and recursive dismissal.
+Command panes additionally carry a command ID, sanitized display command, status and exit code. Their separate per-socket `commands/` records store command, owner, origin, directory and result, never a resumable agent conversation. The list reads these records with session records in one batch and uses its one pane snapshot to suppress duplicate live/finished rows. Closed results persist until `ctrl-x`; owner dismissal removes owned records. Plain shells remain ephemeral. Status is `running`, `ok` or `failed N`, independent of agent `@state`.
 
-Detaching with `prefix + d` keeps the shell running. Enter in the list reattaches its popup; `ctrl-x` or shell exit removes the pane. Shells do not enter the closed-record or resume paths and do not persist agent session records. History belongs to the configured shell, with no extra command log; forced closure need not flush it. See the [shell pane decision](../decisions/2026-10-16-shell-panes.md) and [usage](../guide.md#shell-panes).
-
-Shells show only their name in the pane border and are not listed as agent peers. `tmux-ask` refuses shell targets before delivering text, including `--any`, `--reply` and `--retry`. `tmux-connect`, `tmux-rename` and `tmux-spawn --for` or `--split` also refuse shell targets. `tmux-peek --from ME SHELL` may read a shell owned by you or one of your descendants.
+A runner executes the preserved command through the configured shell. Success starts the visible configurable countdown, with any key preserving an interactive shell; failure enters an interactive shell without a timer. Metadata initialization is batched, shell startup is gated until initialized, and popup scheduling precedes deferred border refresh. The saved-history picker never evaluates history text. See the [command-mode decision](../decisions/2026-10-16-command-shell-panes.md) and [usage](../guide.md#shell-panes).
 
 ## Browsing: `tmux-agents`
 

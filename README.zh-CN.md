@@ -60,7 +60,7 @@ npx skills add TheClooneyCollection/tmux-agents -g
 
 ### 手动安装
 
-需要 tmux 3.2+ 和 bash。agent 列表（`prefix + a`）还需要 `fzf`：macOS 使用 `brew install fzf`，Debian/Ubuntu 使用 `apt install fzf` 安装。其他命令无需 fzf 也能使用。
+需要 tmux 3.2+ 和 bash。agent 列表和命令选择器还需要 `fzf`：macOS 使用 `brew install fzf`，Debian/Ubuntu 使用 `apt install fzf` 安装。历史命令选择器另需 Python 3。普通 shell 模式和直接执行命令无需 fzf。
 
 ```sh
 git clone https://github.com/TheClooneyCollection/tmux-agents.git
@@ -87,7 +87,7 @@ cd tmux-agents
 <details>
 <summary>每一项是做什么的</summary>
 
-- **tmux：** `prefix + a`（agent 列表）、`prefix + A`（连接）、`prefix + C-s`（shell）、子 agent 状态行，以及刷新边框、响铃提醒和发送排队消息的 hooks。如果命令没有链接到 `~/.local/bin`，在 `source-file` 那行之前加上 `%hidden TMUX_AGENTS_BIN="/那个/目录"`。
+- **tmux：** `prefix + a`（agent 列表）、`prefix + A`（连接）、`prefix + C-s`（命令）、`prefix + S`（shell）、子 agent 状态行，以及刷新边框、响铃提醒和发送排队消息的 hooks。如果命令没有链接到 `~/.local/bin`，在 `source-file` 那行之前加上 `%hidden TMUX_AGENTS_BIN="/那个/目录"`。
 - **Claude：** agent 发消息、查看、spawn、报告进度、给自己或后代改名、关闭自己的子 agent 时都不用再弹确认。`tmux-connect`（不带 `--from`）、`tmux-disconnect`、不带参数的 `tmux-dismiss` 和不带 `--from` 的 `tmux-rename` 仍然由你来操作，照样会询问。
 - **Codex：** 使用 `tmux-agents start codex`（或已配置的 profile）固定身份并跟踪回合。可选 wrapper 只在直接输入 `codex` 时固定身份，不提供状态跟踪。fish 用户把函数复制到 `~/.config/fish/functions/`；bash/zsh 用户在 `~/.bashrc` 或 `~/.zshrc` 里 `source` 那个 sh 文件。启动 hooks 按进程传入，不修改 Claude 或 Codex 的全局 hook 配置。
 - **可选：** 在 `CLAUDE.md` / `AGENTS.md` 里告诉 agent 所有子 agent 都用 `tmux-spawn` 开。skill 里有具体说明。
@@ -129,7 +129,7 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 
 直接用自然语言告诉 agent 要做什么，它会执行下面带 `--from` 的示例。`ME`、`PEER` 和 `CHILD` 分别代表它自己的名字、已连接 agent 的名字，以及命令打印的完整子 agent 名字。启动和配置命令则在 tmux 的 shell 中运行。
 
-- **保留一个持续运行的项目 shell。** 按 `prefix + C-s` 打开独立 shell popup，再按 `prefix + d` 分离。用 `prefix + a` 找回它，Enter 重新打开，`ctrl-x` 关闭。见 [shell pane](docs/guide.md#shell-panes)。
+- **运行项目命令。** 按 `prefix + C-s` 选择历史命令或输入新命令；`prefix + S` 打开普通 shell。命令成功后短暂倒计时关闭，失败则留下 shell 提示符。用 `prefix + a` 查看结果，`ctrl-x` 清除记录。见 [shell pane](docs/guide.md#shell-panes)。
 - **跟踪自己正在使用的 agent。** 运行 `tmux-agents start claude` 或 `tmux-agents start codex`，即可记录状态和工作时长。见[启动 agent](docs/guide.md#starting-agents)。
 - **让另一个 agent 帮忙 review。** 同一窗口的另一个 pane 已有 Codex 时，对 Claude 说“连接 codex，让它 review 当前 diff”。它会先运行 `tmux-connect --from ME codex`，再运行 `tmux-ask --from ME PEER "Review the current diff"`。也可以用 `prefix + A` 连接 pane。见[连接 agent](docs/guide.md#connecting-agents)。
 - **派出一个能随时查看的子 agent。** 对它说“开一个 Codex 子 agent 给 parser 加测试”。它会运行 `tmux-spawn codex --from ME --name parser-tests "Add parser tests"`；按 `prefix + a` 就能浏览它的 pane 和实时预览。见[子 agent](docs/guide.md#sub-agents)。
@@ -144,7 +144,8 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 | --- | --- |
 | `prefix + a` | agent 列表，带实时预览 |
 | `prefix + A` | 把当前 pane 连接到另一个 pane（`ctrl-a`：任意窗口） |
-| `prefix + C-s` | 新建一个独立 shell popup（[可配置](docs/configuration.md#shell-popup-key)） |
+| `prefix + C-s` | 选择或输入命令（[可配置](docs/configuration.md#shell-popup-key)） |
+| `prefix + S` | 新建一个独立 shell popup（[可配置](docs/configuration.md#shell-popup-key)） |
 | `prefix + d` | 分离 popup，pane 继续运行；在列表中则关闭列表 |
 
 列表默认显示当前窗口及其下属 agent，所有窗口中需要你处理的子 agent 和成员都置顶。
@@ -166,7 +167,7 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 | `tmux-connect` | 给当前 pane 命名并连接到另一个 pane |
 | `tmux-rename` | 修改 agent 标签，保留身份、历史和连接 |
 | `tmux-ask` | 给已连接的 agent 发消息 |
-| `tmux-shell` | 打开 shell popup；`--from NAME` 指定所属 agent |
+| `tmux-shell` | 打开 shell 或运行 `--command CMD`；`--from NAME` 指定所属 agent |
 | `tmux-spawn` | 在隐藏窗口或 `--split` 分屏中启动子 agent，或用 `--member` 创建长期成员 |
 | `tmux-agents` | agent 列表（`prefix + a`）；`start` 启动可跟踪的 agent 或 chain；`chain-config` 查询角色选择 |
 | `tmux-peers`、`tmux-peek` | 查看连接关系；读取另一个 pane 的内容 |

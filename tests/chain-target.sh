@@ -114,6 +114,16 @@ def launch(args, *, name, cwd=project, kind='claude', environment=env, target=No
     print('ok   ', args or ['default chain'])
     return pane
 
+# Chain help succeeds before it needs a caller pane or server connection.
+for help_flag in ('--help', '-h'):
+    help_env = dict(env, TMUX='/nonexistent/tmux-chain-help-socket,1,0')
+    help_env.pop('TMUX_PANE', None)
+    result = subprocess.run(['/bin/bash', launcher, 'chain', help_flag],
+                            env=help_env, capture_output=True)
+    assert result.returncode == 0, (help_flag, result.stderr)
+    assert b'start chain' in result.stdout and result.stderr == b''
+    print('ok    chain help', help_flag)
+
 # No role flags exercises empty role-options under Bash 3.2.
 launch([], name=project.name)
 launch(['--name', "window's label", '--target', 'destination'],

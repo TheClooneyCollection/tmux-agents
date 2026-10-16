@@ -8,7 +8,9 @@ set -g @tmux_agents_name_format exact
 
 | Option | Environment override | Default | What it does |
 | --- | --- | --- | --- |
-| `@tmux_agents_shell_key` | `TMUX_AGENTS_SHELL_KEY` | `C-s` | Shell popup key after the prefix; `none` disables. Set before sourcing the config, then re-source to apply changes. |
+| `@tmux_agents_shell_key` | `TMUX_AGENTS_SHELL_KEY` | `S` | Plain shell popup key; `none` disables. Set before sourcing, then re-source. |
+| `@tmux_agents_command_key` | `TMUX_AGENTS_COMMAND_KEY` | `C-s` | History command picker key; `none` disables. Set before sourcing, then re-source. |
+| `@tmux_agents_shell_close_secs` | `TMUX_AGENTS_SHELL_CLOSE_SECS` | `3` | Successful command countdown in whole seconds; `0` closes immediately. Any key keeps the pane open. |
 | `@tmux_agents_name_format` | `TMUX_AGENTS_NAME_FORMAT` | `prefixed` | Given-name format: `exact` or `prefixed` |
 | `@tmux_agents_sub_auto` | `TMUX_AGENTS_SUB_AUTO` | `on` | Spawned and resumed Claude/Codex agents, including members: `on` adds auto permission flags; `off` uses agent defaults. Does not affect `start`. |
 | `@tmux_agents_chain_main` | `TMUX_AGENTS_CHAIN_MAIN` | `claude` | Main agent for a new `start chain` window |
@@ -28,7 +30,7 @@ set -g @tmux_agents_name_format exact
 | `@tmux_agents_ask_enter_delay` | `TMUX_ASK_ENTER_DELAY` | `0.5` | Seconds between paste and Enter |
 | `@tmux_agents_connect_highlight` | `TMUX_CONNECT_HIGHLIGHT` | `bg=colour24` | Style of the highlighted connection target |
 
-`TMUX_AGENTS_CODEX_HOMES` also keeps its tmux global-environment fallback when neither a local override nor the option is set. Settings are read once per command; restart an existing picker or chip daemon to apply changes to its cached settings. Set overrides after sourcing `tmux-agents.conf`, which installs the chip FPS default, except for `@tmux_agents_shell_key`: set that before sourcing, because its binding is installed at source time. Internal pane state and test hooks are not user settings.
+`TMUX_AGENTS_CODEX_HOMES` also keeps its tmux global-environment fallback when neither a local override nor the option is set. Settings are read once per command; restart an existing picker or chip daemon to apply changes to its cached settings. Set overrides after sourcing `tmux-agents.conf`, which installs the chip FPS default, except for `@tmux_agents_shell_key` and `@tmux_agents_command_key`: set them before sourcing, because their bindings are installed at source time. Internal pane state and test hooks are not user settings.
 
 With `sub_auto` on, `tmux-spawn` adds Claude's `--permission-mode auto` or Codex's `-c approvals_reviewer="auto_review"`. With it off, neither flag is added. The setting applies to new and resumed Claude/Codex agents, including members. Other executables keep their own permission behavior; no permission flags or rules are added.
 
@@ -36,16 +38,20 @@ With `sub_auto` on, `tmux-spawn` adds Claude's `--permission-mode auto` or Codex
 
 ## Shell popup key
 
-The default is `prefix + C-s` (press your prefix, then Ctrl-S). Set `@tmux_agents_shell_key` before sourcing the configuration to choose another tmux key, or use `none` to disable the shortcut:
+`prefix + C-s` opens the history command picker; `prefix + S` opens a plain shell. Configure both keys before sourcing the tmux configuration. The existing shell setting keeps its meaning but its default changes from `C-s` to `S`:
 
 ```tmux
-set -g @tmux_agents_shell_key C-s
+set -g @tmux_agents_shell_key S
+set -g @tmux_agents_command_key C-s
+set -g @tmux_agents_shell_close_secs 3
 source-file ~/path/to/tmux-agents/tmux/tmux-agents.conf
 ```
 
-A nonempty `TMUX_AGENTS_SHELL_KEY` in the environment of the binding command takes precedence over the option. Empty environment values or options fall through to the next source and do not disable the binding; use `none`. Disabling the shortcut leaves `tmux-shell` available.
+Nonempty `TMUX_AGENTS_SHELL_KEY` and `TMUX_AGENTS_COMMAND_KEY` override their options. Use `none` to disable either shortcut; empty values fall through to the next source. The two enabled keys must differ. To keep a custom plain-shell binding on `C-s`, move the command binding to another key or set it to `none`.
 
-Re-source the configuration after changing the setting. The configuration runs `tmux-agents --shell-binding` synchronously, installs the chosen key and remembers it. On re-source, it removes the previous key only if that key still holds tmux-agents' shell binding, preserving any replacement you made yourself. The lowercase `prefix + s` session picker is unchanged by the default. See [Shell panes](guide.md#shell-panes) for popup navigation and ownership.
+Re-source after changing a shortcut. `tmux-agents --shell-binding` validates both keys before applying them, remembers the installed bindings, and removes a previous key only if it still holds this tool's binding. Swapping the two shortcuts is supported; user replacements are preserved. The lowercase `prefix + s` session picker is unchanged. Disabling a shortcut leaves the CLI available.
+
+`@tmux_agents_shell_close_secs` is a nonnegative integer, overridden by nonempty `TMUX_AGENTS_SHELL_CLOSE_SECS`. It controls successful commands only, defaults to three seconds, and is read for each launch. `0` closes immediately. Any key during a positive countdown keeps the pane open as an interactive shell. Failed commands always leave an interactive shell. See [Shell panes](guide.md#shell-panes) for history, results and ownership.
 
 ## Codex profiles
 

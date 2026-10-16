@@ -6,6 +6,7 @@ Each file: the context, the decision, why, and what was rejected. Name new ones 
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-16 | [Commands in shell popups](2026-10-16-command-shell-panes.md) |
 | 2026-10-16 | [Targeting and naming chain windows](2026-10-16-chain-window-target.md) |
 | 2026-10-16 | [Shell panes in project popups](2026-10-16-shell-panes.md) |
 | 2026-10-13 | [Limited support for other agents](2026-10-13-other-agents.md) |
