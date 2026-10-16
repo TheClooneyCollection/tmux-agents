@@ -12,7 +12,14 @@ esac
 require_tmux
 ensure_agent_ids
 self="$(self_pane)"
-peer="$(resolve_peer "$self" "$1")"
+peer="$(find_pane "$1")"
+case "$1" in %*) peer="$(resolve_pane "$1")" ;; esac
+if [ -n "$peer" ] && [ "$(tmux show-option -pqv -t "$peer" @shell)" = 1 ]; then
+  require_agent_pane "$self"
+  pane_is_descendant "$peer" "$self" || die "'$1' is not your descendant shell"
+else
+  peer="$(resolve_peer "$self" "$1")"
+fi
 lines="${2:-40}"
 case "$lines" in *[!0-9]*|'') die "lines must be a number" ;; esac
 

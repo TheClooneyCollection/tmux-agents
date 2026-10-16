@@ -33,8 +33,10 @@ done
 require_tmux
 ensure_agent_ids
 pane="$(resolve_pane "$target")"
+require_agent_pane "$pane"
 if [ -n "$FROM_PANE" ]; then
   caller="$(resolve_pane "$FROM_PANE")"
+  require_agent_pane "$caller"
   [ "$caller" = "$pane" ] || pane_is_descendant "$pane" "$caller" || die "'$target' is not you or your descendant"
 fi
 new="$(format_given_name "$(pane_name_kind "$pane")" "$(tmux display-message -p -t "$pane" '#{pane_current_path}')" "$new" "$exact")"

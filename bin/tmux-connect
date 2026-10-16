@@ -45,7 +45,7 @@ connect_tsv() {
   if [ "$1" = all ]; then rows="$(tmux list-panes -a -F "$CONNECT_FMT")"
   else rows="$(tmux list-panes -t "$2" -F "$CONNECT_FMT")"; fi
   # Grouped sessions list a window once per session, so dedupe by pane id.
-  rows="$(printf '%s\n' "$rows" | awk -F '\t' -v s="$2" '$1 != s && !seen[$1]++')"
+  rows="$(printf '%s\n' "$rows" | awk -F '\t' -v OFS='\t' -v s="$2" '$1 != s && $9 != 1 && !seen[$1]++ { NF=8; print }')"
   [ -n "$rows" ] || return 0
   printf '%s\n' "$rows" | while IFS="$tab" read -r id win wname name cmd act path session; do
       if is_agents_session "$session"; then project="${session#"$AGENTS_PREFIX"-}"
@@ -80,7 +80,7 @@ connect_rows() {
         printf "%s %s%s\n  \033[38;5;245m%s\033[0m%c", I[i], sect, $0, A[i], 30 }'
 }
 
-CONNECT_FMT="#{pane_id}	#{session_name}:#{window_index}	#{window_name}	#{?@agent,#{@agent},(no name)}	#{pane_current_command}	#{?@activity,#{@activity},-}	#{pane_current_path}	#{session_name}"
+CONNECT_FMT="#{pane_id}	#{session_name}:#{window_index}	#{window_name}	#{?@agent,#{@agent},(no name)}	#{pane_current_command}	#{?@activity,#{@activity},-}	#{pane_current_path}	#{session_name}	#{?@shell,#{@shell},0}"
 
 # Picker reload: rows for the scope the prompt names.
 if [ "${1:-}" = "--rows" ]; then
@@ -138,6 +138,7 @@ trap cleanup EXIT
 require_tmux
 ensure_agent_ids
 self="$(self_pane)"
+require_agent_pane "$self"
 
 # --list: for agents, every pane they could connect to, by window.
 if [ "$list" -eq 1 ]; then
@@ -164,7 +165,7 @@ agent_mode=0
 # $1's session, a session:window target, or a project, by exact name first
 # and then by part of it.
 where_panes() {
-  local fmt='#{pane_id} #{pane_current_command} #{?@agent,#{@agent},-} #{?@parent,1,0}' tab rows exact
+  local fmt='#{pane_id} #{pane_current_command} #{?@agent,#{@agent},-} #{?@parent,1,0} #{?@shell,#{@shell},0}' tab rows exact
   case "$2" in
     *[!0-9]*) ;;
     *) tmux list-panes -t "$(tmux display-message -p -t "$1" '#{session_name}'):$2" -F "$fmt" 2>/dev/null \
@@ -175,8 +176,8 @@ where_panes() {
     *:*) tmux list-panes -t "$2" -F "$fmt" 2>/dev/null || die "no window '$2'"; return ;;
   esac
   tab="$(printf '\t')"
-  rows="$(tmux list-panes -a -F "#{pane_id}${tab}#{pane_current_command}${tab}#{?@agent,#{@agent},-}${tab}#{session_name}${tab}#{pane_current_path}${tab}#{?@parent,1,0}" \
-    | awk -F '\t' '!seen[$1]++' | while IFS="$tab" read -r id cmd name session path sub; do
+  rows="$(tmux list-panes -a -F "#{pane_id}${tab}#{pane_current_command}${tab}#{?@agent,#{@agent},-}${tab}#{session_name}${tab}#{pane_current_path}${tab}#{?@parent,1,0}${tab}#{?@shell,#{@shell},0}" \
+    | awk -F '\t' '$7 != 1 && !seen[$1]++' | while IFS="$tab" read -r id cmd name session path sub _shell; do
         if is_agents_session "$session"; then p="${session#"$AGENTS_PREFIX"-}"
         else p="$(agents_session_for "$path")"; p="${p#"$AGENTS_PREFIX"-}"; fi
         printf '%s\t%s %s %s %s\n' "$(printf '%s' "$p" | tr '[:upper:]' '[:lower:]')" "$id" "$cmd" "$name" "$sub"
@@ -206,9 +207,9 @@ resolve_agent_target() {
       if [ -n "$q" ]; then
         cands="$(where_panes "$1" "$q")" where="'$q'"
       else
-        cands="$(tmux list-panes -t "$1" -F '#{pane_id} #{pane_current_command} #{?@agent,#{@agent},-} #{?@parent,1,0}')" where="this window"
+        cands="$(tmux list-panes -t "$1" -F '#{pane_id} #{pane_current_command} #{?@agent,#{@agent},-} #{?@parent,1,0} #{?@shell,#{@shell},0}')" where="this window"
       fi
-      matches="$(printf '%s\n' "$cands" | awk -v s="$1" -v k="$base" 'NF && $1 != s && !seen[$1]++ && (tolower($2) == k || tolower($3) == k || index(tolower($3), k "-") == 1)')"
+      matches="$(printf '%s\n' "$cands" | awk -v s="$1" -v k="$base" 'NF && $5 != 1 && $1 != s && !seen[$1]++ && (tolower($2) == k || tolower($3) == k || index(tolower($3), k "-") == 1)')"
       # "The codex in stone-age" means its main agent, not one of its sub
       # agents (field 4 is 1 for those), unless only sub agents match.
       if printf '%s\n' "$matches" | awk '$4 == 0 { f = 1 } END { exit !f }'; then
@@ -312,8 +313,6 @@ connect_name() {
   else set_name "$1" "$2"; fi
 }
 
-[ -z "$as" ] || connect_name "$self" "$as"
-
 # Pick the target.
 if [ -z "$target" ] && [ "$agent_mode" -eq 1 ]; then
   die "pass what to connect to: codex, claude, a name or a pane id"
@@ -340,8 +339,8 @@ if [ -z "$target" ]; then
   else
     if [ "$scope" = all ]; then scope_args=(-a); else scope_args=(-t "$self"); fi
     # Grouped sessions list a window once per session, so dedupe by pane id.
-    list="$(tmux list-panes "${scope_args[@]}" -F '#{pane_id}	#{?@agent,#{@agent},-}	#{pane_current_command}	#{b:pane_current_path}	#{session_name}:#{window_index}.#{pane_index}' \
-      | awk -F '\t' -v s="$self" '$1 != s && !seen[$1]++')"
+    list="$(tmux list-panes "${scope_args[@]}" -F '#{pane_id}	#{?@agent,#{@agent},-}	#{pane_current_command}	#{b:pane_current_path}	#{session_name}:#{window_index}.#{pane_index}	#{?@shell,#{@shell},0}' \
+      | awk -F '\t' -v OFS='\t' -v s="$self" '$1 != s && $6 != 1 && !seen[$1]++ { NF=5; print }')"
     [ -n "$list" ] || die "no other panes in this window (try --all)"
     table="$( { printf 'ID\tNAME\tCOMMAND\tDIR\tWHERE\n'; printf '%s\n' "$list"; } | column -t -s "$(printf '\t')")"
     printf '%s\n' "$table" | sed -n 1p >&2
@@ -358,7 +357,9 @@ if [ "$agent_mode" -eq 1 ]; then
 else
   peer="$(resolve_pane "$target")"
 fi
+require_agent_pane "$peer"
 [ "$peer" != "$self" ] || die "cannot connect a pane to itself"
+[ -z "$as" ] || connect_name "$self" "$as"
 
 # Name whichever panes have no name yet, in one form.
 form=() todo=()

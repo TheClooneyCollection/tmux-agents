@@ -246,7 +246,7 @@ if [ -n "$resume$resume_id" ]; then
   [ -n "$sid" ] || die "can't reopen '$resume': its session id was never recorded (Codex records it when its first turn ends)"
   [ -d "$dir" ] || die "can't reopen '$resume': its directory $dir is gone"
   # Validate an explicitly supplied caller even when restoring a live parent.
-  [ -z "$FROM_PANE" ] || self_pane >/dev/null
+  [ -z "$FROM_PANE" ] || require_agent_pane "$(self_pane)"
   parent="" saved_parent="$(record_get "$resume_id" parent)"
   if [ -n "$saved_parent" ]; then parent="$(find_pane_by_id "$saved_parent")"; fi
   if [ -z "$parent" ]; then
@@ -256,6 +256,7 @@ if [ -n "$resume$resume_id" ]; then
       parent="$(self_pane)"
     fi
   fi
+  [ -z "$parent" ] || require_agent_pane "$parent"
   resume="$(unique_name "$resume")"
   pane="$(open_window "$(agents_session_for "$dir")" "$dir" "$resume" \
     "'$here/tmux-spawn' --run '$kind' '' '$sid' resume '$resume_id'" "${rdepth:-1}")"
@@ -278,6 +279,7 @@ if [ -n "$resume$resume_id" ]; then
 fi
 
 self="$(self_pane)"
+require_agent_pane "$self"
 
 if [ -n "$split_target" ]; then
   # Unlike general message targets, splits accept only exact names or pane ids.
@@ -285,6 +287,7 @@ if [ -n "$split_target" ]; then
   [[ $split_target =~ $pane_id_re ]] || [ -n "$(find_pane "$split_target")" ] \
     || die "--split needs an existing agent name or pane id: '$split_target'"
   split_pane="$(resolve_pane "$split_target")"
+  require_agent_pane "$split_pane"
 fi
 
 depth="${TMUX_AGENTS_DEPTH:-0}"
@@ -328,7 +331,11 @@ fi
 # It starts without a task; the brief goes to OWNER, who sends the first one.
 owner="$self" owner_name="$me" brief=""
 if [ -n "$for_name" ]; then
+  owner="$(find_pane "$for_name")"
+  if is_target "$for_name"; then owner="$(resolve_pane "$for_name")"; fi
+  [ -z "$owner" ] || require_agent_pane "$owner"
   owner="$(resolve_peer "$self" "$for_name")"
+  require_agent_pane "$owner"
   [ "$owner" != "$self" ] || die "--for names you; spawn without it"
   owner_name="$(pane_name "$owner")"
   brief="$task" task=""

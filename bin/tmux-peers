@@ -21,6 +21,11 @@ ensure_agent_ids
 self="$(self_pane)"
 name="$(pane_name "$self")"
 
+if [ "$(tmux show-option -pqv -t "$self" @shell)" = 1 ]; then
+  printf '%s\n' "${name:-$self}"
+  exit 0
+fi
+
 if [ -z "$name" ]; then
   if trusted_pane; then
     name="$(auto_name "$self")" || die "couldn't give pane $self a name"
