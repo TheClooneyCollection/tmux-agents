@@ -5,7 +5,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 . "$here/lib.sh"
 usage() {
   echo 'usage: tmux-agents start AGENT [--name NAME [--exact]] [-- ARGS...]'
-  echo '       tmux-agents start chain [DIR] [--main AGENT] [--secondary AGENT] [--worker AGENT]'
+  echo '       tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--secondary AGENT] [--worker AGENT]'
 }
 case "${1:-}" in -h|--help) usage; exit 0 ;; '') usage >&2; exit 1 ;; esac
 require_tmux
@@ -23,15 +23,36 @@ start_chain_work=0
 [ "${TMUX_START_CHAIN_WORK:-}" != 1 ] || start_chain_work=1
 unset TMUX_START_CHAIN_WORK
 kind="$1"; shift
-name="" window="" dir="$PWD"
+name="" window="" target="" dir="$PWD"
 explicit_exact=0
 if [ "$kind" = chain ]; then
-  if [ $# -gt 0 ] && [[ $1 != -* ]]; then dir="$1"; shift; fi
-  chain_options_parse "$@"
+  have_dir=0
+  role_args=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --target|--name)
+        [ $# -ge 2 ] && [ -n "$2" ] && [[ $2 != --* ]] || die "$1 needs a value"
+        case "$1" in
+          --target) target="$2" ;;
+          --name) window="$2" ;;
+        esac
+        shift 2 ;;
+      --main|--secondary|--worker)
+        [ $# -ge 2 ] && [ -n "$2" ] || die "$1 needs an agent"
+        role_args+=("$1" "$2"); shift 2 ;;
+      -*) die "unknown chain argument '$1'" ;;
+      *)
+        [ "$have_dir" = 0 ] || die 'only one directory is allowed'
+        dir="$1"; have_dir=1; shift ;;
+    esac
+  done
+  # Window arguments belong only to start; chain-config stays role-only.
+  chain_options_parse "${role_args[@]}"
   chain_roles_resolve
   [ -d "$dir" ] || die "directory does not exist: $dir"
   dir="$(cd "$dir" && pwd)"
-  window="${dir##*/}"; window="${window:-root}"
+  [ -n "$window" ] || window="${dir##*/}"
+  window="${window:-root}"
   start_chain_work=1
   prompt="start the chain. You are the main agent. Load the agent-chain skill.
 Role snapshot (role, agent, source):
@@ -55,8 +76,15 @@ else
 fi
 [ "$explicit_exact" != 1 ] || [ -n "$name" ] || die '--exact requires --name'
 name_kind_for "$kind" >/dev/null || die "unknown agent '$kind': not a configured profile or executable on PATH"
-pane="$(self_pane)"
 if [ -n "$window" ]; then
+  window_args=(-P -F '#{pane_id}')
+  if [ -n "$target" ]; then
+    window_args+=(-d)
+    case "$target" in *:*) ;; *) target="$target:" ;; esac
+  else
+    pane="$(self_pane)"
+    target="$(tmux display -p -t "$pane" '#{session_id}'):"
+  fi
   # tmux executes its command through a shell; quote each argument once.
   # The new pane then runs a child agent and returns to its own shell.
   args=(env "TMUX_AGENTS_CHAIN_MAIN=${TMUX_AGENTS_CHAIN_MAIN:-}" "TMUX_AGENTS_CHAIN_SECONDARY=${TMUX_AGENTS_CHAIN_SECONDARY:-}" "TMUX_AGENTS_CHAIN_WORKER=${TMUX_AGENTS_CHAIN_WORKER:-}" TMUX_START_NAME_EXACT=1 "TMUX_START_CHAIN_WORK=$start_chain_work" "TMUX_START_CODEX_HOMES=$codex_homes" "TMUX_SPAWN_BIN=${TMUX_SPAWN_BIN:-}" "XDG_STATE_HOME=${XDG_STATE_HOME:-$HOME/.local/state}" "$here/tmux-agents-start" "$kind")
@@ -71,10 +99,21 @@ if [ -n "$window" ]; then
   done
   shell="$(tmux show-options -gv default-shell)"
   shell_command="'${shell//\'/$quote_escape}'"
-  command="$command; exec $shell_command"
-  tmux new-window -t "$(tmux display -p -t "$pane" '#{session_id}'):" -n "$window" -c "$dir" "$command"
+  # wait-for remembers an early signal, so this has no startup timing race.
+  # Hold the agent until terminal titles and automatic renaming are disabled.
+  gate="tmux-agents-chain-$$-$RANDOM-$RANDOM"
+  command="tmux wait-for '$gate' && $command; exec $shell_command"
+  pane="$(tmux new-window "${window_args[@]}" -t "$target" -n "$window" -c "$dir" "$command")"
+  if ! tmux set-option -w -t "$pane" automatic-rename off ||
+     ! tmux set-option -w -t "$pane" allow-rename off ||
+     ! tmux wait-for -S "$gate"; then
+    tmux kill-pane -t "$pane" 2>/dev/null || true
+    die 'could not prepare the chain window'
+  fi
+  printf '%s\n' "$pane"
   exit 0
 fi
+pane="$(self_pane)"
 existing_name="$(pane_name "$pane")"
 if [ -n "$existing_name" ]; then
   # Gate before migration or cleanup: a daemon's pinned pane is not its tty.
