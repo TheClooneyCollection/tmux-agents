@@ -100,7 +100,8 @@ def launch(args, *, name, cwd=project, kind='claude', environment=env, target=No
     assert (root / (pane + '.auto')).read_text().strip() == 'off'
     assert (root / (pane + '.allow')).read_text().strip() == 'off'
     assert field(pane, 'window_name') == name, (pane, field(pane, 'window_name'), name)
-    assert (root / (pane + '.cwd')).read_text().strip() == str(cwd)
+    actual_cwd = (root / (pane + '.cwd')).read_text().strip()
+    assert Path(actual_cwd).resolve() == Path(cwd).resolve(), (actual_cwd, str(cwd))
     assert field(pane, '@agent') != name, 'window name leaked into agent identity'
     assert field(pane, '@agent').startswith(kind + '-'), field(pane, '@agent')
     if target:
