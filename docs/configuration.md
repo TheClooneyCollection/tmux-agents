@@ -89,6 +89,8 @@ tmux-agents start chain . --main codex --secondary claude --worker work
 
 The order of preference is this-chain explicit user choice or CLI flag, then an applicable user's `CLAUDE.md`/`AGENTS.md` role preference, then a non-empty environment override, then a non-empty tmux option, then the built-in default. The skill passes instruction-file preferences as explicit overrides; the CLI does not read Markdown. Conflicting instruction files follow the agent's normal instruction hierarchy.
 
+Window placement and naming are per-launch options: `--target session[:index]` creates a detached window in an existing session, and `--name NAME` overrides the directory-derived window name. These options can appear in any order with DIR and the role flags; they do not change role selection or validation. See [Starting agents](guide.md#starting-agents) for socket selection, output and examples.
+
 The main setting only selects the agent launched by `tmux-agents start chain`. The shell cannot apply instruction files that the main has not read yet, so configure that initial main with an option, environment override or `--main`. Saying “start the chain” to an existing top-level agent keeps that agent as main. To use a different main, launch a new chain window.
 
 ### Inspecting the choices

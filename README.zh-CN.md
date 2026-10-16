@@ -121,7 +121,7 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 4. 按 `prefix + a` 查看它。按 Enter 用 popup 打开，按 `prefix + d` 返回。
 5. 对原来的 agent 说："start the chain"。它会成为和你对话的 main agent，再开一个负责协调的 secondary 和一个负责实现的 worker，三个并排在你的窗口里（`agent-chain` skill）。
 
-在 shell 中运行 `tmux-agents start chain [DIR] [--main AGENT] [--secondary AGENT] [--worker AGENT]`，会在 DIR（默认当前目录）中新开窗口，以目录 basename 命名，并把启动 chain 的请求交给 Claude/Codex main。各角色都可使用 Claude、Codex、已配置的 profile 或 PATH 中的可执行文件 basename，默认是 `claude`/`claude`/`codex`。用 `tmux-agents chain-config --sources` 查看选择及来源。要再开一个独立 agent，可以手动分屏，在新 pane 中运行 `tmux-agents start codex`，再让任一 agent 连接对方。名称、profile、参数和退出行为见[启动 agent](docs/guide.md#starting-agents)。
+在 shell 中运行 `tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--secondary AGENT] [--worker AGENT]`，会在 DIR（默认当前目录）中新开窗口，以目录 basename（或 `--name NAME`）命名，并把启动 chain 的请求交给 Claude/Codex main。使用 `--target session[:index]` 可在已有 session 中后台创建窗口，也可从 tmux 外运行。成功时输出新 pane ID。各角色都可使用 Claude、Codex、已配置的 profile 或 PATH 中的可执行文件 basename，默认是 `claude`/`claude`/`codex`。用 `tmux-agents chain-config --sources` 查看选择及来源。要再开一个独立 agent，可以手动分屏，在新 pane 中运行 `tmux-agents start codex`，再让任一 agent 连接对方。名称、profile、参数和退出行为见[启动 agent](docs/guide.md#starting-agents)。
 
 也可以让 agent 带你走一遍：对它说 "tmux-agents quick start"。
 

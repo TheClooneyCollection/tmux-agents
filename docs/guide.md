@@ -29,10 +29,31 @@ Exiting saves work, clears agent state and returns to the shell. Reusing a named
 For another independent agent, split manually and run `start` there. For a connected helper, ask your agent to use `tmux-spawn --split`.
 
 ```sh
-tmux-agents start chain [DIR] [--main AGENT] [--secondary AGENT] [--worker AGENT]
+tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--secondary AGENT] [--worker AGENT]
 ```
 
-This opens a window named after DIR (default `$PWD`) and starts the selected main. A Claude/Codex main receives the chain request; other executables receive no initial prompt, so send the actual brief manually with `tmux-ask` after they reach their prompt. For Claude/Codex, the [agent-chain skill](../skills/agent-chain/SKILL.md) creates its secondary and worker members. Each role accepts Claude, Codex, a configured Codex profile or an executable basename on PATH; defaults are `claude`/`claude`/`codex`. Inspect them with `tmux-agents chain-config --sources`; see [Chain roles](configuration.md#chain-roles) for precedence and instruction-file preferences.
+This opens a window in DIR (default `$PWD`) and starts the selected main. Without `--target`, it opens and focuses the new window in the current tmux session. With `--target session[:index]`, it creates a detached window in an existing session without changing focus; a bare session uses its next free window index. Target mode needs no caller pane or `TMUX` variable when tmux can reach the existing server. The window name is `--name NAME`, or DIR's basename by default (`/` for the filesystem root). Both `automatic-rename` and `allow-rename` are disabled before the agent starts. Chain `--name` names the window; `start AGENT --name` names the agent pane.
+
+A Claude/Codex main receives the chain request; other executables receive no initial prompt, so send the actual brief manually with `tmux-ask` after they reach their prompt. For Claude/Codex, the [agent-chain skill](../skills/agent-chain/SKILL.md) creates its secondary and worker members. Each role accepts Claude, Codex, a configured Codex profile or an executable basename on PATH; defaults are `claude`/`claude`/`codex`. Inspect them with `tmux-agents chain-config --sources`; see [Chain roles](configuration.md#chain-roles) for precedence and instruction-file preferences.
+
+Options can appear before or after DIR. All three role choices are validated before creating the window. Success writes exactly the new pane ID followed by a newline to stdout; errors go to stderr with a nonzero exit status.
+
+```sh
+tmux-agents start chain . --target work --name review --worker codex
+tmux-agents start chain --target work:4 --name review . --main codex
+```
+
+These examples require an existing `work` session; `work:4` requires a free window index. There is no new socket flag. For a named server, use a `tmux -L NAME` wrapper on PATH, or set `TMUX` to that server's socket path. For isolated testing, obtain and validate the path before invoking the launcher (the named test server must already be running with stub agents):
+
+```sh
+if tmux -L chain-test has-session; then
+  chain_socket=$(tmux -L chain-test display-message -p '#{socket_path}')
+  case "$chain_socket" in
+    ''|*/default) echo 'Unsafe test socket' >&2 ;;
+    *) TMUX="$chain_socket" tmux-agents start chain . --target work --name review ;;
+  esac
+fi
+```
 
 Saying “start the chain” to an existing top-level agent keeps it as main. Role settings affect new chains only. Main keeps its permission defaults; Claude/Codex members use `sub_auto` (default `on`). Codex main has identity pins and turn-end notify, but no turn-start hook, so main reports progress for each new user task with `tmux-agent-report --from ME "<task>"`.
 
@@ -169,7 +190,7 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 | Command | Purpose |
 | --- | --- |
 | `tmux-agents start AGENT [-- AGENT ARGS]` | Launch an independent agent; Claude/Codex have tracking. |
-| `tmux-agents start chain [DIR] [--main AGENT] [--secondary AGENT] [--worker AGENT]` | Start a chain in a new window. |
+| `tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--secondary AGENT] [--worker AGENT]` | Start a chain in a new window. |
 | `tmux-connect [target] [--as NAME] [--all]` | User's connection picker or direct target. |
 | `tmux-connect --from ME TARGET` | Agent connection by type, name or pane. |
 | `tmux-rename --from ME PEER NAME [--exact]` | Rename yourself or a descendant. |
