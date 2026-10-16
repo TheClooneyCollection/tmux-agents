@@ -1,29 +1,146 @@
-#!/bin/sh
-# Check Python before starting the picker: Apple's launcher can open an installer.
-fail_python() {
+#!/bin/bash
+# Read shell history as data; fish owns its history format and session selection.
+set -uo pipefail
+pick=0 shell='' history_file='' output='' explicit_history=0 explicit_output=0
+fail() {
   printf 'tmux-shell-history: %s\n' "$1" >&2
-  shift
-  for arg do
-    if [ "$arg" = --pick ] && [ -t 0 ] && [ -t 2 ]; then
-      printf 'Press Enter to close. ' >&2
-      IFS= read -r _answer || :
-      break
-    fi
-  done
-  exit 127
-}
-
-python=$(command -v python3) || python=
-[ -n "$python" ] || fail_python 'Python 3 is required; install Python 3 and try again.' "$@"
-# -ef also catches symlinks and hard links to the Apple stub. xcode-select -p
-# only reads the selected developer directory; never execute the stub or xcrun.
-if [ "$python" -ef /usr/bin/python3 ] && [ -x /usr/bin/xcode-select ]; then
-  developer=$(/usr/bin/xcode-select -p 2>/dev/null) || developer=
-  real_python=$developer/usr/bin/python3
-  if [ -z "$developer" ] || [ ! -x "$real_python" ] || [ "$real_python" -ef /usr/bin/python3 ]; then
-    fail_python 'Python 3 is unavailable: Apple Command Line Tools are missing. Install Python 3 or the Command Line Tools, then try again.' "$@"
+  if [ "$pick" = 1 ] && [ -t 0 ] && [ -t 2 ]; then
+    printf 'Press Enter to close. ' >&2
+    IFS= read -r _answer || :
   fi
-  python=$real_python
+  exit 1
+}
+usage() {
+  echo 'usage: tmux-shell-history --shell SHELL [--history-file FILE] [--pick --output FILE]'
+  echo 'Enter: history / new query. Alt-Enter: query. Esc: cancel.'
+}
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --shell) [ "$#" -ge 2 ] || fail '--shell needs a shell'; shell=$2; shift 2 ;;
+    --shell=*) shell=${1#*=}; shift ;;
+    --history-file) [ "$#" -ge 2 ] || fail '--history-file needs a file'; history_file=$2; explicit_history=1; shift 2 ;;
+    --history-file=*) history_file=${1#*=}; explicit_history=1; shift ;;
+    --output) [ "$#" -ge 2 ] || fail '--output needs a file'; output=$2; explicit_output=1; shift 2 ;;
+    --output=*) output=${1#*=}; explicit_output=1; shift ;;
+    --pick) pick=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) fail "unknown option: $1" ;;
+  esac
+done
+[ -n "$shell" ] || fail '--shell is required'
+[ "$pick" = 0 ] || [ "$explicit_output" = 1 ] || fail '--pick requires --output'
+[ "$explicit_output" = 0 ] || [ "$pick" = 1 ] || fail '--output requires --pick'
+command -v perl >/dev/null 2>&1 || fail 'Perl is required to read command history.'
+umask 077
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/tmux-shell-history.XXXXXX") || fail 'cannot create temporary directory'
+trap 'rm -rf "$tmp"' EXIT
+trap 'exit 1' HUP INT TERM
+kind=${shell##*/}
+case "$kind" in
+  fish)
+    # An explicitly empty exported session disables history, even if config
+    # would otherwise set it. An explicit file is an independent override.
+    if [ "$explicit_history" = 1 ]; then
+      mkdir -p "$tmp/data/fish" || fail 'cannot prepare fish history'
+      if [ -f "$history_file" ] && [ -r "$history_file" ]; then
+        cp -- "$history_file" "$tmp/data/fish/tmux_agents_history_history" || fail 'cannot copy fish history'
+      fi
+      # Test/file overrides never source config or read the real history store.
+      XDG_CONFIG_HOME="$tmp/config" XDG_DATA_HOME="$tmp/data" fish_history=tmux_agents_history "$shell" --no-config -c 'history --null' >"$tmp/rows" 2>"$tmp/error" || fail "cannot read fish history: $(cat "$tmp/error")"
+    elif [ "${fish_history+x}" = x ] && [ -z "$fish_history" ]; then
+      : >"$tmp/rows"
+    else
+      "$shell" -c 'history --null' >"$tmp/rows" 2>"$tmp/error" || fail "cannot read fish history: $(cat "$tmp/error")"
+    fi
+    ;;
+  bash|zsh)
+    [ "$explicit_history" = 1 ] || history_file=${HISTFILE-"$HOME/.${kind}_history"}
+    perl - "$kind" "$history_file" >"$tmp/rows" <<'PERL' || fail 'cannot read shell history'
+use strict;
+use warnings;
+my ($shell, $path) = @ARGV;
+exit 0 unless length($path) && -f $path;
+open my $file, '<', $path or exit 0;
+binmode $file;
+local $/;
+my $raw = <$file> // '';
+my @lines = split /\n/, $raw, -1;
+pop @lines if @lines && $lines[-1] eq '';
+my @rows;
+if ($shell eq 'bash') {
+    if (grep { /^#[0-9]+$/ } @lines) {
+        my @current;
+        for my $line (@lines) {
+            if ($line =~ /^#[0-9]+$/) {
+                push @rows, join("\n", @current) if @current;
+                @current = ();
+            } else {
+                push @current, $line;
+            }
+        }
+        push @rows, join("\n", @current) if @current;
+    } else {
+        @rows = @lines;
+    }
+} else {
+    my $current = '';
+    for my $line (@lines) {
+        $line =~ s/^: [0-9]+:[0-9]+;// unless length $current;
+        if ($line =~ s/\\$//) {
+            $current .= "$line\n";
+        } else {
+            push @rows, $current . $line;
+            $current = '';
+        }
+    }
+    push @rows, $current if length $current;
+    s/\x83(.)/chr(ord($1) ^ 32)/ges for @rows;
+}
+my %seen;
+binmode STDOUT;
+for my $row (reverse @rows) {
+    print "$row\0" if $row =~ /\S/ && index($row, "\0") < 0 && !$seen{$row}++;
+}
+PERL
+    ;;
+  *) : >"$tmp/rows" ;;
+esac
+if [ "$pick" = 0 ]; then cat "$tmp/rows"; exit $?; fi
+command -v fzf >/dev/null 2>&1 || fail 'fzf is required to pick a command.'
+# User defaults can alter the wire protocol or execute preview commands.
+unset FZF_DEFAULT_OPTS FZF_DEFAULT_OPTS_FILE
+status=0
+fzf --read0 --print0 --print-query --expect=alt-enter --no-multi --no-sort \
+  --bind=enter:accept-or-print-query '--prompt=Command> ' \
+  '--header=Enter: history / new query | Alt-Enter: query | Esc: cancel' \
+  <"$tmp/rows" >"$tmp/picked" || status=$?
+# Bash 3.2 read -d preserves multiline records without putting NUL in variables.
+fields=() field=
+while IFS= read -r -d '' field; do fields[${#fields[@]}]=$field; done <"$tmp/picked"
+[ -z "$field" ] || exit 1
+count=${#fields[@]}
+[ "$count" -ge 1 ] && [ "$count" -le 3 ] || exit 1
+key=${fields[1]-}
+[ -z "$key" ] || [ "$key" = alt-enter ] || exit 1
+# Alt-Enter with no match returns 1 but still explicitly accepts the query.
+[ "$status" = 0 ] || { [ "$status" = 1 ] && [ "$key" = alt-enter ]; } || exit 1
+if [ "$count" = 1 ] || [ "$key" = alt-enter ] || [ -z "${fields[2]-}" ]; then
+  command=${fields[0]}
+else
+  [ -z "$key" ] || exit 1
+  command=${fields[2]}
 fi
-here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-exec "$python" "$here/tmux-shell-history.py" "$@"
+# Open only after validating the complete selection. Never follow an output
+# symlink; chmod the open descriptor so an existing output is also private.
+printf '%s' "$command" | perl -MFcntl=O_WRONLY,O_CREAT,O_NOFOLLOW -e '
+    use strict; use warnings;
+    binmode STDIN; local $/; my $command = <STDIN>;
+    exit 1 unless defined($command) && $command =~ /\S/ && index($command, "\0") < 0;
+    sysopen my $out, $ARGV[0], O_WRONLY | O_CREAT | O_NOFOLLOW, 0600
+        or die "tmux-shell-history: cannot write selection: $!\n";
+    chmod 0600, $out or die "tmux-shell-history: cannot protect selection: $!\n";
+    truncate $out, 0 or die "tmux-shell-history: cannot truncate selection: $!\n";
+    binmode $out;
+    print {$out} $command or die "tmux-shell-history: cannot write selection: $!\n";
+    close $out or die "tmux-shell-history: cannot close selection: $!\n";
+' -- "$output" || exit 1
