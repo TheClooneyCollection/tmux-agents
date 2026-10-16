@@ -1,8 +1,10 @@
 # Changelog
 
-## v1.15.0 (2026-10-16)
+## Unreleased
 
-- **Target and name chain windows.** `tmux-agents start chain [DIR] --target session[:index] --name NAME` creates a detached window in an existing session, including from outside tmux; a bare session selects the next free index. Without a target, the launcher still opens and focuses a window in the current session. The default name remains the directory basename (`/` for root). Window renaming is disabled before startup. Flags can appear in any order, all role choices are validated before creation, and success prints exactly the new pane ID plus a newline. These new options are a minor release feature.
+- **Target and name chain windows.** `tmux-agents start chain [DIR] --target session[:index] --name NAME` creates a detached window in an existing session, including from outside tmux; a bare session selects the next free index. Without a target, the launcher still opens and focuses a window in the current session. The default name remains the directory basename (`root` for `/`). Window renaming is disabled before startup. Flags can appear in any order, all role choices are validated before creation, and success prints exactly the new pane ID plus a newline. These new options are a minor release feature.
+
+## v1.15.0 (2026-10-16)
 
 - **Shell popups.** `prefix + C-s` or `tmux-shell` opens an independent shell in the hidden project session; `prefix + d` detaches it while it keeps running. Browse shells with `prefix + a`, reopen with Enter and close with `ctrl-x`. Agents use `tmux-shell --from NAME` to create owned shells that close with their owner. Shell exit removes the pane without a closed record or resume; history follows the configured shell, with no separate command log. Configure `@tmux_agents_shell_key` before sourcing the tmux configuration (`C-s` by default, `none` to disable; `TMUX_AGENTS_SHELL_KEY` overrides). Re-source to apply changes; the previous key is removed only if it still holds our binding.
 
