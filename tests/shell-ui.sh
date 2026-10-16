@@ -6,6 +6,7 @@ B="$here/bin"
 sock="tmux-agents-test-$$"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/tmux-agents-test.XXXXXX")"
 unset TMUX TMUX_PANE CLAUDECODE TMUX_AGENTS_KIND TMUX_AGENTS_PINNED
+unset TMUX_AGENTS_SHELL_KEY TMUX_AGENTS_COMMAND_KEY
 export XDG_STATE_HOME="$tmp/state"
 tmux -L "$sock" -f /dev/null new-session -d -s work -x 160 -y 60 -c "$tmp" cat
 tmux -L "$sock" has-session 2>/dev/null || { echo 'ABORT: test server not up'; exit 1; }
@@ -87,14 +88,14 @@ check 'viewer attaches to shell hidden session' grep -q 'attach-session -t =agen
 sed -n '/^run-shell .*--shell-binding/p' "$here/tmux/tmux-agents.conf" >"$tmp/binding.conf"
 tmux set-environment -g TMUX_AGENTS_BIN "$B"
 tmux source-file "$tmp/binding.conf"
-tmux list-keys -T prefix C-s >"$tmp/binding"
-check 'default C-s passes client and source pane' grep -q 'tmux-shell.*--client.*client_name.*--pane.*pane_id' "$tmp/binding"
+tmux list-keys -T prefix S >"$tmp/binding"
+check 'default S passes client and source pane' grep -q 'tmux-shell.*--client.*client_name.*--pane.*pane_id' "$tmp/binding"
 check 'binding creates independent shell without --from' test "$(grep -c -- --from "$tmp/binding" || true)" = 0
 tmux list-keys -T prefix s >"$tmp/default-binding"
 check 'lowercase s retains default session picker' grep -q choose-tree "$tmp/default-binding"
 tmux set -g @tmux_agents_shell_key F9
 tmux source-file "$tmp/binding.conf"
-check 're-source removes old C-s shortcut' test -z "$(tmux list-keys -T prefix C-s 2>/dev/null || true)"
+check 're-source removes old S shortcut' test -z "$(tmux list-keys -T prefix S 2>/dev/null || true)"
 check 'configured F9 opens shell' test -n "$(tmux list-keys -T prefix F9)"
 tmux set -g @tmux_agents_shell_key none
 tmux source-file "$tmp/binding.conf"

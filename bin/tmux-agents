@@ -57,7 +57,7 @@ list_agents() {
   ensure_agent_ids
   settings_get AGENTS_PREFIX TMUX_AGENTS_PREFIX @tmux_agents_session_prefix agents
   settings_get resume_days TMUX_AGENTS_RESUME_DAYS @tmux_agents_resume_days 7
-  snapshot="$(tmux list-panes -a -F 'P	#{pane_id}	#{?@agent,#{@agent},-}	#{pane_dead}	#{?@perm_since,#{@perm_since},-}	#{?@state,#{@state},-}	#{?@parent,#{@parent},-}	#{session_name}	#{?@activity,#{@activity},-}	#{pane_current_path}	#{session_name}:#{window_index}	#{?@attention_since,#{@attention_since},-}	#{?@msg_waiting_since,#{@msg_waiting_since},-}	#{window_id}	#{?@agent_id,#{@agent_id},-}	#{@state_since}	#{@worked}	#{@last_turn}	#{@turns}	#{@turn_start}	#{@started}	#{?@member,#{@member},0}	#{?@tracked,#{@tracked},0}	#{?@shell,#{@shell},0}	#{?@shell_origin_window,#{@shell_origin_window},-}')"
+  snapshot="$(tmux list-panes -a -F 'P	#{pane_id}	#{?@agent,#{@agent},-}	#{pane_dead}	#{?@perm_since,#{@perm_since},-}	#{?@state,#{@state},-}	#{?@parent,#{@parent},-}	#{session_name}	#{?@activity,#{@activity},-}	#{pane_current_path}	#{session_name}:#{window_index}	#{?@attention_since,#{@attention_since},-}	#{?@msg_waiting_since,#{@msg_waiting_since},-}	#{window_id}	#{?@agent_id,#{@agent_id},-}	#{@state_since}	#{@worked}	#{@last_turn}	#{@turns}	#{@turn_start}	#{@started}	#{?@member,#{@member},0}	#{?@tracked,#{@tracked},0}	#{?@shell,#{@shell},0}	#{?@shell_origin_window,#{@shell_origin_window},-}	#{?@shell_command_id,#{@shell_command_id},-}	#{?@shell_command,#{@shell_command},-}	#{?@shell_status,#{@shell_status},-}')"
   if [ -n "$client" ]; then
     clients="$(tmux list-clients -F '#{client_name}	#{window_id}')"
     while IFS="$tab" read -r c w; do [ "$c" != "$client" ] || { window="$w"; break; }; done <<<"$clients"
@@ -69,6 +69,7 @@ list_agents() {
   now="$(date +%s)"
   sock="${TMUX%%,*}"; dir="${XDG_STATE_HOME:-$HOME/.local/state}/tmux-agents/${sock##*/}/sessions"
   for f in "$dir"/*; do [ ! -f "$f" ] || files+=("$f"); done
+  for f in "${dir%/sessions}/commands"/*.record; do [ ! -f "$f" ] || files+=("$f"); done
   if [ ${#files[@]} -gt 0 ]; then
     case "$OSTYPE" in
       darwin*|*bsd*) mtimes="$(stat -f "%m$tab%N" "${files[@]}")" ;;
@@ -77,7 +78,7 @@ list_agents() {
     raw="$(LIST_MTIMES="$mtimes" awk -v now="$now" -v keep="$(( resume_days * 86400 ))" -f "$here/tmux-agents-records.awk" "${files[@]}")"
     while IFS="$tab" read -r tag rest; do
       if [ "$tag" = X ]; then expired+=("$rest" "$dir/.record-${rest##*/}.lock")
-      elif [ "$tag" = R ]; then records="$records$tag$tab$rest$nl"
+      elif [ "$tag" = R ] || [ "$tag" = C ]; then records="$records$tag$tab$rest$nl"
       fi
     done <<<"$raw"
   fi
@@ -96,7 +97,7 @@ list_agents() {
   # Deduplicate directories across live panes and records before git lookup.
   paths="$(printf '%s\n%s' "$snapshot" "$records" | awk -F '\t' -v prefix="$AGENTS_PREFIX-" '
     $1 == "P" && index($8,prefix) != 1 { path=$10; if (!seen[path]++) print path }
-    $1 == "R" { path=$6; if (!seen[path]++) print path }')"
+    ($1 == "R" || $1 == "C") { path=$6; if (!seen[path]++) print path }')"
   while IFS= read -r path; do
     [ -n "$path" ] || continue
     root="$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" || root="$path"
@@ -332,23 +333,46 @@ case "${1:-}" in
   # Apply the source-time shell shortcut; remember exactly what we installed.
   --shell-binding)
     require_tmux
-    settings_get shell_key TMUX_AGENTS_SHELL_KEY @tmux_agents_shell_key C-s
-    previous="$(tmux show-options -gqv @tmux_agents_shell_bound_key)"
-    installed="$(tmux show-options -gqv @tmux_agents_shell_bound_command)"
+    settings_get shell_key TMUX_AGENTS_SHELL_KEY @tmux_agents_shell_key S
+    settings_get command_key TMUX_AGENTS_COMMAND_KEY @tmux_agents_command_key C-s
     case "$shell_key" in none|'') shell_key="" ;; esac
-    if [ -n "$shell_key" ]; then
-      tmux bind-key -T prefix "$shell_key" run-shell -b "'$here/tmux-shell' --client '#{client_name}' --pane '#{pane_id}'"
-    fi
-    if [ -n "$previous" ] && [ "$previous" != "$shell_key" ]; then
-      current="$(tmux list-keys -T prefix "$previous" 2>/dev/null || true)"
-      if [ -n "$installed" ] && [ "$current" = "$installed" ]; then
-        tmux unbind-key -T prefix "$previous"
+    case "$command_key" in none|'') command_key="" ;; esac
+    [ -z "$shell_key" ] || [ "$shell_key" != "$command_key" ] || die "shell and command shortcuts both use '$shell_key'; choose distinct keys or set one to none"
+    # Validate key names in a private table before changing prefix bindings.
+    validation_table="tmux-agents-bind-$$"
+    for key in "$shell_key" "$command_key"; do
+      [ -n "$key" ] || continue
+      if ! tmux bind-key -T "$validation_table" "$key" display-message ''; then
+        tmux unbind-key -a -T "$validation_table" 2>/dev/null || true
+        die "invalid shell or command shortcut: $key"
       fi
+    done
+    if [ -n "$shell_key" ] && [ -n "$command_key" ] &&
+       [ "$(tmux list-keys -T "$validation_table" "$shell_key")" = "$(tmux list-keys -T "$validation_table" "$command_key")" ]; then
+      tmux unbind-key -a -T "$validation_table"
+      die "shell and command shortcuts resolve to the same key; choose distinct keys or set one to none"
     fi
-    tmux set-option -g @tmux_agents_shell_bound_key "$shell_key"
-    installed=""
-    [ -z "$shell_key" ] || installed="$(tmux list-keys -T prefix "$shell_key")"
-    tmux set-option -g @tmux_agents_shell_bound_command "$installed"
+    tmux unbind-key -a -T "$validation_table" 2>/dev/null || true
+    # Remove both old bindings first, including the former shell C-s default.
+    # Only remove commands we installed; preserve later user replacements.
+    for kind in shell command; do
+      previous="$(tmux show-options -gqv "@tmux_agents_${kind}_bound_key")"
+      installed="$(tmux show-options -gqv "@tmux_agents_${kind}_bound_command")"
+      if [ -n "$previous" ] && [ -n "$installed" ]; then
+        current="$(tmux list-keys -T prefix "$previous" 2>/dev/null || true)"
+        [ "$current" != "$installed" ] || tmux unbind-key -T prefix "$previous"
+      fi
+    done
+    for kind in shell command; do
+      if [ "$kind" = shell ]; then key="$shell_key"; pick=""; else key="$command_key"; pick=" --pick"; fi
+      installed=""
+      if [ -n "$key" ]; then
+        tmux bind-key -T prefix "$key" run-shell -b "'$here/tmux-shell'$pick --client '#{client_name}' --pane '#{pane_id}'"
+        installed="$(tmux list-keys -T prefix "$key")"
+      fi
+      tmux set-option -g "@tmux_agents_${kind}_bound_key" "$key"
+      tmux set-option -g "@tmux_agents_${kind}_bound_command" "$installed"
+    done
     exit 0
     ;;
   -h|--help) usage; exit 0 ;;
@@ -425,6 +449,19 @@ case "${1:-}" in
     ;;
   # fzf "d": after the tmux prefix key (within 2s), prefix + d closes the
   # list, like it leaves an agent's view; otherwise d is just typed.
+  --command-info)
+    n="${2#command:}"
+    [[ "$n" =~ ^c[0-9a-f]{12}$ ]] || die "invalid command id: $n"
+    sock="${TMUX%%,*}"
+    d="${XDG_STATE_HOME:-$HOME/.local/state}/tmux-agents/${sock##*/}/commands"
+    [ -f "$d/$n.record" ] || exit 0
+    printf 'Command %s\n\n' "$n"
+    cat "$d/$n.record"
+    printf '\nCommand text:\n'
+    [ ! -f "$d/$n.command" ] || cat "$d/$n.command"
+    printf '\n\nctrl-x: clear command; saved commands cannot be reopened\n'
+    exit 0
+    ;;
   # Preview of a closed sub agent: what reopening it would bring back.
   --closed-info)
     n="${2#closed:}"
@@ -446,8 +483,13 @@ case "${1:-}" in
   --dismiss)
     require_tmux
     case "${2:-}" in
+      command:*) "$here/tmux-shell" --clear-command "${2#command:}" ;;
       closed:*) n="${2#closed:}"; valid_agent_id "$n" || die "invalid agent id: $n"; d="$(sessions_dir)"; rm -f "$d/$n" "$d/.record-$n.lock" ;;
-      *) "$here/tmux-dismiss" "$(pane_name "$2")" ;;
+      *)
+        command_id="$(tmux show-options -pqv -t "$2" @shell_command_id)"
+        if [ -n "$command_id" ]; then "$here/tmux-shell" --clear-command "$command_id"
+        else "$here/tmux-dismiss" "$(pane_name "$2")"; fi
+        ;;
     esac
     exit 0
     ;;
@@ -585,7 +627,7 @@ out="$(fzf </dev/null --read0 --ansi --reverse --no-sort --no-hscroll --header-l
   --bind 'shift-scroll-up:trigger(f12)+preview-up,shift-scroll-down:trigger(f12)+preview-down' \
   --bind 'ctrl-f:execute-silent(: > "$TMUX_AGENTS_PREVIEW_DIR/paused")+rebind(f11,f12)+change-preview-window(right,55%,follow,~7)+preview-bottom+refresh-preview' \
   --footer=$'enter open · ^o jump (prefix+L back) · ^x dismiss\n^d clean done · ^a all/sub · ^t this/all windows · ^r refresh · prefix+d close\npreview: wheel/shift-alt arrows scroll · ^f follow' --footer-border=rounded \
-  --preview "case {1} in closed:*) '$self' --closed-info {1} ;; *) '$self' --preview-info {1} ;; esac" --preview-window='right,55%,follow,~7' \
+  --preview "case {1} in command:*) '$self' --command-info {1} ;; closed:*) '$self' --closed-info {1} ;; *) '$self' --preview-info {1} ;; esac" --preview-window='right,55%,follow,~7' \
   --bind "ctrl-x:execute-silent('$self' --dismiss {1})+reload('$self' --list)" \
   --bind "ctrl-r:reload('$self' --list)" \
   --bind "ctrl-d:execute('$here/tmux-dismiss' --done)+reload('$self' --list)" \
@@ -602,6 +644,11 @@ pane="$(printf '%s\n' "$out" | sed -n 3p | awk '{ print $1 }')"
 # A closed sub agent: reopen it with its conversation, connected to its
 # old parent if that is still open, then show it like any other.
 case "$pane" in
+  command:*)
+    "$self" --command-info "$pane"
+    read -r -p 'Press Enter to return' _answer || true
+    exec "$self" --client "$client"
+    ;;
   closed:*)
     name="${pane#closed:}"
     if ! msg="$("$here/tmux-spawn" --resume-id "$name" 2>&1)"; then

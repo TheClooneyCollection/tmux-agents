@@ -11,6 +11,10 @@ FNR == 1 { files[FILENAME] = 1 }
 { key = $1; sub(/^[^=]*=/, ""); value[FILENAME, key] = $0 }
 END {
     for (file in files) {
+        if (file ~ /\/commands\/[^\/]+\.record$/) {
+            printf "C\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", value[file,"command_id"], value[file,"pane"], value[file,"created"], value[file,"parent"], value[file,"dir"], value[file,"name"], value[file,"parent_name"], value[file,"origin_window"], value[file,"command"], value[file,"status"]
+            continue
+        }
         at = value[file, "closed"]
         if (at == "") at = mtime[file]
         aid = file; sub(/^.*\//, "", aid)
@@ -20,5 +24,5 @@ END {
     }
     # Empty records can still expire, but never have a reopenable id.
     for (file in mtime)
-        if (!(file in files) && now - mtime[file] > keep) print "X\t" file
+        if (file !~ /\/commands\// && !(file in files) && now - mtime[file] > keep) print "X\t" file
 }

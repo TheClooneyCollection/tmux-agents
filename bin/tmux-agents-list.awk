@@ -22,6 +22,8 @@ $1 == "P" {
     # P16..21 are timing; P22 is membership; P23 is explicit hook tracking.
     # P24..25 identify persistent shells and their independent origin window.
     isshell[p]=($24==1); shellwindow[p]=$25
+    command_id[p]=$26; command_text[p]=$27; command_status[p]=$28
+    if ($26!="" && $26!="-") livecommand[$26]=p
     attention[p]=$12; waiting[p]=$13; window[p]=$14; ismember[p]=($22==1); tracked[p]=($23==1)
     if ($15 != "-") byid[$15]=p
     state_since[p]=$16; worked[p]=$17; last_turn[p]=$18; turns[p]=$19; turn_start[p]=$20; started[p]=$21
@@ -29,6 +31,7 @@ $1 == "P" {
 }
 # R9..14 are saved timing; R15 is membership; R16 marks top-level launchers.
 $1 == "R" { record[$2]=1; rid[$2]=$3; closed[$2]=$4; owner[$2]=$5; dir[$2]=$6; label[$2]=$7; parentlabel[$2]=$8; saved_since[$2]=$9; saved_worked[$2]=$10; saved_last[$2]=$11; saved_turns[$2]=$12; saved_start[$2]=$14; recordmember[$2]=($15==1); launcher[$2]=($16==1); next }
+$1 == "C" { commands[$2]=1; commandpane[$2]=$3; commandcreated[$2]=$4; commandowner[$2]=$5; commanddir[$2]=$6; commandname[$2]=$7; commandparent[$2]=$8; commandwindow[$2]=$9; commandtext[$2]=$10; commandstatus[$2]=$11; next }
 $1 == "D" { project[$2]=$3; next }
 # Walk to the first visible live ancestor, with the original pane as fallback.
 function visible(p, original, visited) {
@@ -191,7 +194,7 @@ END {
     if (target=="") target=window[ENVIRON["TMUX_PANE"]]
     scope=ENVIRON["LIST_SCOPE"]; mode=ENVIRON["LIST_MODE"]
     namewidth=26; statuswidth=6
-    for (p in name) if (target!="" && (window[p]==target || (isshell[p] && parent[p]=="-" && shellwindow[p]==target))) inwindow[p]=1
+    for (p in name) if (target!="" && (window[p]==target || (isshell[p] && (parent[p]=="-" || !(parent[p] in name)) && shellwindow[p]==target))) inwindow[p]=1
     do {
         changed=0
         for (p in name) if (!inwindow[p] && inwindow[parent[p]]) { inwindow[p]=1; changed=1 }
@@ -199,7 +202,8 @@ END {
     for (i=1;i<=np;i++) {
         p=order[i]
         if (!((name[p]!="-" && (mode=="all" || parent[p]!="-" || isshell[p])) || waiting[p]!="-")) continue
-        if (dead[p]==1) { rank=5; status="✗ exited" }
+        if (command_id[p]!="" && command_id[p]!="-") { rank=3; status=command_status[p] }
+        else if (dead[p]==1) { rank=5; status="✗ exited" }
         else if (perm[p]!="-") { rank=0; status="⚠ permission" }
         else if (waiting[p]!="-") { rank=1; status="✉ message waiting" }
         else if (isshell[p]) { rank=3; status="shell" }
@@ -210,7 +214,7 @@ END {
         else { rank=2; status="⠿ working" }
         section=index(session[p],prefix)==1 ? substr(session[p],length(prefix)+1) : project[path[p]]
         rowproject=section
-        report=activity[p]
+        report=(command_id[p]!="" && command_id[p]!="-" ? command_text[p] : activity[p])
         if (dead[p]!=1 && (waiting[p]!="-" || (parent[p]!="-" && (perm[p]!="-" || (tracked[p] && state[p]=="needs_you"))))) {
             since=perm[p]!="-" ? perm[p] : (waiting[p]!="-" ? waiting[p] : attention[p])
             if (since !~ /^[0-9]+$/) since=now
@@ -251,6 +255,15 @@ END {
         add(20000000000-closed[n],"closed (" nc ") · enter reopens","closed:" n,label[n],"↺ closed",owner_label(n),project[dir[n]],timecell(closed[n],saved_worked[n]))
         rowmembers[nr]=recordmember[n]
         rowprojects[nr]=project[dir[n]]
+    }
+    for (n in commands) if (!(n in livecommand)) {
+        cw=record_window(commandowner[n]); if (cw=="") cw=commandwindow[n]
+        if (scope!="all" && (target=="" || cw!=target)) continue
+        cp=commandowner[n]
+        ownername=(cp in byid) ? name[byid[cp]] : commandparent[n]
+        if (ownername=="") ownername="-"
+        add(6,"commands","command:" n,commandname[n],commandstatus[n],ownername,commandtext[n],timecell(commandcreated[n],""))
+        rowprojects[nr]=project[commanddir[n]]
     }
     # Small in-memory stable sort replaces sort/cut/column processes.
     for (i=1;i<=nr;i++) {
