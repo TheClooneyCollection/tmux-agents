@@ -114,5 +114,82 @@ sys.exit(int(os.environ.get('STATUS', '0')))
     pick(b'broken output', None)
     pick(b'fresh\0\0fresh\0', b'fresh', shell='unknown')
     assert not marker.exists()
+    # Exercise the shell preflight without invoking Apple's tools or Python stub.
+    import pty
+    import select
+    import shlex
+    import time
+    preflight = root / 'preflight'
+    preflight.mkdir()
+    apple = preflight / 'apple-python'
+    apple.write_text('#!/bin/sh\necho invoked > ' + shlex.quote(str(root / 'stub-invoked')) + '\nexit 99\n')
+    apple.chmod(0o700)
+    xcode = preflight / 'xcode-select'
+    xcode.write_text('#!/bin/sh\n[ "$1" = -p ] || exit 98\n[ -n "$FIXTURE_DEVELOPER" ] || exit 2\nprintf "%s\\n" "$FIXTURE_DEVELOPER"\n')
+    xcode.chmod(0o700)
+    wrapper = preflight / 'tmux-shell-history'
+    wrapper.write_text(Path(helper).read_text().replace(
+        '-ef /usr/bin/python3', '-ef ' + shlex.quote(str(apple))).replace(
+        '/usr/bin/xcode-select', shlex.quote(str(xcode))))
+    wrapper.chmod(0o700)
+    private_bin = preflight / 'bin'
+    private_bin.mkdir()
+    private_env = dict(env, PATH=str(private_bin), FIXTURE_DEVELOPER='')
+    def preflight_run():
+        return subprocess.run([str(wrapper), '--pick', '--shell', 'bash', '--output',
+                               str(root / 'unwritten')], env=private_env,
+                              stdin=subprocess.DEVNULL, capture_output=True, timeout=5)
+    result = preflight_run()
+    assert result.returncode == 127 and b'Python 3 is required' in result.stderr
+    assert not result.stdout and not (root / 'unwritten').exists()
+    (private_bin / 'python3').symlink_to(apple)
+    result = preflight_run()
+    assert result.returncode == 127 and b'Command Line Tools are missing' in result.stderr
+    assert not (root / 'stub-invoked').exists()
+    developer = preflight / 'developer with spaces'
+    private_env['FIXTURE_DEVELOPER'] = str(developer)
+    assert preflight_run().returncode == 127
+    real_python = developer / 'usr/bin/python3'
+    real_python.parent.mkdir(parents=True)
+    real_python.symlink_to(apple)
+    assert preflight_run().returncode == 127  # A selected stub is not a toolchain.
+    real_python.unlink()
+    real_python.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+    real_python.chmod(0o700)
+    (private_bin / 'dirname').symlink_to('/usr/bin/dirname')
+    result = preflight_run()
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == [str(preflight / 'tmux-shell-history.py').encode(),
+        b'--pick', b'--shell', b'bash', b'--output', str(root / 'unwritten').encode()]
+    assert not (root / 'stub-invoked').exists()
+    # An actual terminal keeps the error visible until Enter, with no tmux server.
+    private_env['FIXTURE_DEVELOPER'] = ''
+    master, slave = pty.openpty()
+    plain = subprocess.run([str(wrapper), '--shell', 'bash'], env=private_env,
+                           stdin=slave, stdout=subprocess.PIPE, stderr=slave, timeout=5)
+    assert plain.returncode == 127 and not plain.stdout
+    child = subprocess.Popen([str(wrapper), '--pick'], env=private_env,
+                             stdin=slave, stdout=slave, stderr=slave)
+    os.close(slave)
+    try:
+        visible = b''
+        deadline = time.monotonic() + 5
+        while b'Press Enter to close.' not in visible:
+            remaining = deadline - time.monotonic()
+            assert remaining > 0, visible
+            ready, _, _ = select.select([master], [], [], remaining)
+            assert ready, visible
+            visible += os.read(master, 4096)
+        assert b'Command Line Tools are missing' in visible
+        assert child.poll() is None
+        os.write(master, b'\n')
+        assert child.wait(timeout=5) == 127
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait()
+        os.close(master)
+    assert not (root / 'stub-invoked').exists()
+    print('PASS: missing Python, Apple stub preflight, toolchain and terminal error persistence')
     print('PASS: command history formats, defaults, safety and picker (%d cases plus default-path checks)' % checks)
 PY
