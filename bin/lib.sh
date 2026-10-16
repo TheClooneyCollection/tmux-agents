@@ -1263,3 +1263,78 @@ build_agent_command() {
   esac
 
 }
+
+# Command history is separate from resumable agent sessions.
+shell_commands_dir() {
+  local dir
+  dir="$(sessions_dir)"
+  printf '%s/commands\n' "${dir%/sessions}"
+}
+
+valid_command_id() {
+  [ "${#1}" -eq 13 ] || return 1
+  case "$1" in c*[!0-9a-f]*|[!c]*|'') return 1 ;; esac
+}
+
+clear_shell_command() {
+  local id="$1" dir
+  valid_command_id "$id" || die 'invalid command ID'
+  dir="$(shell_commands_dir)"
+  [ -d "$dir" ] || return 0
+  # A kernel lock is released even if a process or pane is forcibly killed.
+  perl -MFcntl=:flock -e '
+    my ($dir, $id) = @ARGV;
+    open my $lock, ">>", "$dir/.lock" or die $!;
+    flock($lock, LOCK_EX) or die $!;
+    my $pane = "";
+    if (open my $record, "<", "$dir/$id.record") {
+      while (<$record>) { $pane = $1 if /^pane=(%[0-9]+)$/; }
+    }
+    if ($pane ne "") {
+      open my $query, "-|", "tmux", "display-message", "-p", "-t", $pane, "#{\@shell_command_id}" or die $!;
+      my $live = <$query> // ""; close $query; chomp $live;
+      system("tmux", "kill-pane", "-t", $pane) if $live eq $id;
+    }
+    require File::Glob;
+    unlink "$dir/$id.record", "$dir/$id.command", File::Glob::bsd_glob("$dir/$id.record.*");
+  ' "$dir" "$id"
+}
+
+clear_owned_shell_commands() {
+  local owner="$1" dir record parent id
+  [ -n "$owner" ] || return 0
+  dir="$(shell_commands_dir)"
+  for record in "$dir"/*.record; do
+    [ -f "$record" ] || continue
+    parent="$(sed -n 's/^parent=//p' "$record")"
+    [ "$parent" = "$owner" ] || continue
+    id="${record##*/}"; id="${id%.record}"
+    clear_shell_command "$id"
+  done
+}
+
+# --keep-children retains both live command panes and completed command rows.
+disown_shell_commands() {
+  local owner="$1" dir
+  [ -n "$owner" ] || return 0
+  dir="$(shell_commands_dir)"
+  [ -d "$dir" ] || return 0
+  perl -MFcntl=:flock -e '
+    my ($dir, $owner) = @ARGV;
+    umask 0077;
+    open my $lock, ">>", "$dir/.lock" or die $!;
+    flock($lock, LOCK_EX) or die $!;
+    opendir my $entries, $dir or die $!;
+    while (my $name = readdir $entries) {
+      next unless $name =~ /^c[0-9a-f]{12}\.record$/;
+      open my $in, "<", "$dir/$name" or next;
+      my $text = do { local $/; <$in> }; close $in;
+      next unless $text =~ /^parent=\Q$owner\E$/m;
+      $text =~ s/^parent=.*$/parent=/m;
+      $text =~ s/^parent_name=.*$/parent_name=/m;
+      open my $out, ">", "$dir/$name.$$" or die $!;
+      print $out $text; close $out or die $!;
+      rename "$dir/$name.$$", "$dir/$name" or die $!;
+    }
+  ' "$dir" "$owner"
+}

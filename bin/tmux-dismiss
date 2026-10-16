@@ -42,6 +42,11 @@ close_pane() {
     done
   fi
   if [ "$(tmux show-option -pqv -t "$pane" @shell)" != 1 ]; then
+    if [ "$keep_children" -eq 1 ]; then
+      disown_shell_commands "$(pane_agent_id "$pane")"
+    else
+      clear_owned_shell_commands "$(pane_agent_id "$pane")"
+    fi
     note_closed "$pane" "$closer"
     record_closed "$pane"
   fi

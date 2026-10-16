@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Run exact command bytes with the configured login shell, then manage its pane.
+set -uo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+. "$here/lib.sh"
+id="$1" shell="$2" remaining="$3" dir="$4"
+valid_command_id "$id" || exit 1
+# A sentinel preserves trailing newlines removed by ordinary command substitution.
+command="$(cat "$dir/$id.command"; printf x)"; command="${command%x}"
+# Ignore INT in the supervisor while the foreground child handles it normally.
+trap ':' INT
+"$shell" -lc "$command"
+code=$?
+trap - INT
+status=ok
+[ "$code" -eq 0 ] || status="failed $code"
+# Publish with the same crash-safe lock used by clear. A deleted record is
+# never recreated, even when clearing races with command completion.
+tmux set-option -p -t "$TMUX_PANE" @shell_status "$status" \; set-option -p -t "$TMUX_PANE" @shell_exit_code "$code"
+perl -MFcntl=:flock -e '
+  my ($dir, $id, $status, $code) = @ARGV;
+  umask 0077;
+  open my $lock, ">>", "$dir/.lock" or die $!;
+  flock($lock, LOCK_EX) or die $!;
+  open my $in, "<", "$dir/$id.record" or exit 0;
+  my $text = do { local $/; <$in> }; close $in;
+  $text =~ s/^status=.*$/status=$status/m;
+  $text =~ s/^exit_code=.*$/exit_code=$code/m;
+  my $tmp = "$dir/$id.record.$$";
+  open my $out, ">", $tmp or die $!;
+  print $out $text; close $out or die $!;
+  rename $tmp, "$dir/$id.record" or die $!;
+' "$dir" "$id" "$status" "$code"
+printf '\n[%s]\n' "$status"
+if [ "$code" -eq 0 ]; then
+  # read -n handles any ordinary key; raw terminal mode also permits Ctrl-C.
+  old_stty="$(stty -g)"
+  stty -icanon -echo -isig -ixon min 1 time 0
+  trap 'stty "$old_stty"' EXIT HUP TERM
+  while [ "$remaining" -gt 0 ]; do
+    printf '\rClosing in %s seconds. Press any key to keep this shell. ' "$remaining"
+    if IFS= read -r -n 1 -t 1 _key; then
+      stty "$old_stty"
+      trap - EXIT HUP TERM
+      printf '\n'
+      exec "$shell" -l
+    fi
+    # Decimal subtraction without interpreting leading zeros as octal.
+    remaining=$((10#$remaining - 1))
+  done
+  stty "$old_stty"
+  trap - EXIT HUP TERM
+  exit 0
+fi
+exec "$shell" -l

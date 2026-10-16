@@ -6,19 +6,33 @@ here="$(cd "$(dirname "$0")" && pwd)"
 FROM_PANE=""
 client=""
 opener=""
+mode=plain
+raw_command=""
+clear_id=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --command) [ "$#" -ge 2 ] || die '--command needs a command'; [ "$mode" = plain ] || die 'choose --command or --pick'; mode="command"; raw_command="$2"; shift 2 ;;
+    --pick) [ "$mode" = plain ] || die 'choose --command or --pick'; mode=pick; shift ;;
+    --clear-command) [ "$#" -ge 2 ] && [ -n "$2" ] || die '--clear-command needs an ID'; clear_id="$2"; shift 2 ;;
     --from|--client|--pane)
       [ "$#" -ge 2 ] && [ -n "$2" ] || die "$1 needs a value"
       case "$1" in --from) FROM_PANE="$2" ;; --client) client="$2" ;; --pane) opener="$2" ;; esac
       shift 2 ;;
-    -h|--help) echo 'usage: tmux-shell [--from AGENT] [--client CLIENT] [--pane OPENER]'; exit 0 ;;
+    -h|--help) echo 'usage: tmux-shell [--from AGENT] [--client CLIENT] [--pane OPENER] [--command CMD | --pick] | --clear-command ID'; exit 0 ;;
     *) die "unknown option '$1'" ;;
   esac
 done
 require_tmux
+if [ -n "$clear_id" ]; then
+  [ "$mode" = plain ] || die '--clear-command cannot be combined with --command or --pick'
+  [ -z "$FROM_PANE" ] || die '--clear-command is a user action'
+  clear_shell_command "$clear_id"
+  exit
+fi
+[ "$mode" != pick ] || [ -z "$FROM_PANE" ] || die '--pick is a user action; agents use --command'
 owner=""
 [ -z "$FROM_PANE" ] || owner="$(self_pane)"
+[ -z "$owner" ] || require_agent_pane "$owner"
 [ -n "$opener" ] || opener="${owner:-${TMUX_PANE:-}}"
 if [ -z "$opener" ] || ! pane_alive "$opener"; then
   die 'no live opener pane (pass --pane)'
@@ -36,39 +50,101 @@ if [ -z "$client" ]; then
   done
 fi
 [ -n "$client" ] || die 'no opener client (pass --client)'
-dir="$(tmux display-message -p -t "$opener" '#{pane_current_path}')"
-origin="$(tmux display-message -p -t "$opener" '#{window_id}')"
+metadata="$(tmux display-message -p -t "$opener" $'#{pane_current_path}\n#{window_id}\n#{default-shell}\n#{@tmux_agents_shell_close_secs}')"
+{ IFS= read -r dir; IFS= read -r origin; IFS= read -r shell; IFS= read -r close_secs || true; } <<<"$metadata"
 session="$(agents_session_for "$dir")"
-shell="$(tmux show-option -Aqv -t "$opener" default-shell)"
 [ -x "$shell" ] || die "configured shell is not executable: $shell"
+close_secs="${TMUX_AGENTS_SHELL_CLOSE_SECS:-${close_secs:-3}}"
+if [ "$mode" != plain ]; then
+  case "$close_secs" in *[!0-9]*|'') die 'shell close seconds must be a nonnegative integer' ;; esac
+fi
+if [ "$mode" = pick ]; then
+  pick_dir="$(mktemp -d "${TMPDIR:-/tmp}/tmux-shell-pick.XXXXXX")"
+  printf -v picker '%q --pick --shell %q --output %q' "$here/tmux-shell-history" "$shell" "$pick_dir/command"
+  tmux display-popup -c "$client" -E -w 90% -h 90% "$picker" || true
+  if [ ! -f "$pick_dir/command" ]; then rmdir "$pick_dir"; exit 0; fi
+  raw_command="$(cat "$pick_dir/command"; printf x)"; raw_command="${raw_command%x}"
+  rm -rf "$pick_dir"
+  mode="command"
+fi
 # Serialize names and session creation. Gate shell startup until its options
 # are installed, including overriding an inherited remain-on-exit setting.
 tmux wait-for -L tmux-agents-shell-create
-trap 'tmux wait-for -U tmux-agents-shell-create' EXIT
+pane="" command_id="" command_dir=""
+setup_complete=0
+# shellcheck disable=SC2329
+shell_setup_cleanup() {
+  if [ "$setup_complete" -eq 0 ]; then
+    [ -z "$pane" ] || tmux kill-pane -t "$pane" 2>/dev/null || true
+    if [ -n "$command_id" ]; then
+      rm -f "$command_dir/$command_id.command" "$command_dir/$command_id.record" "$command_dir/$command_id.record.tmp"
+    fi
+  fi
+  tmux wait-for -U tmux-agents-shell-create
+}
+trap shell_setup_cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
 name="$(name_for shell "$dir")"
 gate="tmux-agents-shell-$$-$RANDOM"
-printf -v command 'tmux wait-for %q; exec %q -l' "$gate" "$shell"
+command_id="" display="" parent_id="" parent_name=""
+if [ "$mode" = command ]; then
+  command_dir="$(shell_commands_dir)"
+  (umask 077; mkdir -p "$command_dir")
+  command_id="c$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
+  (umask 077; printf '%s' "$raw_command" >"$command_dir/$command_id.command")
+  display="$(printf '%s' "$raw_command" | LC_ALL=C tr '\000-\037\177' ' ')"
+  if [ -n "$owner" ]; then
+    parent_id="$(ensure_agent_id "$owner")"
+    parent_name="$(pane_name "$owner")"
+  fi
+  printf -v command 'tmux wait-for %q && exec /bin/bash %q %q %q %q %q' "$gate" "$here/tmux-shell-run" "$command_id" "$shell" "$close_secs" "$command_dir"
+else
+  printf -v command 'tmux wait-for %q && exec %q -l' "$gate" "$shell"
+fi
 if tmux has-session -t "=$session" 2>/dev/null; then
   pane="$(tmux new-window -d -t "=$session:" -n "$name" -c "$dir" -P -F '#{pane_id}' "$command")"
 else
   pane="$(tmux new-session -d -s "$session" -n "$name" -c "$dir" -P -F '#{pane_id}' "$command")"
 fi
-tmux set-option -p -t "$pane" @shell 1
-# Override inherited agent metadata without allocating an agent identity.
-for option in @parent @agent_id @state @peers @activity @started @worked @turns @turn_start @perm_since @msg_waiting_since; do
-  tmux set-option -p -t "$pane" "$option" ""
+options=(set-option -p -t "$pane" @shell 1)
+for option in @agent_id @state @peers @activity @started @worked @turns @turn_start @perm_since @msg_waiting_since; do
+  options+=(\; set-option -p -t "$pane" "$option" "")
 done
-tmux set-option -p -t "$pane" @member 0
-tmux set-option -p -t "$pane" @agent "$name"
-tmux set-option -p -t "$pane" @tracked 0
-tmux set-option -p -t "$pane" @shell_origin_window "$origin"
-tmux set-option -w -t "$pane" remain-on-exit off
-[ -z "$owner" ] || tmux set-option -p -t "$pane" @parent "$owner"
-tmux wait-for -S "$gate"
-tmux wait-for -U tmux-agents-shell-create
-trap - EXIT
-refresh_labels
+options+=(\; set-option -p -t "$pane" @parent "$owner"
+  \; set-option -p -t "$pane" @member 0
+  \; set-option -p -t "$pane" @agent "$name"
+  \; set-option -p -t "$pane" @tracked 0
+  \; set-option -p -t "$pane" @shell_origin_window "$origin"
+  \; set-option -p -t "$pane" @shell_command_id "$command_id"
+  \; set-option -p -t "$pane" @shell_command "$display"
+  \; set-option -p -t "$pane" @shell_status "${command_id:+running}"
+  \; set-option -p -t "$pane" @shell_exit_code ""
+  \; set-option -w -t "$pane" remain-on-exit off)
+if [ -n "$command_id" ]; then
+  (umask 077
+   printf '%s\n' "command_id=$command_id" "name=$name" "pane=$pane" "parent=$parent_id" "parent_name=$parent_name" "origin_window=$origin" "dir=$dir" "command=$display" 'status=running' 'exit_code=' "created=$(date +%s)" >"$command_dir/$command_id.record.tmp")
+  tmux "${options[@]}"
+  perl -MFcntl=:flock -e '
+    my ($dir, $id, $gate) = @ARGV;
+    umask 0077;
+    open my $lock, ">>", "$dir/.lock" or die $!;
+    flock($lock, LOCK_EX) or die $!;
+    rename "$dir/$id.record.tmp", "$dir/$id.record" or die $!;
+    system("tmux", "wait-for", "-S", $gate) == 0 or die "startup gate failed";
+  ' "$command_dir" "$command_id" "$gate"
+  tmux wait-for -U tmux-agents-shell-create
+else
+  tmux "${options[@]}" \; wait-for -S "$gate" \; wait-for -U tmux-agents-shell-create
+fi
+setup_complete=1
+trap - EXIT INT TERM HUP
 printf 'opened %s (%s)\n' "$name" "$pane"
 printf -v view '%q --view %q %q' "$here/tmux-agents" "$pane" "$client"
 printf -v popup 'tmux display-popup -c %q -E -w 90%% -h 90%% -T %q %q' "$client" " $name  (prefix + d: back to the list) " "$view"
 tmux run-shell -b "$popup"
+# Popup scheduling precedes global label work; do not hold up shell startup.
+# Positional arguments keep paths out of executable shell text.
+# shellcheck disable=SC2016
+printf -v refresh '/bin/bash -c %q _ %q' '. "$1"; refresh_labels' "$here/lib.sh"
+tmux run-shell -b "$refresh"
