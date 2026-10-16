@@ -11,7 +11,7 @@ usage() {
   cat <<'EOF'
 usage: tmux-agents [--client NAME]
 
-Lists sub agents (spawned with tmux-spawn) with a live preview.
+Lists sub agents and persistent shells with a live preview.
 Bound to prefix + a.
 
   enter   open it: hidden agents in a popup (prefix + d closes), others jump
@@ -57,7 +57,7 @@ list_agents() {
   ensure_agent_ids
   settings_get AGENTS_PREFIX TMUX_AGENTS_PREFIX @tmux_agents_session_prefix agents
   settings_get resume_days TMUX_AGENTS_RESUME_DAYS @tmux_agents_resume_days 7
-  snapshot="$(tmux list-panes -a -F 'P	#{pane_id}	#{?@agent,#{@agent},-}	#{pane_dead}	#{?@perm_since,#{@perm_since},-}	#{?@state,#{@state},-}	#{?@parent,#{@parent},-}	#{session_name}	#{?@activity,#{@activity},-}	#{pane_current_path}	#{session_name}:#{window_index}	#{?@attention_since,#{@attention_since},-}	#{?@msg_waiting_since,#{@msg_waiting_since},-}	#{window_id}	#{?@agent_id,#{@agent_id},-}	#{@state_since}	#{@worked}	#{@last_turn}	#{@turns}	#{@turn_start}	#{@started}	#{?@member,#{@member},0}	#{?@tracked,#{@tracked},0}')"
+  snapshot="$(tmux list-panes -a -F 'P	#{pane_id}	#{?@agent,#{@agent},-}	#{pane_dead}	#{?@perm_since,#{@perm_since},-}	#{?@state,#{@state},-}	#{?@parent,#{@parent},-}	#{session_name}	#{?@activity,#{@activity},-}	#{pane_current_path}	#{session_name}:#{window_index}	#{?@attention_since,#{@attention_since},-}	#{?@msg_waiting_since,#{@msg_waiting_since},-}	#{window_id}	#{?@agent_id,#{@agent_id},-}	#{@state_since}	#{@worked}	#{@last_turn}	#{@turns}	#{@turn_start}	#{@started}	#{?@member,#{@member},0}	#{?@tracked,#{@tracked},0}	#{?@shell,#{@shell},0}	#{?@shell_origin_window,#{@shell_origin_window},-}')"
   if [ -n "$client" ]; then
     clients="$(tmux list-clients -F '#{client_name}	#{window_id}')"
     while IFS="$tab" read -r c w; do [ "$c" != "$client" ] || { window="$w"; break; }; done <<<"$clients"
@@ -329,6 +329,28 @@ EOF
 }
 
 case "${1:-}" in
+  # Apply the source-time shell shortcut; remember exactly what we installed.
+  --shell-binding)
+    require_tmux
+    settings_get shell_key TMUX_AGENTS_SHELL_KEY @tmux_agents_shell_key C-s
+    previous="$(tmux show-options -gqv @tmux_agents_shell_bound_key)"
+    installed="$(tmux show-options -gqv @tmux_agents_shell_bound_command)"
+    case "$shell_key" in none|'') shell_key="" ;; esac
+    if [ -n "$shell_key" ]; then
+      tmux bind-key -T prefix "$shell_key" run-shell -b "'$here/tmux-shell' --client '#{client_name}' --pane '#{pane_id}'"
+    fi
+    if [ -n "$previous" ] && [ "$previous" != "$shell_key" ]; then
+      current="$(tmux list-keys -T prefix "$previous" 2>/dev/null || true)"
+      if [ -n "$installed" ] && [ "$current" = "$installed" ]; then
+        tmux unbind-key -T prefix "$previous"
+      fi
+    fi
+    tmux set-option -g @tmux_agents_shell_bound_key "$shell_key"
+    installed=""
+    [ -z "$shell_key" ] || installed="$(tmux list-keys -T prefix "$shell_key")"
+    tmux set-option -g @tmux_agents_shell_bound_command "$installed"
+    exit 0
+    ;;
   -h|--help) usage; exit 0 ;;
   # fzf reloads call this; the prompt says which view is showing.
   --chip) require_tmux; chip; exit 0 ;;

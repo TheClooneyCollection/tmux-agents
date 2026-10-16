@@ -20,6 +20,8 @@ $1 == "P" {
     name[p]=$3; dead[p]=$4; perm[p]=$5; state[p]=$6; parent[p]=$7
     session[p]=$8; activity[p]=$9; path[p]=$10; location[p]=$11
     # P16..21 are timing; P22 is membership; P23 is explicit hook tracking.
+    # P24..25 identify persistent shells and their independent origin window.
+    isshell[p]=($24==1); shellwindow[p]=$25
     attention[p]=$12; waiting[p]=$13; window[p]=$14; ismember[p]=($22==1); tracked[p]=($23==1)
     if ($15 != "-") byid[$15]=p
     state_since[p]=$16; worked[p]=$17; last_turn[p]=$18; turns[p]=$19; turn_start[p]=$20; started[p]=$21
@@ -189,17 +191,18 @@ END {
     if (target=="") target=window[ENVIRON["TMUX_PANE"]]
     scope=ENVIRON["LIST_SCOPE"]; mode=ENVIRON["LIST_MODE"]
     namewidth=26; statuswidth=6
-    for (p in name) if (window[p]==target && target!="") inwindow[p]=1
+    for (p in name) if (target!="" && (window[p]==target || (isshell[p] && parent[p]=="-" && shellwindow[p]==target))) inwindow[p]=1
     do {
         changed=0
         for (p in name) if (!inwindow[p] && inwindow[parent[p]]) { inwindow[p]=1; changed=1 }
     } while (changed)
     for (i=1;i<=np;i++) {
         p=order[i]
-        if (!((name[p]!="-" && (mode=="all" || parent[p]!="-")) || waiting[p]!="-")) continue
+        if (!((name[p]!="-" && (mode=="all" || parent[p]!="-" || isshell[p])) || waiting[p]!="-")) continue
         if (dead[p]==1) { rank=5; status="✗ exited" }
         else if (perm[p]!="-") { rank=0; status="⚠ permission" }
         else if (waiting[p]!="-") { rank=1; status="✉ message waiting" }
+        else if (isshell[p]) { rank=3; status="shell" }
         else if (!tracked[p]) { rank=3; status="-" }
         else if (state[p]=="needs_you") { rank=1; status="◆ needs you" }
         else if (state[p]=="idle") { rank=3; status="○ idle" }
