@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.16.0 (2026-10-16)
 
 - **Target and name chain windows.** `tmux-agents start chain [DIR] --target session[:index] --name NAME` creates a detached window in an existing session, including from outside tmux; a bare session selects the next free index. Without a target, the launcher still opens and focuses a window in the current session. The default name remains the directory basename (`root` for `/`). Window renaming is disabled before startup. Flags can appear in any order, all role choices are validated before creation, and success prints exactly the new pane ID plus a newline. These new options are a minor release feature.
 
