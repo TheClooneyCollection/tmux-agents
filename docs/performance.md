@@ -42,6 +42,23 @@ With that, `fish -c true` took 0.01 to 0.02s. Interactive shells and new panes l
 
 **Trade-offs.** Commands run with `fish -c` no longer see what the skipped parts set up: mise-managed tools, aliases and functions from the rest of the config. If a non-interactive command needs a mise tool, put mise's shims on PATH instead of activating it (`fish_add_path --append ~/.local/share/mise/shims`), or call the tool by full path. Prefer computing paths once over running a program to find them (Homebrew's unversioned `/opt/homebrew/opt/<formula>` links instead of `brew --prefix <formula>`).
 
+## Shell popup startup (command mode)
+
+Shell startup now combines opener metadata into one read and pane option changes into one tmux invocation. Popup dispatch precedes deferred label refresh. `tests/shell-runtime-perf.sh` compares the implementation with commit `4ca5879` on a private socket using a marker shell and intercepted popup dispatch, including the child startup gate in call counts.
+
+Five samples per version gave these medians on the development machine:
+
+| Measurement | Before | After |
+| --- | --- | --- |
+| tmux calls before shell starts | 30 | 11 |
+| tmux calls before popup dispatch | 41 | 11 |
+| Shell startup, without instrumentation | 290.2ms | 138.0ms |
+| Popup dispatch, without instrumentation | 395.9ms | 132.4ms |
+
+These measure dispatch, not the time a popup finishes drawing. User interactive shell configuration is outside this measurement. The earlier estimate of 46 calls was not reproduced by this harness.
+
+Command records share the existing batched record read. The list budget suite passed all 52 checks: 14 tools per rebuild, 22.5ms to fzf and 195.0ms to first rows; opening with a selected row took 27.0ms and 213.1ms respectively. These local timings are observations, not portable guarantees.
+
 ## Where to look next time
 
 The `tmux-agents-perf` skill walks an agent through measuring each part of the path: the shell's startup, the list build against the budget, fzf and the popup, and process counts per command.
