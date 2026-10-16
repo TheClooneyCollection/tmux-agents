@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Open an ephemeral plain shell in the project's hidden session.
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+. "$here/lib.sh"
+FROM_PANE=""
+client=""
+opener=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --from|--client|--pane)
+      [ "$#" -ge 2 ] && [ -n "$2" ] || die "$1 needs a value"
+      case "$1" in --from) FROM_PANE="$2" ;; --client) client="$2" ;; --pane) opener="$2" ;; esac
+      shift 2 ;;
+    -h|--help) echo 'usage: tmux-shell [--from AGENT] [--client CLIENT] [--pane OPENER]'; exit 0 ;;
+    *) die "unknown option '$1'" ;;
+  esac
+done
+require_tmux
+owner=""
+[ -z "$FROM_PANE" ] || owner="$(self_pane)"
+[ -n "$opener" ] || opener="${owner:-${TMUX_PANE:-}}"
+if [ -z "$opener" ] || ! pane_alive "$opener"; then
+  die 'no live opener pane (pass --pane)'
+fi
+# A hidden owner is reached through its nearest visible ancestor.
+if [ -z "$client" ]; then
+  cursor="$opener" seen=" "
+  while [ -n "$cursor" ]; do
+    case "$seen" in *" $cursor "*) break ;; esac
+    seen="$seen$cursor "
+    window="$(tmux display-message -p -t "$cursor" '#{window_id}')"
+    client="$(tmux list-clients -F '#{client_name} #{window_id}' | awk -v w="$window" '$2 == w {print $1; exit}')"
+    [ -z "$client" ] || break
+    cursor="$(tmux show-option -pqv -t "$cursor" @parent)"
+  done
+fi
+[ -n "$client" ] || die 'no opener client (pass --client)'
+dir="$(tmux display-message -p -t "$opener" '#{pane_current_path}')"
+origin="$(tmux display-message -p -t "$opener" '#{window_id}')"
+session="$(agents_session_for "$dir")"
+shell="$(tmux show-option -Aqv -t "$opener" default-shell)"
+[ -x "$shell" ] || die "configured shell is not executable: $shell"
+# Serialize names and session creation. Gate shell startup until its options
+# are installed, including overriding an inherited remain-on-exit setting.
+tmux wait-for -L tmux-agents-shell-create
+trap 'tmux wait-for -U tmux-agents-shell-create' EXIT
+name="$(name_for shell "$dir")"
+gate="tmux-agents-shell-$$-$RANDOM"
+printf -v command 'tmux wait-for %q; exec %q -l' "$gate" "$shell"
+if tmux has-session -t "=$session" 2>/dev/null; then
+  pane="$(tmux new-window -d -t "=$session:" -n "$name" -c "$dir" -P -F '#{pane_id}' "$command")"
+else
+  pane="$(tmux new-session -d -s "$session" -n "$name" -c "$dir" -P -F '#{pane_id}' "$command")"
+fi
+tmux set-option -p -t "$pane" @shell 1
+# Override inherited agent metadata without allocating an agent identity.
+for option in @parent @agent_id @state @peers @activity @started @worked @turns @turn_start @perm_since @msg_waiting_since; do
+  tmux set-option -p -t "$pane" "$option" ""
+done
+tmux set-option -p -t "$pane" @member 0
+tmux set-option -p -t "$pane" @agent "$name"
+tmux set-option -p -t "$pane" @tracked 0
+tmux set-option -p -t "$pane" @shell_origin_window "$origin"
+tmux set-option -w -t "$pane" remain-on-exit off
+[ -z "$owner" ] || tmux set-option -p -t "$pane" @parent "$owner"
+tmux wait-for -S "$gate"
+tmux wait-for -U tmux-agents-shell-create
+trap - EXIT
+refresh_labels
+printf 'opened %s (%s)\n' "$name" "$pane"
+printf -v view '%q --view %q %q' "$here/tmux-agents" "$pane" "$client"
+printf -v popup 'tmux display-popup -c %q -E -w 90%% -h 90%% -T %q %q' "$client" " $name  (prefix + d: back to the list) " "$view"
+tmux run-shell -b "$popup"

@@ -41,8 +41,10 @@ close_pane() {
       tmux set-option -pu -t "$child" @parent
     done
   fi
-  note_closed "$pane" "$closer"
-  record_closed "$pane"
+  if [ "$(tmux show-option -pqv -t "$pane" @shell)" != 1 ]; then
+    note_closed "$pane" "$closer"
+    record_closed "$pane"
+  fi
   tmux kill-pane -t "$pane"
   echo "dismissed ${name:-unnamed} ($pane)"
 }

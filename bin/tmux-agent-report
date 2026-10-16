@@ -83,8 +83,8 @@ turn_end() {
   case "$(tmux show-options -pqv -t "$p" @state)" in
     done|idle) agent_turn_state "$p" end ""; return 0 ;;
   esac
-  kids="$(tmux list-panes -a -F '#{pane_id} #{@parent} #{pane_dead} #{?@state,#{@state},-} #{@agent}' \
-    | awk -v p="$p" '$2 == p && $3 == 0 && $4 != "done" && !seen[$1]++ { print $5 }' | tr '\n' ' ')"
+  kids="$(tmux list-panes -a -F '#{pane_id} #{@parent} #{pane_dead} #{?@state,#{@state},-} #{@agent} #{?@shell,#{@shell},0}' \
+    | awk -v p="$p" '$2 == p && $3 == 0 && $4 != "done" && $6 != 1 && !seen[$1]++ { print $5 }' | tr '\n' ' ')"
   awaited="$(tmux show-options -pqv -t "$p" @awaiting)"
   for n in $awaited; do
     if [ -n "$(find_pane_by_id "$n")" ]; then live="$live $(agent_name_by_id "$n")"; else remove_word "$p" @awaiting "$n"; fi
@@ -193,6 +193,8 @@ if [ -n "$pane" ]; then
 else
   pane="$(self_pane)"
 fi
+
+[ "$(tmux show-option -pqv -t "$pane" @shell)" != 1 ] || exit 0
 
 [ "$save_work" -eq 0 ] || { agent_save_work "$pane"; exit 0; }
 

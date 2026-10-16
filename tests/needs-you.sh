@@ -240,6 +240,16 @@ ask %0 kid "no reply needed, don't restart"
 turn_start "[request from boss to kid via tmux-ask] no reply needed"; turn_end
 expect "a request (not a notice) answered only locally" needs_you
 
+# An owned plain shell is not outstanding agent work.
+reset
+shell_child="$(tmux new-window -d -P -F '#{pane_id}' cat)"
+tmux set -p -t "$shell_child" @shell 1
+tmux set -p -t "$shell_child" @parent %1
+tmux set -p -t "$shell_child" @agent shell-test-1
+turn_end
+expect "owned shell does not keep a finished turn waiting" needs_you
+tmux kill-pane -t "$shell_child"
+
 # A rename changes displayed waiting labels, never the stored obligation.
 reset
 kid_id="$(pane_agent_id %1)"

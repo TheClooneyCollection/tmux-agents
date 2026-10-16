@@ -467,6 +467,7 @@ find_pane_by_id() {
 _ensure_agent_id_locked() {
   local pane="$1" requested="${2:-}" aid owner
   pane_alive "$pane" || return 1
+  [ "$(tmux show-option -pqv -t "$pane" @shell)" != 1 ] || return 1
   aid="$(pane_agent_id "$pane")"
   if [ -n "$requested" ]; then
     valid_agent_id "$requested" || return 1
@@ -484,6 +485,7 @@ _ensure_agent_id_locked() {
 # Print the pane's stable ID. An explicit ID restores a closed identity;
 # refuse to overwrite another identity or adopt an ID already live elsewhere.
 ensure_agent_id() {
+  [ "$(tmux show-option -pqv -t "$1" @shell)" != 1 ] || return 1
   local aid
   aid="$(pane_agent_id "$1")" || return 1
   if valid_agent_id "$aid"; then
@@ -565,10 +567,11 @@ _migrate_agent_ids_locked() {
       my ($pane, $key, $value) = @_;
       system("tmux", "set-option", "-p", "-t", $pane, $key, $value) == 0 or die "tmux set $pane $key failed";
     }
-    open(my $ph, "-|", "tmux", "list-panes", "-a", "-F", "#{pane_id}\t\#{\@agent}\t\#{\@agent_id}\t\#{\@awaiting}\t\#{\@closed}") or die "tmux: $!";
+    open(my $ph, "-|", "tmux", "list-panes", "-a", "-F", "#{pane_id}\t\#{\@agent}\t\#{\@agent_id}\t\#{\@awaiting}\t\#{\@closed}\t\#{\@shell}") or die "tmux: $!";
     my (%panes, %used, %live);
     while (<$ph>) {
-      chomp; my ($p, $name, $id, $awaiting, $closed) = split /\t/, $_, -1;
+      chomp; my ($p, $name, $id, $awaiting, $closed, $shell) = split /\t/, $_, -1;
+      next if $shell eq "1";
       $panes{$p} = {name=>$name, id=>$id, awaiting=>$awaiting, closed=>$closed};
       $used{$id} = 1 if length $id;
       $live{$name} = $p if length $name;
@@ -724,6 +727,7 @@ agent_turn_state() { _agent_work "$1" "$2" "${3:-}" "${4:-}"; }
 agent_start_work() { _agent_work "$1" spawn "$2" "${3:-}"; }
 
 _agent_work() {
+  [ "$(tmux show-option -pqv -t "$1" @shell)" != 1 ] || return 0
   local d
   d="$(sessions_dir)"
   mkdir -p "$d"
