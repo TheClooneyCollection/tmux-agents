@@ -8,6 +8,7 @@ set -g @tmux_agents_name_format exact
 
 | Option | Environment override | Default | What it does |
 | --- | --- | --- | --- |
+| `@tmux_agents_shell_key` | `TMUX_AGENTS_SHELL_KEY` | `C-s` | Shell popup key after the prefix; `none` disables. Set before sourcing the config, then re-source to apply changes. |
 | `@tmux_agents_name_format` | `TMUX_AGENTS_NAME_FORMAT` | `prefixed` | Given-name format: `exact` or `prefixed` |
 | `@tmux_agents_sub_auto` | `TMUX_AGENTS_SUB_AUTO` | `on` | Spawned and resumed Claude/Codex agents, including members: `on` adds auto permission flags; `off` uses agent defaults. Does not affect `start`. |
 | `@tmux_agents_chain_main` | `TMUX_AGENTS_CHAIN_MAIN` | `claude` | Main agent for a new `start chain` window |
@@ -27,11 +28,24 @@ set -g @tmux_agents_name_format exact
 | `@tmux_agents_ask_enter_delay` | `TMUX_ASK_ENTER_DELAY` | `0.5` | Seconds between paste and Enter |
 | `@tmux_agents_connect_highlight` | `TMUX_CONNECT_HIGHLIGHT` | `bg=colour24` | Style of the highlighted connection target |
 
-`TMUX_AGENTS_CODEX_HOMES` also keeps its tmux global-environment fallback when neither a local override nor the option is set. Settings are read once per command; restart an existing picker or chip daemon to apply changes to its cached settings. Set overrides after sourcing `tmux-agents.conf`, which installs the chip FPS default. Internal pane state and test hooks are not user settings.
+`TMUX_AGENTS_CODEX_HOMES` also keeps its tmux global-environment fallback when neither a local override nor the option is set. Settings are read once per command; restart an existing picker or chip daemon to apply changes to its cached settings. Set overrides after sourcing `tmux-agents.conf`, which installs the chip FPS default, except for `@tmux_agents_shell_key`: set that before sourcing, because its binding is installed at source time. Internal pane state and test hooks are not user settings.
 
 With `sub_auto` on, `tmux-spawn` adds Claude's `--permission-mode auto` or Codex's `-c approvals_reviewer="auto_review"`. With it off, neither flag is added. The setting applies to new and resumed Claude/Codex agents, including members. Other executables keep their own permission behavior; no permission flags or rules are added.
 
 `tmux-agents start PROFILE` uses the same Codex-home lookup and given-name preferences as `tmux-spawn`. The launcher runs in the current pane and supplies per-process identity pins and turn hooks without editing global agent config. It keeps the agent's permission defaults; pass agent-specific options after `--`. Shell wrappers are optional and provide identity pins only. See [Starting agents](guide.md#starting-agents).
+
+## Shell popup key
+
+The default is `prefix + C-s` (press your prefix, then Ctrl-S). Set `@tmux_agents_shell_key` before sourcing the configuration to choose another tmux key, or use `none` to disable the shortcut:
+
+```tmux
+set -g @tmux_agents_shell_key C-s
+source-file ~/path/to/tmux-agents/tmux/tmux-agents.conf
+```
+
+A nonempty `TMUX_AGENTS_SHELL_KEY` in the environment of the binding command takes precedence over the option. Empty environment values or options fall through to the next source and do not disable the binding; use `none`. Disabling the shortcut leaves `tmux-shell` available.
+
+Re-source the configuration after changing the setting. The configuration runs `tmux-agents --shell-binding` synchronously, installs the chosen key and remembers it. On re-source, it removes the previous key only if that key still holds tmux-agents' shell binding, preserving any replacement you made yourself. The lowercase `prefix + s` session picker is unchanged by the default. See [Shell panes](guide.md#shell-panes) for popup navigation and ownership.
 
 ## Codex profiles
 

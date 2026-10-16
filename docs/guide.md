@@ -38,7 +38,7 @@ Saying “start the chain” to an existing top-level agent keeps it as main. Ro
 
 ## Shell panes
 
-Press `prefix + S` (uppercase) to create an independent shell in the opener's working directory. It runs in a hidden `agents-<project>` session and opens immediately in a popup. The lowercase `prefix + s` keeps tmux's session picker.
+Press `prefix + C-s` to create an independent shell in the opener's working directory. It runs in a hidden `agents-<project>` session and opens immediately in a popup. Press your prefix, then Ctrl-S. The lowercase `prefix + s` keeps tmux's session picker. [Configure the shortcut](configuration.md#shell-popup-key) with `@tmux_agents_shell_key` before sourcing the configuration; `none` disables it.
 
 ```sh
 tmux-shell [--from AGENT] [--client CLIENT] [--pane OPENER]

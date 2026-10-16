@@ -87,7 +87,7 @@ Then add these to your own config (`install.sh` prints them with your paths):
 <details>
 <summary>What each one is for</summary>
 
-- **tmux:** `prefix + a` (agents), `prefix + A` (connect), `prefix + S` (shell), the sub agent chip, and hooks for border refresh, bell alerts and queued messages. If you linked the commands somewhere other than `~/.local/bin`, put `%hidden TMUX_AGENTS_BIN="/that/dir"` before the `source-file` line.
+- **tmux:** `prefix + a` (agents), `prefix + A` (connect), `prefix + C-s` (shell), the sub agent chip, and hooks for border refresh, bell alerts and queued messages. If you linked the commands somewhere other than `~/.local/bin`, put `%hidden TMUX_AGENTS_BIN="/that/dir"` before the `source-file` line.
 - **Claude:** agents can message, peek, spawn, report, rename themselves or descendants, and close their own sub agents without prompting. `tmux-connect` (without `--from`), `tmux-disconnect`, plain `tmux-dismiss` and plain `tmux-rename` stay yours and still prompt.
 - **Codex:** use `tmux-agents start codex` (or a configured profile) for identity pins and turn tracking. The optional wrapper only pins identity when you type `codex` directly; it does not add tracking. Copy the fish functions into `~/.config/fish/functions/`, or `source` the sh file from `~/.bashrc` / `~/.zshrc`. Launch hooks are passed per process; no global Claude or Codex hook configuration is changed.
 - **Optional:** tell your agents to use `tmux-spawn` for every sub agent, in `CLAUDE.md` / `AGENTS.md`. The skill explains how.
@@ -129,7 +129,7 @@ Or let your agent show you: say "tmux-agents quick start".
 
 Ask your agent in plain language; it runs the `--from` examples below. `ME`, `PEER` and `CHILD` stand for its own name, the connected agent's name and the full sub-agent name printed by the commands. Run launch and configuration commands in a tmux shell.
 
-- **Keep a project shell running.** Press `prefix + S` to open an independent shell popup, then `prefix + d` to detach. Find it again with `prefix + a`; Enter reopens it and `ctrl-x` closes it. [Shell panes](docs/guide.md#shell-panes).
+- **Keep a project shell running.** Press `prefix + C-s` to open an independent shell popup, then `prefix + d` to detach. Find it again with `prefix + a`; Enter reopens it and `ctrl-x` closes it. [Shell panes](docs/guide.md#shell-panes).
 - **Track your own agent's work.** Run `tmux-agents start claude` or `tmux-agents start codex` to get state and worked-time tracking. [Starting agents](docs/guide.md#starting-agents).
 - **Get a second opinion.** With Codex in another pane in this window, tell Claude "connect codex and ask it to review this diff". It runs `tmux-connect --from ME codex`, then `tmux-ask --from ME PEER "Review the current diff"`. You can also connect panes with `prefix + A`. [Connecting agents](docs/guide.md#connecting-agents).
 - **Delegate a task you can watch.** Say "spawn a Codex sub agent to add parser tests". It runs `tmux-spawn codex --from ME --name parser-tests "Add parser tests"`; use `prefix + a` to browse its pane and live preview. [Sub agents](docs/guide.md#sub-agents).
@@ -144,7 +144,7 @@ Ask your agent in plain language; it runs the `--from` examples below. `ME`, `PE
 | --- | --- |
 | `prefix + a` | The agent list, with a live preview |
 | `prefix + A` | Connect this pane to another one (`ctrl-a`: any window) |
-| `prefix + S` | Open a new independent shell popup |
+| `prefix + C-s` | Open a new independent shell popup ([configurable](docs/configuration.md#shell-popup-key)) |
 | `prefix + d` | Detach a popup, keeping its pane running; close the list when in it |
 
 The list opens on this window and its descendants, with sub agents and members needing you pinned from every window.

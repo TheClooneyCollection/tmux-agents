@@ -73,7 +73,7 @@ User settings, defaults and environment overrides: [Configuration](../../docs/co
 
 Use `tmux-shell --from ME` to open an interactive shell in the hidden project session, immediately in a popup. Always supply your actual name with `--from`: it assigns ownership, and recursively dismissing you closes your owned shells. `--pane OPENER` selects the opener and working directory, never ownership; `--client CLIENT` selects the popup client.
 
-The user can press `prefix + S` to create an independent shell, including from an agent pane. `prefix + d` detaches while leaving it running. Shells appear distinctly in `prefix + a`; independent shells use their opener's window scope. Enter reopens a live shell popup; `ctrl-x` closes it.
+The user can press `prefix + C-s` to create an independent shell, including from an agent pane. This default shortcut is configurable with `@tmux_agents_shell_key` before sourcing the configuration; `none` disables it. A nonempty `TMUX_AGENTS_SHELL_KEY` overrides the option. Re-source to apply changes; see [Shell popup key](../../docs/configuration.md#shell-popup-key). `prefix + d` detaches while leaving it running. Shells appear distinctly in `prefix + a`; independent shells use their opener's window scope. Enter reopens a live shell popup; `ctrl-x` closes it.
 
 A shell is an interactive terminal with no task delivery, delegation, agent permission states or worked-time counters. Do not send it `tmux-ask` requests or wait for an agent reply. Shell exit removes it entirely, with no closed record or `tmux-spawn --resume`. History uses only the configured shell's usual settings; there is no dedicated command log, and forced closure may lose unwritten history. See [Shell panes](../../docs/guide.md#shell-panes).
 

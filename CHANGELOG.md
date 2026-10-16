@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Shell popups.** `prefix + S` or `tmux-shell` opens an independent shell in the hidden project session; `prefix + d` detaches it while it keeps running. Browse shells with `prefix + a`, reopen with Enter and close with `ctrl-x`. Agents use `tmux-shell --from NAME` to create owned shells that close with their owner. Shell exit removes the pane without a closed record or resume; history follows the configured shell, with no separate command log. Reload the tmux configuration after updating to enable the new binding.
+- **Shell popups.** `prefix + C-s` or `tmux-shell` opens an independent shell in the hidden project session; `prefix + d` detaches it while it keeps running. Browse shells with `prefix + a`, reopen with Enter and close with `ctrl-x`. Agents use `tmux-shell --from NAME` to create owned shells that close with their owner. Shell exit removes the pane without a closed record or resume; history follows the configured shell, with no separate command log. Configure `@tmux_agents_shell_key` before sourcing the tmux configuration (`C-s` by default, `none` to disable; `TMUX_AGENTS_SHELL_KEY` overrides). Re-source to apply changes; the previous key is removed only if it still holds our binding.
 
 ## v1.14.0 (2026-10-13)
 
