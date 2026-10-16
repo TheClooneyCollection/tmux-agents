@@ -12,6 +12,7 @@ export XDG_STATE_HOME="$tmp/state" TMUX_SPAWN_BIN="$tmp/bin"
 for a in claude codex; do
   printf '#!/bin/sh\necho "FAKE %s"\nexec cat\n' "$a" >"$tmp/bin/$a"
   chmod +x "$tmp/bin/$a"
+  "$tmp/bin/$a" </dev/null | grep -qx "FAKE $a"
 done
 tmux -L "$sock" -f /dev/null new-session -d -s work -c "$tmp/project dir" cat
 tmux -L "$sock" has-session || exit 1
@@ -34,11 +35,31 @@ if [ "$1" = run-shell ] && [ "$2" = -b ]; then exec /bin/sh -c "$3"; fi
 if [ "$1" = display-popup ]; then printf '%s\n' "$@" >"$SHELL_TEST_POPUP"; exit 0; fi
 exec "$SHELL_TEST_TMUX" "$@"
 STUB
+# The bootstrap gate also invokes this wrapper inside a tmux-created pane.
+# Export its dependencies to the private server, not just the test process.
+tmux set-environment -g SHELL_TEST_TMUX "$real_tmux"
+tmux set-environment -g SHELL_TEST_POPUP "$tmp/popup"
 chmod +x "$tmp/bin/tmux"
 export PATH="$tmp/bin:$PATH"
 . "$B/lib.sh"
 fail=0
 check() { if "$@"; then printf 'ok %s\n' "$*"; else printf 'FAIL %s\n' "$*"; fail=1; fi; }
+# Observe a command executed by the interactive shell before checking cwd or
+# sending exit. A dead bootstrap pane must fail immediately, not time out.
+shell_ready() {
+  local pane="$1" marker="shell-ready:$1" command attempt output
+  printf -v command "printf '%%s\\n' %q" "$marker"
+  tmux send-keys -t "$pane" "$command" Enter
+  for ((attempt=0; attempt<200; attempt++)); do
+    [ "$(tmux display -p -t "$pane" '#{pane_dead}')" = 0 ] || break
+    output="$(tmux capture-pane -p -S -100 -t "$pane")"
+    if printf '%s\n' "$output" | grep -Fxq "$marker"; then return 0; fi
+    sleep .02
+  done
+  echo "FAIL interactive shell did not execute readiness marker: $pane" >&2
+  tmux capture-pane -p -S -100 -t "$pane" >&2 || true
+  return 1
+}
 tmux set -g @parent %999999
 tmux set -g @member 1
 tmux set -g @state working
@@ -48,6 +69,7 @@ tmux set -gu @member
 tmux set -gu @state
 first="$(tmux list-panes -a -F '#{pane_id} #{@shell}' | awk '$2 == 1 {print $1}')"
 check test -n "$first"
+shell_ready "$first"
 check test "$(tmux show -pqv -t "$first" @parent)" = ''
 check test "$(tmux show -pqv -t "$first" @member)" = 0
 check test "$(tmux show -pqv -t "$first" @state)" = ''
@@ -69,6 +91,7 @@ check test "$(tmux show -pqv -t "$first" @state)" = ''
 "$B/tmux-shell" --from main --client test-client
 second="$(tmux list-panes -a -F '#{pane_id} #{@shell} #{@parent}' | awk '$2 == 1 && $3 == "%0" {print $1}')"
 check test -n "$second"
+shell_ready "$second"
 check test "$(pane_name "$first")" != "$(pane_name "$second")"
 # A shell's own exit removes its pane despite global remain-on-exit.
 tmux send-keys -t "$first" 'exit' Enter
