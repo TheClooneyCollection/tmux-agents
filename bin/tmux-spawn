@@ -246,7 +246,10 @@ if [ -n "$resume$resume_id" ]; then
   [ -n "$sid" ] || die "can't reopen '$resume': its session id was never recorded (Codex records it when its first turn ends)"
   [ -d "$dir" ] || die "can't reopen '$resume': its directory $dir is gone"
   # Validate an explicitly supplied caller even when restoring a live parent.
-  [ -z "$FROM_PANE" ] || require_agent_pane "$(self_pane)"
+  if [ -n "$FROM_PANE" ]; then
+    caller="$(self_pane)"
+    require_agent_pane "$caller"
+  fi
   parent="" saved_parent="$(record_get "$resume_id" parent)"
   if [ -n "$saved_parent" ]; then parent="$(find_pane_by_id "$saved_parent")"; fi
   if [ -z "$parent" ]; then
