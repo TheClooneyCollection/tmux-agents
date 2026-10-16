@@ -36,6 +36,20 @@ This opens a window named after DIR (default `$PWD`) and starts the selected mai
 
 Saying “start the chain” to an existing top-level agent keeps it as main. Role settings affect new chains only. Main keeps its permission defaults; Claude/Codex members use `sub_auto` (default `on`). Codex main has identity pins and turn-end notify, but no turn-start hook, so main reports progress for each new user task with `tmux-agent-report --from ME "<task>"`.
 
+## Shell panes
+
+Press `prefix + S` (uppercase) to create an independent shell in the opener's working directory. It runs in a hidden `agents-<project>` session and opens immediately in a popup. The lowercase `prefix + s` keeps tmux's session picker.
+
+```sh
+tmux-shell [--from AGENT] [--client CLIENT] [--pane OPENER]
+```
+
+`--client` selects the client for the popup. `--pane` selects the opener and working directory; it does not assign ownership. A shell created by the user without `--from` stays independent even when its opener is an agent pane. Agents always pass their actual name with `tmux-shell --from ME`: that shell belongs to the agent and closes when its owner is recursively dismissed.
+
+Press `prefix + d` to detach and leave the shell running. `prefix + a` shows shells distinctly; independent shells appear in their opener's window scope, and owned shells follow their owner. Enter reopens the running shell popup and `ctrl-x` closes it. You can also type `exit` inside the shell. Exit removes it entirely: shells have no closed records or resume, no tasks or delegation, no agent permission states and no worked-time counters.
+
+History is whatever your configured shell normally saves. There is no dedicated saved-command log; forced closure with `ctrl-x` or owner dismissal may lose history that the shell has not written. Exit normally when you want the shell to flush its history according to its own configuration.
+
 ## Connecting agents
 
 Press `prefix + A` to connect existing panes. The popup previews this window's panes; `ctrl-a` switches to every window and remembers that choice. For unnamed panes, ↑/↓ selects name fields, typing edits and Enter accepts.
@@ -163,6 +177,7 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 | `tmux-ask --pending` | Inspect queued/undelivered messages. |
 | `tmux-ask --retry [--to PEER]` | Retry saved messages. |
 | `tmux-peek --from ME PEER [lines]` | Read peer output; default 40 lines. |
+| `tmux-shell [--from AGENT] [--client CLIENT] [--pane OPENER]` | Open an independent or explicitly owned shell popup. |
 | `tmux-spawn [AGENT] --from ME [--member] [task]` | Spawn; accepts stdin, `--name`, `--split` and `--for`. |
 | `tmux-spawn --list-closed` | List saved conversations. |
 | `tmux-spawn --from ME --resume PEER` / `--resume-id ID` | Reopen a conversation. |

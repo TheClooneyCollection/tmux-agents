@@ -56,6 +56,7 @@ A supplied spawn task is **not sent**. Read the printed result, retain the actua
 - `tmux-peek --from ME <name> [lines]`: read the last lines of a peer's screen without interrupting it.
 - `tmux-agent-report --from ME "<what you're doing>"`: report progress as a sub agent (see below).
 - `tmux-rename --from ME <agent> <new> [--exact]`: rename yourself or a descendant when asked; peers and unrelated agents are refused. Short names get the agent's command and directory prefix (e.g. `main` becomes `codex-~-main` at home); an existing matching prefix is kept. `--exact` uses the name verbatim. Use the resulting full name in every later `--from`; the old name stops resolving. The renamed agent and its peers receive notices. Plain `tmux-rename` is for the user.
+- `tmux-shell --from ME [--client CLIENT] [--pane OPENER]`: open an interactive shell popup owned by you (see Shell panes below).
 - `tmux-spawn [AGENT] --from ME --name <task-name> <<'MSG' ... MSG`: start a sub agent (see below).
 
 The commands must be on PATH (tmux-agents' `install.sh` links them into `~/.local/bin`). Run each `tmux-*` command on its own, not chained with `&&`, `;` or pipes into it from other commands: permission rules match the start of the command, so a chained call may run sandboxed and fail with "can't reach the tmux server".
@@ -67,6 +68,14 @@ The commands must be on PATH (tmux-agents' `install.sh` links them into `~/.loca
 - `tmux-spawn --resume <name> --from ME`: reopen the unique closed agent with that name. If it lists several matches, choose the intended record and use `tmux-spawn --resume-id <id> --from ME`; never guess (see below).
 
 User settings, defaults and environment overrides: [Configuration](../../docs/configuration.md).
+
+## Shell panes
+
+Use `tmux-shell --from ME` to open an interactive shell in the hidden project session, immediately in a popup. Always supply your actual name with `--from`: it assigns ownership, and recursively dismissing you closes your owned shells. `--pane OPENER` selects the opener and working directory, never ownership; `--client CLIENT` selects the popup client.
+
+The user can press `prefix + S` to create an independent shell, including from an agent pane. `prefix + d` detaches while leaving it running. Shells appear distinctly in `prefix + a`; independent shells use their opener's window scope. Enter reopens a live shell popup; `ctrl-x` closes it.
+
+A shell is an interactive terminal with no task delivery, delegation, agent permission states or worked-time counters. Do not send it `tmux-ask` requests or wait for an agent reply. Shell exit removes it entirely, with no closed record or `tmux-spawn --resume`. History uses only the configured shell's usual settings; there is no dedicated command log, and forced closure may lose unwritten history. See [Shell panes](../../docs/guide.md#shell-panes).
 
 ## Sub agents
 

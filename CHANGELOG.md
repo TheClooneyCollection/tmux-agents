@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Shell popups.** `prefix + S` or `tmux-shell` opens an independent shell in the hidden project session; `prefix + d` detaches it while it keeps running. Browse shells with `prefix + a`, reopen with Enter and close with `ctrl-x`. Agents use `tmux-shell --from NAME` to create owned shells that close with their owner. Shell exit removes the pane without a closed record or resume; history follows the configured shell, with no separate command log. Reload the tmux configuration after updating to enable the new binding.
+
 ## v1.14.0 (2026-10-13)
 
 - **Limited support for other agents.** `start`, `tmux-spawn`, chain roles and `chain-config` accept executable basenames on PATH; configured Codex profiles take precedence. Other agents launch without injected prompts or Claude/Codex flags and have no automatic tracking, worked time, permission setup or resume. Spawn tasks and unknown-main chain requests must be sent manually with `tmux-ask` once the agent is at its prompt. See [agent support](docs/agents.md) for capabilities and limitations. Claude/Codex and configured profiles keep their existing behavior.
