@@ -44,7 +44,7 @@ New profiles need the installer run for their existing Codex home so they receiv
 
 ## Starting from a shell
 
-`tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--secondary AGENT] [--worker AGENT]` opens a new window in DIR (default `$PWD`), names it after DIR's basename (`/` at the filesystem root) unless `--name NAME` is supplied, and launches the selected main.
+`tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--secondary AGENT] [--worker AGENT]` opens a new window in DIR (default `$PWD`), names it after DIR's basename (`root` at the filesystem root) unless `--name NAME` is supplied, and launches the selected main.
 
 Without `--target` it opens and focuses the window in the current session. `--target session[:index]` creates it detached in an existing session; a bare session chooses the next free index. Target mode needs no caller pane or `TMUX` variable when tmux can reach the existing server. Flags can appear in any order. All three role choices are validated before window creation. Success prints exactly the new pane ID and a newline to stdout; errors use stderr and a nonzero exit status. Both window rename options (`automatic-rename` and `allow-rename`) are disabled before agent startup. Chain `--name` names the window, unlike the pane label in `start AGENT --name`. For named servers, select the socket through `TMUX` or a `tmux -L NAME` wrapper; there is no launcher socket flag. See [Starting agents](../../docs/guide.md#starting-agents) for examples.
 
