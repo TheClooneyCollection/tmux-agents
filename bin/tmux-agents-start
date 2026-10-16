@@ -47,7 +47,7 @@ if [ "$kind" = chain ]; then
     esac
   done
   # Window arguments belong only to start; chain-config stays role-only.
-  chain_options_parse "${role_args[@]}"
+  chain_options_parse ${role_args[@]+"${role_args[@]}"}
   chain_roles_resolve
   [ -d "$dir" ] || die "directory does not exist: $dir"
   dir="$(cd "$dir" && pwd)"
