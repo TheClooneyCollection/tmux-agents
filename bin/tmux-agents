@@ -468,10 +468,10 @@ case "${1:-}" in
       ' "$d/$n.record"
       [ ! -f "$d/$n.command" ] || cat "$d/$n.command"
       printf '\n\nctrl-x: clear command; saved commands cannot be reopened\n'
-    } | LC_ALL=C awk '
-      # Keep tabs, newlines and UTF-8 text, but make terminal controls inert.
-      # This covers ESC/OSC, BEL, CR, DEL and UTF-8 encoded C1 controls.
-      { gsub(/\302[\200-\237]/,"?"); gsub(/[\000-\010\013-\037\177]/,"?"); print }
+    } | LC_ALL=C tr '\000-\010\013-\037\177' '?' | LC_ALL=C awk '
+      # Keep tabs, newlines and UTF-8 text. tr handles NUL portably; BSD awk
+      # cannot include it in a regex. Also neutralize UTF-8 encoded C1 controls.
+      { gsub(/\302[\200-\237]/,"?"); print }
     '
     exit 0
     ;;
