@@ -33,7 +33,9 @@ if [ "$kind" = chain ]; then
       --target|--name)
         [ $# -ge 2 ] && [ -n "$2" ] && [[ $2 != --* ]] || die "$1 needs a value"
         case "$1" in
-          --target) target="$2" ;;
+          --target)
+            case "$2" in :*) die '--target requires a session name before the colon' ;; esac
+            target="$2" ;;
           --name) window="$2" ;;
         esac
         shift 2 ;;
