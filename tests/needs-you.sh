@@ -104,6 +104,41 @@ turn_end
 expect "member still needs you with nothing pending" needs_you
 tmux set -pu -t %1 @member
 
+echo "Claude pasted rename notices preserve task state"
+# Claude 2.1.301 wraps bracketed-paste input, including rename notices.
+rename_notice="$(notice_body tmux-rename 'boss is now renamed-boss' kid)"
+wrapped_notice="$(printf '\n\n<pasted_content id="d21a">\n%s\n</pasted_content id="d21a">\n' "$rename_notice")"
+for initial in idle "done" needs_you; do
+  reset
+  tmux set -p -t %1 @state "$initial"
+  if [ "$initial" = needs_you ]; then tmux set -p -t %1 @attention_since 123; fi
+  turn_start "$wrapped_notice"
+  expect "wrapped rename notice keeps $initial at turn start" "$initial"
+  turn_end
+  expect "wrapped rename notice keeps $initial at turn end" "$initial"
+  if [ "$initial" = needs_you ]; then
+    check "notice preserves existing attention timestamp" test "$(st %1 @attention_since)" = 123
+  else
+    check "notice adds no attention" test -z "$(st %1 @attention_since)"
+  fi
+done
+reset
+"$B/tmux-agent-report" --pane %1 --waiting "CI run" >/dev/null
+turn_start "$wrapped_notice"; turn_end
+expect "wrapped rename notice preserves background wait" working
+check "wrapped notice keeps wait reason" test "$(st %1 @waiting_on)" = "CI run"
+for mixed in "please review this $wrapped_notice" "$wrapped_notice please review this"; do
+  reset
+  tmux set -p -t %1 @state idle
+  turn_start "$mixed"; turn_end
+  expect "user text outside pasted notice starts work" needs_you
+done
+reset
+tmux set -p -t %1 @state idle
+turn_start "$(printf '<pasted_content id="d21a">\n%s\nplease review this\n</pasted_content id="d21a">' "$rename_notice")"
+turn_end
+expect "user text inside pasted notice starts work" needs_you
+
 echo "Normal workflows: never needs you"
 
 reset
