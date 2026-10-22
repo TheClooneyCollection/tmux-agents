@@ -47,19 +47,46 @@ check() { if "$@"; then printf 'ok %s\n' "$*"; else printf 'FAIL %s\n' "$*"; fai
 # Observe a command executed by the interactive shell before checking cwd or
 # sending exit. A dead bootstrap pane must fail immediately, not time out.
 shell_ready() {
-  local pane="$1" marker="shell-ready:$1" command attempt output
-  printf -v command "printf '%%s\\n' %q" "$marker"
+  local pane="$1" marker="shell-ready:$1" command attempt ready
+  ready="$(mktemp "$tmp/ready.XXXXXX")"
+  # Keep the command on one line. Terminal echo and shell prompts cannot
+  # satisfy this check: only executing the command writes the exact marker.
+  printf -v command 'printf %%s %q > %q' "$marker" "$ready"
   tmux send-keys -t "$pane" "$command" Enter
   for ((attempt=0; attempt<200; attempt++)); do
     [ "$(tmux display -p -t "$pane" '#{pane_dead}')" = 0 ] || break
-    output="$(tmux capture-pane -p -S -100 -t "$pane")"
-    if printf '%s\n' "$output" | grep -Fxq "$marker"; then return 0; fi
+    if grep -Fxq "$marker" "$ready"; then rm -f "$ready"; return 0; fi
     sleep .02
   done
+  rm -f "$ready"
   echo "FAIL interactive shell did not execute readiness marker: $pane" >&2
   tmux capture-pane -p -S -100 -t "$pane" >&2 || true
   return 1
 }
+# dash adds PS2 to output from multiline input; readiness must not depend
+# on terminal rendering. Exercise it explicitly on hosts where sh is bash.
+if command -v dash >/dev/null 2>&1; then
+  dash_pane="$(tmux new-window -d -t work -P -F '#{pane_id}' "$(command -v dash) -i")"
+  shell_ready "$dash_pane"
+  tmux kill-pane -t "$dash_pane"
+fi
+# A live cat echoes the command but never executes it. A dead bootstrap also
+# fails even if its scrollback happens to contain the expected marker.
+if shell_ready %0 >"$tmp/echo-readiness.log" 2>&1; then
+  echo 'FAIL terminal echo passed shell readiness'; fail=1
+fi
+# The child shell, not the test runner, expands TMUX_PANE.
+# shellcheck disable=SC2016
+dead_pane="$(tmux new-window -d -t work -P -F '#{pane_id}' 'printf "shell-ready:%s\n" "$TMUX_PANE"; exit 0')"
+for ((i=0; i<100; i++)); do
+  [ "$(tmux display -p -t "$dead_pane" '#{pane_dead}')" = 1 ] && break
+  sleep .02
+done
+check test "$(tmux display -p -t "$dead_pane" '#{pane_dead}')" = 1
+if shell_ready "$dead_pane" >"$tmp/dead-readiness.log" 2>&1; then
+  echo 'FAIL dead pane passed shell readiness'; fail=1
+fi
+tmux kill-pane -t "$dead_pane"
 tmux set -g @parent %999999
 tmux set -g @member 1
 tmux set -g @state working
