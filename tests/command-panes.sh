@@ -133,7 +133,7 @@ export TMUX_AGENTS_SHELL_CLOSE_SECS=0
 raw=$'printf "multi\\n"\nprintf "done\\n"\n\n'
 result="$("$B/tmux-shell" --pane %0 --client test-client --command "$raw")"
 pane="${result##*(}"; pane="${pane%)}"
-record="$(rg -l "^pane=$pane$" "$(shell_commands_dir)"/*.record)"
+record="$(grep -lFx "pane=$pane" "$(shell_commands_dir)"/*.record)"
 id="${record##*/}"; id="${id%.record}"
 wait_for record_status "$record" ok
 wait_for gone "$pane"
@@ -173,7 +173,7 @@ export TMUX_AGENTS_SHELL_CLOSE_SECS=0
 # Finished command records are removed when their stable owner is dismissed.
 result="$("$B/tmux-shell" --from main --client test-client --command true)"
 pane="${result##*(}"; pane="${pane%)}"
-record="$(rg -l "^pane=$pane$" "$(shell_commands_dir)"/*.record)"
+record="$(grep -lFx "pane=$pane" "$(shell_commands_dir)"/*.record)"
 wait_for record_status "$record" ok
 wait_for gone "$pane"
 check test "$(sed -n 's/^parent=//p' "$record")" = "$(pane_agent_id %0)"
@@ -182,11 +182,11 @@ keeper="$(tmux new-window -d -t work -P -F '#{pane_id}' cat)"
 tmux set -p -t "$keeper" @agent keeper \; set -p -t "$keeper" @parent %0
 kept_result="$("$B/tmux-shell" --from keeper --client test-client --command 'exit 8')"
 kept_pane="${kept_result##*(}"; kept_pane="${kept_pane%)}"
-kept_record="$(rg -l "^pane=$kept_pane$" "$(shell_commands_dir)"/*.record)"
+kept_record="$(grep -lFx "pane=$kept_pane" "$(shell_commands_dir)"/*.record)"
 wait_for record_status "$kept_record" 'failed 8'
 completed_result="$("$B/tmux-shell" --from keeper --client test-client --command true)"
 completed_pane="${completed_result##*(}"; completed_pane="${completed_pane%)}"
-completed_record="$(rg -l "^pane=$completed_pane$" "$(shell_commands_dir)"/*.record)"
+completed_record="$(grep -lFx "pane=$completed_pane" "$(shell_commands_dir)"/*.record)"
 wait_for gone "$completed_pane"
 "$B/tmux-dismiss" --keep-children keeper
 check pane_alive "$kept_pane"
@@ -200,7 +200,7 @@ child="$(tmux new-window -d -t work -P -F '#{pane_id}' cat)"
 tmux set -p -t "$child" @agent child \; set -p -t "$child" @parent %0
 child_result="$("$B/tmux-shell" --from child --client test-client --command 'exit 9')"
 child_pane="${child_result##*(}"; child_pane="${child_pane%)}"
-child_record="$(rg -l "^pane=$child_pane$" "$(shell_commands_dir)"/*.record)"
+child_record="$(grep -lFx "pane=$child_pane" "$(shell_commands_dir)"/*.record)"
 wait_for record_status "$child_record" 'failed 9'
 "$B/tmux-dismiss" main
 check test ! -e "$record"
