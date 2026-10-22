@@ -208,8 +208,17 @@ case "$turn" in
     # work: keep what the agent is waiting on, and a needs-you stays one.
     # Claude passes the prompt to the hook as JSON on stdin.
     if [ ! -t 0 ]; then
-      prompt="$(/usr/bin/perl -MJSON::PP -e 'local $/; my $j = eval { JSON::PP->new->decode(<STDIN>) } || {}; print substr($j->{prompt} // "", 0, 40)' 2>/dev/null || true)"
-      case "$prompt" in "[notice from "*) exit 0 ;; esac
+      prompt="$(/usr/bin/perl -MJSON::PP -e '
+        local $/; my $j = eval { JSON::PP->new->decode(<STDIN>) } || {};
+        my $p = $j->{prompt} // "";
+        # Claude wraps bracketed pastes. Unwrap only an entire notice:
+        # text beside the wrapper or after the notice is a user prompt.
+        if ($p =~ /\A\s*<pasted_content id="([^"\r\n]+)">\s*(\[notice from (\S+) to (\S+) via tmux-ask\]\n.*?\[end of notice from \3 to \4\])\s*<\/pasted_content id="\1">\s*\z/s) {
+          $p = $2;
+        }
+        print "notice" if $p =~ /\A\[notice from /;
+      ' 2>/dev/null || true)"
+      [ "$prompt" != notice ] || exit 0
     fi
     if [ "$(tmux show-options -pqv -t "$pane" @state)" = needs_you ]; then
       tmux set-option -pu -t "$pane" @attention_since 2>/dev/null || true

@@ -124,7 +124,7 @@ A first version parsed `capture-pane` output (Claude's spinner and `⏺ Tool(...
   - with nothing pending, a top-level agent (no `@parent`) goes idle and clears `@attention_since`;
   - otherwise the sub agent or member gets `needs_you` and `@attention_since`.
 
-  `needs_you` is cleared by a progress report, an incoming request, or Claude's `UserPromptSubmit` (`--turn-start`).
+  `needs_you` is cleared by a progress report, an incoming request, or Claude's `UserPromptSubmit` (`--turn-start`). Notice-only prompts preserve state and waiting markers, including Claude's `<pasted_content id="...">` wrapper around bracketed pastes. The wrapper must contain only a complete notice; additional user text outside it or after the notice still starts a normal turn.
 - **Turn ends.** Claude: the `Stop` hook. Codex: `notify`, which is not a hook, so there is no trust prompt. It receives JSON with `thread-id` and the turn's `input-messages` (checked with a `codex exec` probe), and runs with the daemon's environment like hooks do. Both top-level `start` and `tmux-spawn` supply `notify` with the stable `--agent-id`, so even a plain initial user prompt identifies the right pane. `--codex-notify` records the conversation ID and `@codex_thread`; older launch commands can resolve a known thread or a request/reply header. This overrides the user's own `notify` for that launched process, including top-level agents, without editing global config.
 - **`@awaiting`.** `tmux-ask` adds the receiver's agent ID on a request and removes the replying agent's ID from its peer's list on a reply. State reports resolve IDs to current labels; agents no longer live are dropped at turn end.
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.17.1 (2026-10-22)
+
+- **Preserve state on pasted notices.** Claude's pasted-content wrapper around rename notices no longer wakes idle helpers or clears background waits, preventing false `needs you` alerts. User text accompanying a wrapped notice still starts work.
+
 ## v1.17.0 (2026-10-16)
 
 - **Chain help.** `tmux-agents start chain --help` and `-h` now print usage and succeed without needing a tmux server.
