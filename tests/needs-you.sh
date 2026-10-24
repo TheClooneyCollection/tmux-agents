@@ -40,8 +40,11 @@ tmux set -p -t %1 @parent %0
 fail=0
 st() { tmux show -pqv -t "$1" "$2"; }
 reset() {
+  # Independent cases share a server, never obligations. Remove only this
+  # suite's socket ledger beneath its own temporary state directory.
+  rm -rf "$state_dir/tmux-agents/$sock/requests"
   for p in %0 %1; do
-    for o in @attention_since @waiting_on @awaiting @activity @codex_thread; do tmux set -pu -t "$p" "$o" 2>/dev/null; done
+    for o in @attention_since @waiting_on @awaiting @activity @codex_thread @request_local_work @request_local_done @request_progress_at @request_pending_since; do tmux set -pu -t "$p" "$o" 2>/dev/null; done
   done
   tmux set -p -t %1 @tracked 1; tmux set -p -t %1 @state working
 }
@@ -68,6 +71,7 @@ reset
 tmux set -pu -t %1 @parent
 turn_start "user task"
 tmux set -p -t %1 @attention_since 1
+"$B/tmux-agent-report" --pane %1 --local-done
 turn_end
 expect "top-level with nothing pending goes idle" idle
 check "top-level clears old attention" test -z "$(st %1 @attention_since)"
@@ -77,6 +81,7 @@ turn_end
 check "duplicate idle turn end does not count twice" test "$(st %1 @turns)" = 1
 turn_start "next user prompt"
 expect "turn-start wakes idle top-level" working
+"$B/tmux-agent-report" --pane %1 --local-done
 turn_end
 "$B/tmux-agent-report" --pane %1 "resumed top-level work" >/dev/null
 expect "progress report wakes idle top-level" working
@@ -84,6 +89,7 @@ turn_end
 ask %0 kid "new request"
 expect "incoming request wakes idle top-level" working
 turn_end
+expect "top-level unanswered incoming request needs the user" needs_you
 turn_start "delegate work to boss"
 ask %1 boss "pending reply"
 turn_end
@@ -92,7 +98,13 @@ check "top-level shows awaited agent" test "$(st %1 @activity)" = "waiting for b
 check "top-level waiting has no attention marker" test -z "$(st %1 @attention_since)"
 ask %0 --reply kid "answer"
 turn_end
-expect "top-level goes idle after reply clears wait" idle
+expect "outgoing answer leaves incoming and local work unfinished" needs_you
+ask %1 --reply boss "incoming task complete"
+turn_end
+expect "incoming reply preserves independent local task" needs_you
+"$B/tmux-agent-report" --pane %1 --local-done
+turn_end
+expect "top-level goes idle after all requests and local work finish" idle
 # Ownership, including member ownership, keeps the existing needs-you rule.
 tmux set -p -t %1 @parent %0
 reset
@@ -154,17 +166,17 @@ ask %0 kid "first task"
 expect "first request starts idle agent working" working
 
 reset
-ask %0 kid "do x"; turn_start "[request from boss to kid via tmux-ask] do x"
+ask %0 kid "do x"; turn_start "$(request_body boss 'do x' kid)"
 ask %1 --reply boss "done"; turn_end
 expect "replies to its parent, then ends its turn" "done"
 
 reset
-ask %0 kid "do z"; turn_start "[request from boss to kid via tmux-ask] do z"
+ask %0 kid "do z"; turn_start "$(request_body boss 'do z' kid)"
 ask %1 --reply boss "delivered abc123"
 "$B/tmux-agent-report" --pane %1 "abc123 delivered, all green" >/dev/null; turn_end
 expect "replies, then reports progress, then ends its turn" "done"
 
-turn_start "$(printf '[notice from boss to kid via tmux-ask]\nfyi')"; turn_end
+turn_start "$(notice_body boss fyi kid)"; turn_end
 expect "done, then gets a notice" "done"
 [ -z "$(st %0 @awaiting)" ] || { echo "FAIL  a notice made boss wait on kid"; fail=1; }
 
@@ -187,7 +199,7 @@ expect "notice to its parent, then ends its turn" working
 [ -z "$(st %1 @awaiting)" ] || { echo "FAIL  sending a notice created a reply obligation"; fail=1; }
 
 ask %0 --notice kid "acknowledged"
-turn_start "[notice from boss to kid via tmux-ask] acknowledged"; turn_end
+turn_start "$(notice_body boss acknowledged kid)"; turn_end
 expect "parent notice wait survives an incoming notice" working
 
 ask %1 --reply boss "done"; turn_end
@@ -209,7 +221,7 @@ expect "reported --waiting for background work" working
 
 reset
 "$B/tmux-agent-report" --pane %1 --waiting "CI run" >/dev/null
-turn_start "$(printf '[notice from boss to kid via tmux-ask]\nfyi')"; turn_end
+turn_start "$(notice_body boss fyi kid)"; turn_end
 expect "waiting on background work, then gets a notice" working
 [ "$(st %1 @waiting_on)" = "CI run" ] || { echo "FAIL  the notice cleared what kid waits on"; fail=1; }
 
@@ -220,14 +232,20 @@ expect "working, then gets a notice" working
 
 reset
 tmux set -p -t %1 @codex_thread main-thread
-notify title-thread '{"title":"Do y"}' "[request from boss to kid via tmux-ask] do y"
+notify title-thread '{"title":"Do y"}' "$(request_body boss 'do y' kid)"
 expect "Codex names its session (title thread)" working
 [ "$(st %1 @codex_thread)" = main-thread ] || { echo "FAIL  the title thread replaced @codex_thread"; fail=1; }
 
 reset
 tmux set -p -t %1 @codex_thread main-thread; tmux set -p -t %1 @tracked 1; tmux set -p -t %1 @state "done"
-notify main-thread "done, standing by" "anything"
+notify main-thread "done, standing by" "$(reply_body boss 'answer to earlier request' kid)"
 expect "Codex, done, another turn end" "done"
+
+reset
+tmux set -p -t %1 @codex_thread main-thread; tmux set -p -t %1 @state "done"
+notify main-thread "still working on the user task" "please review this directly"
+expect "Codex direct user input reopens done as unfinished local work" needs_you
+check "Codex direct input retains local obligation" test "$(st %1 @request_local_work)" = 1
 
 echo "Real cases: needs you"
 
@@ -258,7 +276,8 @@ tmux kill-pane -t "$other"
 reset
 "$B/tmux-agent-report" --pane %1 --waiting "CI run" >/dev/null
 ask %0 kid "next task"; turn_end
-expect "new request clears background wait without a turn-start hook" needs_you
+expect "new request preserves background wait without a turn-start hook" working
+check "new request retains explicit background reason" test "$(st %1 @waiting_on)" = "CI run"
 
 reset
 turn_end
@@ -266,13 +285,15 @@ expect "ends its turn without replying or waiting" needs_you
 
 reset
 "$B/tmux-agent-report" --pane %1 --waiting "CI run" >/dev/null
-turn_start "[request from boss to kid via tmux-ask] new task"; turn_end
-expect "a new request ends the old wait; no reply" needs_you
+ask %0 kid "new task"
+turn_start "$(request_body boss 'new task' kid)"; turn_end
+expect "a protocol request turn preserves background work" working
+check "request turn retains explicit background reason" test "$(st %1 @waiting_on)" = "CI run"
 
 reset
 tmux set -p -t %1 @tracked 1; tmux set -p -t %1 @state "done"
 ask %0 kid "no reply needed, don't restart"
-turn_start "[request from boss to kid via tmux-ask] no reply needed"; turn_end
+turn_start "$(request_body boss 'no reply needed' kid)"; turn_end
 expect "a request (not a notice) answered only locally" needs_you
 
 # An owned plain shell is not outstanding agent work.
@@ -297,7 +318,7 @@ ask %0 kid "identity request"
 case "$(st %0 @activity)" in *renamed-kid*) echo 'ok    waiting activity resolves current label' ;; *) echo 'FAIL waiting activity uses stale label'; fail=1 ;; esac
 ask %1 --reply boss "identity reply"
 [ -z "$(st %0 @awaiting)" ] || { echo 'FAIL renamed reply left an obligation'; fail=1; }
-notify main-thread "done" "[request from boss to kid via tmux-ask] old header"
+notify main-thread "done" "$(request_body boss 'old header' kid)"
 [ "$(record_get "$kid_id" id)" = main-thread ] || { echo 'FAIL notify did not retain identity record'; fail=1; }
 # A late notify from a closed conversation cannot bind a reused label.
 tmux new-window -d cat
@@ -305,7 +326,7 @@ new_pane="$(tmux list-panes -a -F '#{pane_id}' | tail -n 1)"
 tmux set -p -t "$new_pane" @agent kid
 ensure_agent_id "$new_pane" >/dev/null
 tmux kill-pane -t %1
-notify main-thread "late completion" "[request from boss to kid via tmux-ask] old header"
+notify main-thread "late completion" "$(request_body boss 'old header' kid)"
 [ -z "$(st "$new_pane" @codex_thread)" ] || { echo 'FAIL late notify bound to reused label'; fail=1; }
 
 [ "$fail" -eq 0 ] && echo "all passed" || echo "some failed"

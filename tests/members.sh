@@ -108,6 +108,8 @@ else
 fi
 # Explicit main-level dismissal traverses members and their ordinary helpers.
 secondary_id="$(info "$secondary" @agent_id)"
+secondary_request="$(request_state incoming "$secondary")"
+check 'for brief created a real secondary obligation' test -n "$secondary_request"
 "$B/tmux-dismiss" --from main secondary >"$tmp/cascade"
 for pane in "$secondary" "$worker" "$helper"; do check "cascade closes $pane" gone "$pane"; done
 check 'closed record preserves member marker' test "$(record_get "$secondary_id" member)" = 1
@@ -120,7 +122,11 @@ check 'resume retains member' test "$(info "$secondary" @member)" = 1
 # shellcheck disable=SC2016
 check 'resume retains depth in process' bash -c 'tmux capture-pane -p -S - -t "$1" | grep -q DEPTH=1' _ "$secondary"
 check 'resume reconnects owner' test "$(info "$secondary" @parent)" = %0
-check 'resume starts done' test "$(info "$secondary" @state)" = "done"
+check 'resume preserves unfinished request as working' test "$(info "$secondary" @state)" = working
+check 'resume retains the exact request obligation' test "$(request_state incoming "$secondary")" = "$secondary_request"
+"$B/tmux-ask" --from secondary --reply --request-id "$secondary_request" main 'worker handoff resolved' >/dev/null
+check 'answered resumed member returns to prior idle' test "$(info "$secondary" @state)" = idle
+check 'reply completes resumed obligation' test -z "$(request_state incoming "$secondary")"
 # An ordinary ancestor must not make a nested member eligible for --done.
 spawn --exact --name ordinary
 ordinary="$(pane_of ordinary)"
@@ -130,6 +136,11 @@ TMUX_AGENTS_DEPTH=1 "$B/tmux-spawn" claude --from secondary --exact --name dispo
 disposable="$(pane_of disposable)"
 for pane in "$ordinary" "$protected" "$disposable"; do
   ready "$pane" || { echo 'ABORT: cleanup stub not ready'; exit 1; }
+done
+# Resolve the real --for brief before constructing done cleanup fixtures.
+"$B/tmux-ask" --from ordinary --reply main 'member prepared' >/dev/null
+for pane in "$ordinary" "$protected" "$disposable"; do
+  check 'cleanup fixture has no unanswered requests' test -z "$(request_state incoming "$pane")"
   tmux set -p -t "$pane" @state "done"
 done
 # Run confirmation on a private test-server tty, never the caller's tty.
@@ -188,11 +199,18 @@ check 'profile worker helper is ordinary' test "$(info "$codex_helper" @member)"
 check 'profile worker helper depth two' grep -qx 'depth=2' "$(record_for "$codex_helper")"
 "$B/tmux-agent-report" --from codex-secondary 'processing assigned work' >/dev/null
 "$B/tmux-agent-report" --pane "$secondary_codex" --turn-end </dev/null
-# Creating the worker sends a request to secondary; clear that pending work
-# with its reply before asserting the idle-member attention transition.
+# A reply completes the brief, but idle descendants still need their tasks
+# completed. Exercise both guards without inventing replies to absent requests.
 "$B/tmux-ask" --from codex-secondary --reply codex-main 'chain prepared' >/dev/null
-check 'Codex member reply marks done' test "$(info "$secondary_codex" @state)" = "done"
-"$B/tmux-ask" --from profile-worker --reply codex-secondary 'worker completed' >/dev/null
+check 'Codex member reply preserves unfinished descendants' test "$(info "$secondary_codex" @state)" = working
+check 'Codex member brief itself is answered' test -z "$(request_state incoming "$secondary_codex")"
+for child in codex-helper profile-worker; do
+  "$B/tmux-agent-report" --from "$child" --local 'finish setup' >/dev/null
+  "$B/tmux-agent-report" --from "$child" --local-done
+  check 'descendant local setup is complete' test "$(info "$(pane_of "$child")" @state)" = "done"
+done
+"$B/tmux-agent-report" --pane "$secondary_codex" --turn-end </dev/null
+check 'Codex member completes after descendants finish' test "$(info "$secondary_codex" @state)" = idle
 "$B/tmux-ask" --from codex-main codex-secondary 'new assigned work' >/dev/null
 "$B/tmux-agent-report" --pane "$secondary_codex" --turn-end </dev/null
 check 'Codex member unfinished turn needs owner' test "$(info "$secondary_codex" @state)" = needs_you
