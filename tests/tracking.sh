@@ -49,13 +49,13 @@ tmux set -p -t %1 @msg_waiting_since 1
 rows >"$tmp/rows"
 grep -q '✉ message waiting' "$tmp/rows"
 tmux set -pu -t %1 @msg_waiting_since
-# A request preserves state and tracking but still clears explicit waiting.
+# A request preserves state, tracking and an explicit background wait.
 tmux set -p -t %1 @state idle
 tmux set -p -t %1 @waiting_on background
 "$B/tmux-ask" --from boss legacy 'untracked request' >/dev/null
 [ "$(opt state)" = idle ]
 [ -z "$(opt tracked)" ]
-[ -z "$(opt waiting_on)" ]
+[ "$(opt waiting_on)" = background ]
 [ -z "$(opt attention_since)" ]
 [ -n "$(tmux show -pqv -t %0 @awaiting)" ]
 echo 'ok    request does not start untracked receiver and preserves wait bookkeeping'
@@ -77,7 +77,7 @@ for tracked in 0 1; do
     sleep .05
   done
   [ ! -f "$stem.undelivered" ]
-  [ -z "$(opt waiting_on)" ]
+  [ "$(opt waiting_on)" = background ]
   if [ "$tracked" = 1 ]; then [ "$(opt state)" = working ]; else [ "$(opt state)" = idle ]; fi
 done
 echo 'ok    retained request retry starts only tracked receivers'
@@ -109,6 +109,9 @@ tmux set -p -t "$plain" @state working
 plain_json='{"type":"agent-turn-complete","thread-id":"plain-thread","input-messages":["hello"],"last-assistant-message":"hello back"}'
 "$B/tmux-agent-report" --agent-id "$plain_id" --codex-notify "$plain_json"
 [ "$(tmux show -pqv -t "$plain" @tracked)" = 1 ]
+[ "$(tmux show -pqv -t "$plain" @state)" = needs_you ]
+[ "$(tmux show -pqv -t "$plain" @request_local_work)" = 1 ]
+"$B/tmux-agent-report" --pane "$plain" --local-done
 [ "$(tmux show -pqv -t "$plain" @state)" = idle ]
 [ -z "$(tmux show -pqv -t "$plain" @attention_since)" ]
 [ "$(record_get "$plain_id" id)" = plain-thread ]

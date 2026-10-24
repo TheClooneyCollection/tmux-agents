@@ -246,6 +246,31 @@ user_typing() {
     -v w="$idle_secs" '$1 == p && now - $2 < w { f = 1 } END { exit !f }'
 }
 
+# Durable request operations are off the list path and serialized per socket.
+request_state() { /usr/bin/perl "$(dirname "${BASH_SOURCE[0]}")/tmux-request-state" "$@"; }
+new_request_id() { local id; id="$(new_agent_id)"; printf 'r%s\n' "${id#a}"; }
+claude_background() {
+  local pp
+  pp="$(tmux display-message -p -t "$1" '#{pane_pid}' 2>/dev/null)" || { echo 0; return; }
+  ps -A -o pid=,ppid=,comm=,command= 2>/dev/null | awk -v root="$pp" -v me="$$" '
+    { pid[NR] = $1; ppid[NR] = $2; comm[NR] = $3; cmd[NR] = $0; parent[$1] = $2 }
+    END {
+      # The claude process: a descendant of the pane (within 4 levels).
+      for (i = 1; i <= NR; i++) {
+        if (comm[i] !~ /(^|\/)claude$/) continue
+        p = pid[i]; for (d = 0; d < 5 && p != root && p > 1; d++) p = parent[p]
+        if (p == root) { cl = pid[i]; break }
+      }
+      if (!cl) { print 0; exit }
+      for (p = me; p > 1; p = parent[p]) anc[p] = 1
+      n = 0
+      for (i = 1; i <= NR; i++) if (ppid[i] == cl && !(pid[i] in anc) && index(cmd[i], "/.claude/shell-snapshots/")) n++
+      print n
+    }'
+}
+
+request_finish() { request_state finish "$1"; }
+
 # Message bodies for tmux-ask. Requests carry their own reply instructions,
 # so a receiver that never loaded the skill can still answer.
 # Args: sender, message, receiver[, extra reply flags]. The receiver's name

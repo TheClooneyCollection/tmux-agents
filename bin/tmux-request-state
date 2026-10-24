@@ -1,0 +1,239 @@
+#!/usr/bin/env perl
+# Internal durable request ledger. All mutations share a per-server lock.
+use strict;
+use warnings;
+use Fcntl qw(:flock);
+use File::Path qw(make_path);
+use FindBin;
+
+my ($op, @args) = @ARGV;
+my $socket = (split /,/, $ENV{TMUX} // '')[0] // '';
+die "request ledger requires a tmux socket\n" unless length $socket;
+$socket =~ s{.*/}{};
+my $root = ($ENV{XDG_STATE_HOME} // "$ENV{HOME}/.local/state") . "/tmux-agents/$socket/requests";
+make_path($root);
+open my $lock, '>>', "$root/.lock" or die "$!";
+flock($lock, LOCK_EX) or die "$!";
+my $now = time;
+sub read_fields {
+    my ($path) = @_; my %v;
+    if (open my $f, '<', $path) {
+        while (<$f>) { chomp; my ($k,$v)=split /=/, $_, 2; $v{$k}=$v if defined $v; }
+    }
+    return \%v;
+}
+sub save_fields {
+    my ($path,$v)=@_;
+    open my $f, '>', "$path.$$" or die "$!";
+    print $f "$_=$v->{$_}\n" for sort keys %$v;
+    close $f or die "$!";
+    rename "$path.$$", $path or die "$!";
+}
+sub journal {
+    my ($rid)=@_;
+    open my $f, '>', "$root/$rid.journal" or die "$!";
+    close $f or die "$!";
+}
+sub valid_id { defined $_[0] && $_[0] =~ /^a[0-9a-f]{12}$/ }
+sub valid_request { defined $_[0] && $_[0] =~ /^r[0-9a-f]{12}$/ }
+my %requests;
+# Reports update one context; completed history is irrelevant to them. Small
+# journal markers still make interrupted publication recoverable on any event.
+my $context_only=$op =~ /^(progress|local|local-done|wait)$/;
+my @journals=glob "$root/r*.journal";
+$context_only=0 if @journals;
+my @paths=$context_only ? () : glob("$root/r*.record");
+for my $path (@paths) {
+    my $v=read_fields($path);
+    $requests{$v->{request_id}}=$v if valid_request($v->{request_id});
+}
+for my $path (@journals) {
+    (my $rid=$path)=~s{.*/|\.journal$}{}g;
+    unlink $path unless $requests{$rid} && $requests{$rid}{publication};
+}
+my @keys=qw(agent_id state tracked parent waiting_on awaiting request_progress_at request_local_work request_local_done request_pending_since attention_since shell pane_dead);
+my $fmt='#{pane_id}' . join('', map { $_ eq 'pane_dead' ? "\t#{pane_dead}" : "\t\#{\@$_}" } @keys);
+open my $snap, '-|', 'tmux', 'list-panes', '-a', '-F', $fmt or die "$!";
+my (%panes,%by_pane);
+while (<$snap>) {
+    chomp; my ($p,@v)=split /\t/, $_, scalar(@keys)+1;
+    my %v; @v{@keys}=@v; $v{pane}=$p;
+    next unless valid_id($v{agent_id});
+    $panes{$v{agent_id}}=\%v; $by_pane{$p}=$v{agent_id};
+}
+close $snap;
+sub setopt {
+    my ($id,$key,$value)=@_; return unless $panes{$id};
+    return if ($panes{$id}{$key} // '') eq ($value // '');
+    my @cmd=('tmux','set-option',length($value // '') ? '-p' : '-pu','-t',$panes{$id}{pane},'@'.$key);
+    push @cmd,$value if length($value // '');
+    system(@cmd)==0 or die "cannot project request $key\n";
+    $panes{$id}{$key}=$value // '';
+}
+sub state {
+    my ($id,$value)=@_; return unless $panes{$id} && $panes{$id}{tracked} eq '1';
+    system('/bin/bash','-c','. "$1"; agent_set_state "$2" "$3"','request-state',"$FindBin::Bin/lib.sh",$panes{$id}{pane},$value)==0 or die "cannot set request state\n";
+    $panes{$id}{state}=$value;
+}
+sub pending {
+    my ($id)=@_; return grep { $_->{receiver_id} eq $id && $_->{status} eq 'pending' } values %requests;
+}
+sub context { read_fields("$root/$_[0].context") }
+sub save_context { save_fields("$root/$_[0].context",$_[1]) }
+sub activate {
+    my ($r,$spawn,$prepare_only)=@_; my $id=$r->{receiver_id}; return unless $panes{$id};
+    my $c=context($id);
+    if (!length($c->{base} // '')) {
+        my $v=$panes{$id};
+        $c->{base}= $spawn ? 'done' : ($v->{state} eq 'idle' ? 'idle' : 'done');
+        $c->{local_work}= !$spawn && ($v->{request_local_work} || ($v->{state} !~ /^(done|idle)$/ && !length($v->{waiting_on} // '') && !length($v->{awaiting} // '') && ($panes{$r->{requester_id}}{pane} // '') ne $v->{parent})) ? 1 : 0;
+        $c->{saved_wait}=$v->{waiting_on} // '';
+        save_context($id,$c);
+    }
+    return if $prepare_only;
+    state($id,'working');
+    setopt($id,'attention_since','');
+    # A parent coordination marker is superseded by a new request. Actual
+    # background waits remain outstanding work across peer interruptions.
+    if (($panes{$id}{waiting_on} // '') =~ / \(after a notice\)$/) {
+        setopt($id,'waiting_on',''); $c->{saved_wait}=''; save_context($id,$c);
+    }
+}
+# Complete write-ahead publication after recovering the original context.
+for my $r (values %requests) {
+    my $path=$r->{publication} // ''; next unless length $path;
+    activate($r,'') if $r->{status} eq 'pending';
+    if (-f "$path.tmp") { rename "$path.tmp",$path or die "cannot recover publication: $!"; }
+    delete $r->{publication}; save_fields("$root/$r->{request_id}.record",$r);
+    unlink "$root/$r->{request_id}.journal";
+}
+my $result='';
+if ($op eq 'create' || $op eq 'publish-create') {
+    my ($rid,$from,$to,$extra)=@args;
+    my $spawn=$op eq 'create' ? $extra : '';
+    my $publication=$op eq 'publish-create' ? $extra : '';
+    die "missing staged request body\n" if $publication && !-f "$publication.tmp";
+    die "invalid request identity\n" unless valid_request($rid) && valid_id($from) && valid_id($to);
+    die "request already exists\n" if $requests{$rid};
+    my $r={request_id=>$rid,requester_id=>$from,receiver_id=>$to,created_at=>$now,delivered_at=>'',replied_at=>'',status=>'pending'};
+    if ($publication) { $r->{publication}=$publication; journal($rid); }
+    $requests{$rid}=$r;
+    # Persist the pre-request baseline before the publication journal can commit.
+    activate($r,$spawn,1);
+    save_fields("$root/$rid.record",$r);
+    # Capture the pre-request work state before any delivery or hook.
+    if ($spawn && !$panes{$to}) { save_context($to,{base=>'done',local_work=>0,saved_wait=>''}); }
+    activate($r,$spawn);
+    if ($publication) {
+        rename "$publication.tmp",$publication or die "cannot publish request: $!";
+        delete $r->{publication}; save_fields("$root/$rid.record",$r);
+        unlink "$root/$rid.journal";
+    }
+} elsif ($op eq 'delivered') {
+    my $r=$requests{$args[0]} or die "unknown request\n";
+    if ($r->{status} eq 'pending' && !$r->{delivered_at}) {
+        $r->{delivered_at}=$now; save_fields("$root/$args[0].record",$r);
+    }
+} elsif ($op eq 'resolve') {
+    my ($from,$to,$rid)=@args;
+    my @matches=sort map { $_->{request_id} } grep { $_->{receiver_id} eq $from && $_->{requester_id} eq $to && $_->{status} eq 'pending' } values %requests;
+    if (length($rid // '')) {
+        die "request does not match this pending reply\n" unless valid_request($rid) && grep { $_ eq $rid } @matches;
+        $result=$rid;
+    } else {
+        die "ambiguous reply; pass --request-id: @matches\n" if @matches>1;
+        $result=$matches[0] // '';
+    }
+} elsif ($op eq 'publish-answer') {
+    my ($rid,$from,$to,$publication)=@args;
+    my $r=$requests{$rid} or die "unknown request\n";
+    die "request does not match this pending reply\n" unless $r->{status} eq 'pending' && $r->{receiver_id} eq $from && $r->{requester_id} eq $to;
+    die "missing staged reply body\n" unless -f "$publication.tmp";
+    # Write ahead: another publisher cannot claim this request. Recovery
+    # finishes the rename if this process dies between journal and publish.
+    $r->{publication}=$publication; journal($rid);
+    $r->{status}='answered'; $r->{replied_at}=$now;
+    save_fields("$root/$rid.record",$r);
+    rename "$publication.tmp",$publication or die "cannot publish reply: $!";
+    delete $r->{publication}; save_fields("$root/$rid.record",$r);
+        unlink "$root/$rid.journal";
+} elsif ($op eq 'answered') {
+    my $r=$requests{$args[0]} or die "unknown request\n";
+    $r->{status}='answered'; $r->{replied_at}=$now;
+    save_fields("$root/$args[0].record",$r);
+} elsif ($op eq 'local-done') {
+    my $id=$by_pane{$args[0]} // ''; exit 0 unless $id;
+    setopt($id,'request_local_work','');
+    setopt($id,'request_local_done','1');
+    my $c=context($id);
+    $c->{base} ||= $panes{$id}{parent} ? 'done' : 'idle';
+    $c->{local_work}=0; save_context($id,$c);
+} elsif ($op eq 'progress' || $op eq 'local') {
+    my $id=$by_pane{$args[0]} // ''; exit 0 unless $id;
+    setopt($id,'request_progress_at',"$now");
+    my $c=context($id);
+    $c->{progress_at}=$now;
+    save_context($id,$c);
+    if ($op eq 'local') {
+        state($id,'working');
+        setopt($id,'request_local_work','1');
+        setopt($id,'request_local_done','');
+        $c->{base} ||= $panes{$id}{parent} ? 'done' : 'idle';
+        $c->{local_work}=1; save_context($id,$c);
+    }
+} elsif ($op eq 'incoming') {
+    my $id=$by_pane{$args[0]} // ''; exit 0 unless $id;
+    $result=join(' ',sort map { $_->{request_id} } pending($id));
+} elsif ($op eq 'finish' || $op eq 'legacy-finish') {
+    my $id=$by_pane{$args[0]} // ''; exit 1 unless $id;
+    my $v=$panes{$id}; my $c=context($id);
+    # Validation, terminal projection and context removal share the create lock.
+    exit 1 if pending($id) || $c->{local_work} || $v->{request_local_work};
+    exit 1 if length($v->{waiting_on} // '') && $v->{waiting_on} !~ / \(after a notice\)$/;
+    exit 1 if grep { $_->{requester_id} eq $id && $_->{status} eq 'pending' } values %requests;
+    exit 1 if length($v->{awaiting} // '');
+    exit 1 if grep { $_->{parent} eq $v->{pane} && $_->{state} ne 'done' && $_->{shell} ne '1' && $_->{pane_dead} ne '1' } values %panes;
+    exit 1 unless $c->{base} || $op eq 'legacy-finish';
+    open my $bg, '-|', '/bin/bash','-c','. "$1"; claude_background "$2"','request-state',"$FindBin::Bin/lib.sh",$v->{pane} or die "$!";
+    my $running=<$bg> // 0; close $bg;
+    exit 1 if $running > 0;
+    state($id,$c->{base} || 'done');
+    setopt($id,'attention_since','');
+    setopt($id,'waiting_on','');
+    unlink "$root/$id.context";
+} elsif ($op eq 'wait') {
+    my $id=$by_pane{$args[0]} // ''; exit 0 unless $id;
+    my $c=context($id);
+    $c->{saved_wait}=$args[1] // '';
+    $c->{base} ||= $panes{$id}{parent} ? 'done' : 'idle' if length $c->{saved_wait};
+    save_context($id,$c); setopt($id,'waiting_on',$c->{saved_wait});
+} elsif ($op eq 'restore') {
+    my $id=$by_pane{$args[0]} // ''; exit 0 unless $id;
+    my $c=context($id);
+    setopt($id,'request_local_work',$c->{local_work} ? '1' : '');
+    setopt($id,'waiting_on',$c->{saved_wait} // '');
+    setopt($id,'request_progress_at',$c->{progress_at} // '');
+    state($id,'working') if pending($id) || $c->{local_work} || $c->{saved_wait};
+} elsif ($op ne 'sync') { die "unknown request ledger operation\n"; }
+# Derive compatibility waits and overdue UI fields from the durable ledger.
+# Pending requests survive close/reopen; labels never participate in identity.
+unless ($context_only || $op eq 'resolve' || $op eq 'incoming') {
+    my (%in,%known,%out);
+    for my $r (values %requests) {
+        $known{$r->{requester_id}}{$r->{receiver_id}}=1;
+        next unless $r->{status} eq 'pending';
+        push @{$in{$r->{receiver_id}}},$r;
+        $out{$r->{requester_id}}{$r->{receiver_id}}=1;
+    }
+    for my $id (keys %panes) {
+        my @in=@{$in{$id} // []};
+        my @delivered=sort {$a<=>$b} map { $_->{delivered_at} } grep { $_->{delivered_at} } @in;
+        setopt($id,'request_pending_since',@delivered ? $delivered[0] : '');
+        my %known=%{$known{$id} // {}};
+        my %out=%{$out{$id} // {}};
+        # Keep waits created by older tools that have no ledger entry.
+        for my $old (split /\s+/, $panes{$id}{awaiting} // '') { $out{$old}=1 unless $known{$old}; }
+        setopt($id,'awaiting',join(' ',sort keys %out));
+    }
+}
+print "$result\n" if length $result;

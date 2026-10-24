@@ -107,6 +107,8 @@ cp "$legacy.meta" "$other/foreign.meta"
 printf 'from_pane=%%0\nfrom_name=parent\nto_pane=%%1\nto_name=kid\nkind=reply\nqueued_at=1\n' > "$Q/1-retained-1.meta"
 printf 'retained-body\n' > "$Q/1-retained-1.undelivered"
 "$B/tmux-ask" --from kid parent queued-identity-body >/dev/null
+queued_request_id="$(request_state incoming %0)"
+check test -n "$queued_request_id"
 body="$(find "$Q" -name '*.msg' | head -n 1)"
 cp "$body" "$state_dir/body-before"
 check "$B/tmux-rename" --from parent parent renamed --exact
@@ -146,8 +148,13 @@ tmux send-keys -t %2 -X cancel
 check wait_for captured %0 queued-identity-body
 check wait_for captured %0 'notice from tmux-rename to renamed'
 check wait_for captured %2 'parent is now renamed'
+# This manually connected child is untracked; legacy replies still deliver
+# after rename without inventing a tracked done state or answering its own ask.
+check test -z "$(tmux show -pqv -t %1 @tracked)"
+check test -z "$(tmux show -pqv -t %1 @state)"
 check "$B/tmux-ask" --from kid --reply renamed child-reply-after-rename
-check test "$(tmux show -pqv -t %1 @state)" = "done"
+check test -z "$(tmux show -pqv -t %1 @state)"
+check test "$(request_state incoming %0)" = "$queued_request_id"
 check wait_for captured %0 child-reply-after-rename
 # A delivery holds a shared identity lock through paste/Enter. Rename waits
 # for it, then leaves neither resurrected metadata nor a lost message.
