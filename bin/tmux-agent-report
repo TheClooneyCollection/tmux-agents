@@ -6,6 +6,8 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 usage: tmux-agent-report [--from ME] "what you're doing now"
+       tmux-agent-report [--from ME] --local "new local work"
+       tmux-agent-report [--from ME] --local-done
        tmux-agent-report [--from ME] --waiting "what you're waiting for"
                      (background or another agent's work, never the user)
        tmux-agent-report --pane PANE --perm on|off   (Claude hooks)
@@ -13,7 +15,9 @@ usage: tmux-agent-report [--from ME] "what you're doing now"
        tmux-agent-report [--agent-id ID] --codex-notify JSON (Codex notify)
 
 Agents call it when they start a task and at each major step, with a
-short phrase ("reading map loader", "running import tests"). The chip
+short phrase ("reading map loader", "running import tests"). Use --local
+for independent user work and --local-done, with no text, when it finishes.
+Ordinary progress reports do not start an independent local task. The chip
 above the status bar shows it next to the agent's name.
 
 Hooks call --perm on when the agent is waiting for a permission answer
@@ -31,7 +35,7 @@ the pane (@codex_thread) for later turns.
 USAGE
 }
 
-FROM_PANE="" pane="" perm="" turn="" notify_json="" notify_agent_id="" waiting=0 save_work=0
+FROM_PANE="" pane="" perm="" turn="" notify_json="" notify_agent_id="" waiting=0 save_work=0 local_work=0 local_done=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
@@ -43,6 +47,8 @@ while [ $# -gt 0 ]; do
     # Codex sub agents spawned before hooks were dropped still call this.
     --codex-hook) cat >/dev/null 2>&1; exit 0 ;;
     --waiting) waiting=1; shift ;;
+    --local) local_work=1; shift ;;
+    --local-done) local_done=1; shift ;;
     --turn-start) turn=start; shift ;;
     --turn-end) turn=end; shift ;;
     --codex-notify) notify_json="${2:-}"; turn=end; shift 2 ;;
@@ -51,38 +57,54 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# A turn ended. Done and idle agents keep their state; agents still waiting on their own
-# sub agents or on replies show "waiting for ...". With nothing pending,
-# top-level agents go idle; sub agents and members need the user.
-# Never fails: it runs from hooks and notify.
-# Bash commands Claude is still running for pane $1, i.e. its background
-# tasks: children of the pane's claude process started through Claude's
-# shell snapshot, minus this hook's own ancestors. Prints a count.
-claude_background() {
-  local pp
-  pp="$(tmux display-message -p -t "$1" '#{pane_pid}' 2>/dev/null)" || { echo 0; return; }
-  ps -A -o pid=,ppid=,comm=,command= 2>/dev/null | awk -v root="$pp" -v me="$$" '
-    { pid[NR] = $1; ppid[NR] = $2; comm[NR] = $3; cmd[NR] = $0; parent[$1] = $2 }
-    END {
-      # The claude process: a descendant of the pane (within 4 levels).
-      for (i = 1; i <= NR; i++) {
-        if (comm[i] !~ /(^|\/)claude$/) continue
-        p = pid[i]; for (d = 0; d < 5 && p != root && p > 1; d++) p = parent[p]
-        if (p == root) { cl = pid[i]; break }
+# Validate user-facing work modes before identity or state mutations.
+if [ $((local_work + local_done + waiting)) -gt 1 ] ||
+   { [ $((local_work + local_done + waiting)) -gt 0 ] && [ -n "$turn$perm" ]; }; then
+  usage >&2; exit 1
+fi
+if [ "$local_done" -eq 1 ]; then
+  [ "$#" -eq 0 ] || { usage >&2; exit 1; }
+elif [ -z "$turn$perm" ] && [ "$save_work" -eq 0 ]; then
+  [ -n "$*" ] || { usage >&2; exit 1; }
+fi
+if [ $((local_work + local_done + waiting)) -gt 0 ] && [ "$save_work" -eq 1 ]; then
+  usage >&2; exit 1
+fi
+
+# Classify complete protocol messages, never just their first line. Text
+# outside matching markers belongs to the user, including after a wrapper.
+prompt_kind() {
+  /usr/bin/perl -MJSON::PP -e '
+    local $/; my $j=eval { decode_json(<STDIN>) } || {};
+    my @inputs=$ARGV[0] eq "notify" ? @{$j->{"input-messages"} || []} : ($j->{prompt} // "");
+    my $kind="notice";
+    for my $p (@inputs) {
+      $p =~ s/\A\s+|\s+\z//g;
+      if ($p =~ /\A<pasted_content id="([^"\r\n]+)">(.*?)<\/pasted_content id="\1">\z/s) { $p=$2; }
+      $p =~ s/\A\s+|\s+\z//g;
+      if (!length $p) { $kind="local"; last; }
+      while (length $p) {
+        if ($p =~ s/\A\[(request|reply|notice) from (\S+) to (\S+) via tmux-ask\]\r?\n.*?\[end of \1 from \2 to \3\]\s*//s) {
+          $kind="message" if $1 ne "notice";
+        } else { $kind="local"; last; }
       }
-      if (!cl) { print 0; exit }
-      for (p = me; p > 1; p = parent[p]) anc[p] = 1
-      n = 0
-      for (i = 1; i <= NR; i++) if (ppid[i] == cl && !(pid[i] in anc) && index(cmd[i], "/.claude/shell-snapshots/")) n++
-      print n
-    }'
+      last if $kind eq "local";
+    }
+    print $kind;
+  ' "$1"
 }
 
+# An unanswered request needs the user only after work and waits are checked.
 turn_end() {
-  local p="$1" kids awaited live="" n who waiting_on
-  case "$(tmux show-options -pqv -t "$p" @state)" in
-    done|idle) agent_turn_state "$p" end ""; return 0 ;;
-  esac
+  local p="$1" kids awaited live="" n who waiting_on incoming local_active
+  request_finish "$p" && return 0
+  incoming="$(request_state incoming "$p")"
+  local_active="$(tmux show-options -pqv -t "$p" @request_local_work)"
+  if [ -z "$incoming" ] && [ "$local_active" != 1 ]; then
+    case "$(tmux show-options -pqv -t "$p" @state)" in
+      done|idle) request_state turn-end "$p" "$incoming" "$local_active" "" ""; return 0 ;;
+    esac
+  fi
   kids="$(tmux list-panes -a -F '#{pane_id} #{@parent} #{pane_dead} #{?@state,#{@state},-} #{@agent} #{?@shell,#{@shell},0}' \
     | awk -v p="$p" '$2 == p && $3 == 0 && $4 != "done" && $6 != 1 && !seen[$1]++ { print $5 }' | tr '\n' ' ')"
   awaited="$(tmux show-options -pqv -t "$p" @awaiting)"
@@ -101,15 +123,11 @@ turn_end() {
   who="$(printf '%s' "$who" | sed 's/ /, /g')"
   [ -z "$waiting_on" ] || who="${who:+$who, }$waiting_on"
   if [ -n "$who" ]; then
-    agent_turn_state "$p" end working
-    tmux set-option -p -t "$p" @activity "waiting for $who"
-    tmux set-option -pu -t "$p" @attention_since 2>/dev/null || true
-  elif [ -z "$(tmux show-options -pqv -t "$p" @parent)" ]; then
-    agent_turn_state "$p" end idle
-    tmux set-option -pu -t "$p" @attention_since 2>/dev/null || true
+    request_state turn-end "$p" "$incoming" "$local_active" working "waiting for $who"
+  elif [ -z "$incoming" ] && [ "$local_active" != 1 ] && [ -z "$(tmux show-options -pqv -t "$p" @parent)" ]; then
+    request_state turn-end "$p" "$incoming" "$local_active" idle ""
   else
-    agent_turn_state "$p" end needs_you
-    [ -n "$(tmux show-options -pqv -t "$p" @attention_since)" ] || tmux set-option -p -t "$p" @attention_since "$(date +%s)"
+    request_state turn-end "$p" "$incoming" "$local_active" needs_you ""
   fi
 }
 
@@ -202,29 +220,34 @@ fi
 [ -z "$turn" ] || tmux set-option -p -t "$pane" @tracked 1
 
 case "$turn" in
-  end) turn_end "$pane"; exit 0 ;;
+  end)
+    if [ -n "$notify_json" ]; then
+      notify_digest="$(printf '%s' "$notify_json" | /usr/bin/perl -MJSON::PP -MDigest::SHA=sha256_hex -0777 -ne '
+        my $j=decode_json($_); my $key=$j->{"turn-id"} // $j->{turn_id};
+        print sha256_hex(defined($key) ? ($j->{"thread-id"} // "")."\0".$key : JSON::PP->new->canonical->encode($j));
+      ')"
+      local_prompt="$(printf '%s' "$notify_json" | prompt_kind notify)"
+      request_state notify "$pane" "$notify_digest" "$local_prompt" || exit 0
+    else
+      request_state progress "$pane"
+    fi
+    turn_end "$pane"; exit 0 ;;
+
   start)
     # A notice (tmux-ask --notice) asks for nothing, so it doesn't start new
     # work: keep what the agent is waiting on, and a needs-you stays one.
     # Claude passes the prompt to the hook as JSON on stdin.
     if [ ! -t 0 ]; then
-      prompt="$(/usr/bin/perl -MJSON::PP -e '
-        local $/; my $j = eval { JSON::PP->new->decode(<STDIN>) } || {};
-        my $p = $j->{prompt} // "";
-        # Claude wraps bracketed pastes. Unwrap only an entire notice:
-        # text beside the wrapper or after the notice is a user prompt.
-        if ($p =~ /\A\s*<pasted_content id="([^"\r\n]+)">\s*(\[notice from (\S+) to (\S+) via tmux-ask\]\n.*?\[end of notice from \3 to \4\])\s*<\/pasted_content id="\1">\s*\z/s) {
-          $p = $2;
-        }
-        print "notice" if $p =~ /\A\[notice from /;
-      ' 2>/dev/null || true)"
+      prompt="$(prompt_kind start)"
       [ "$prompt" != notice ] || exit 0
     fi
+    request_state progress "$pane"
+    [ "${prompt:-local}" != local ] || request_state local "$pane"
     if [ "$(tmux show-options -pqv -t "$pane" @state)" = needs_you ]; then
       tmux set-option -pu -t "$pane" @attention_since 2>/dev/null || true
     fi
     agent_turn_state "$pane" start
-    tmux set-option -pu -t "$pane" @waiting_on 2>/dev/null || true
+    if [ "${prompt:-local}" = local ]; then request_state wait "$pane" ""; fi
     exit 0 ;;
 esac
 
@@ -237,19 +260,26 @@ case "$perm" in
     exit 0 ;;
 esac
 
+if [ "$local_done" -eq 1 ]; then
+  request_state local-done "$pane"
+  request_finish "$pane" || true
+  exit 0
+fi
+request_state progress "$pane"
+if [ "$local_work" -eq 1 ]; then request_state local "$pane"; agent_set_state "$pane" working; fi
 text="$*"
 [ -n "$text" ] || { usage >&2; exit 1; }
 text="$(printf '%s' "$text" | tr '\n' ' ' | cut -c1-60)"
 if [ "$waiting" -eq 1 ]; then
   # Ending the turn to wait for background work: not a "needs you".
-  tmux set-option -p -t "$pane" @waiting_on "$text"
+  request_state wait "$pane" "$text"
   text="waiting for $text"
 else
-  tmux set-option -pu -t "$pane" @waiting_on 2>/dev/null || true
+  request_state wait "$pane" ""
 fi
 tmux set-option -p -t "$pane" @activity "$text"
 # A report after replying ("delivered abc123") is a summary, not new work:
-# a done agent stays done. Only a new request (tmux-ask) makes it working.
+# a done agent stays done. A request or explicit --local starts new work.
 agent_report_state "$pane"
 tmux set-option -pu -t "$pane" @attention_since 2>/dev/null || true
 echo "reported: $text"

@@ -26,6 +26,7 @@ Settings (environment overrides option):
   retention: option @tmux_agents_resume_days, env TMUX_AGENTS_RESUME_DAYS (7 days)
   preview: option @tmux_agents_preview_secs, env TMUX_AGENTS_PREVIEW_SECS (0.5 seconds)
   blink: option @tmux_agents_blink_secs, env TMUX_AGENTS_BLINK_SECS (60 seconds)
+  reply overdue: option @tmux_agents_reply_overdue_secs, env TMUX_AGENTS_REPLY_OVERDUE_SECS (1800 seconds; 0 disables)
   animation: option @tmux_agents_chip_fps (10 frames per second)
   sessions: option @tmux_agents_session_prefix, env TMUX_AGENTS_PREFIX (agents)
 EOF
@@ -47,17 +48,25 @@ parse_prompt() {
 # Use byte-wise replacement, matching agents_session_for's tr under any locale.
 list_project_label() { local LC_ALL=C; project="${1//[^a-zA-Z0-9_-]/-}"; }
 
+# Resolve once per UI build using the existing cached options snapshot.
+reply_overdue_setting() {
+  settings_get reply_overdue_secs TMUX_AGENTS_REPLY_OVERDUE_SECS @tmux_agents_reply_overdue_secs 1800
+  case "$reply_overdue_secs" in ''|*[!0-9]*) reply_overdue_secs=1800 ;; esac
+}
+
 # A rebuild makes one pane snapshot and one batched record read. Graph walks,
 # sorting and alignment happen in awk; external work never scales with agents.
 list_agents() {
   local mode="${1:-sub}" scope="${2:-window}" client="${3:-}" snapshot window="" clients c w
   local now records="" raw="" mtimes="" dir sock f tag rest path root project pane live_panes=" " paths="" projects=""
   local -a files=() expired=()
+  local reply_overdue_secs
+  reply_overdue_setting
   local tab=$'\t' nl=$'\n' resume_days
   ensure_agent_ids
   settings_get AGENTS_PREFIX TMUX_AGENTS_PREFIX @tmux_agents_session_prefix agents
   settings_get resume_days TMUX_AGENTS_RESUME_DAYS @tmux_agents_resume_days 7
-  snapshot="$(tmux list-panes -a -F 'P	#{pane_id}	#{?@agent,#{@agent},-}	#{pane_dead}	#{?@perm_since,#{@perm_since},-}	#{?@state,#{@state},-}	#{?@parent,#{@parent},-}	#{session_name}	#{?@activity,#{@activity},-}	#{pane_current_path}	#{session_name}:#{window_index}	#{?@attention_since,#{@attention_since},-}	#{?@msg_waiting_since,#{@msg_waiting_since},-}	#{window_id}	#{?@agent_id,#{@agent_id},-}	#{@state_since}	#{@worked}	#{@last_turn}	#{@turns}	#{@turn_start}	#{@started}	#{?@member,#{@member},0}	#{?@tracked,#{@tracked},0}	#{?@shell,#{@shell},0}	#{?@shell_origin_window,#{@shell_origin_window},-}	#{?@shell_command_id,#{@shell_command_id},-}	#{?@shell_command,#{@shell_command},-}	#{?@shell_status,#{@shell_status},-}')"
+  snapshot="$(tmux list-panes -a -F 'P	#{pane_id}	#{?@agent,#{@agent},-}	#{pane_dead}	#{?@perm_since,#{@perm_since},-}	#{?@state,#{@state},-}	#{?@parent,#{@parent},-}	#{session_name}	#{?@activity,#{@activity},-}	#{pane_current_path}	#{session_name}:#{window_index}	#{?@attention_since,#{@attention_since},-}	#{?@msg_waiting_since,#{@msg_waiting_since},-}	#{window_id}	#{?@agent_id,#{@agent_id},-}	#{@state_since}	#{@worked}	#{@last_turn}	#{@turns}	#{@turn_start}	#{@started}	#{?@member,#{@member},0}	#{?@tracked,#{@tracked},0}	#{?@shell,#{@shell},0}	#{?@shell_origin_window,#{@shell_origin_window},-}	#{?@shell_command_id,#{@shell_command_id},-}	#{?@shell_command,#{@shell_command},-}	#{?@shell_status,#{@shell_status},-}	#{?@request_pending_since,#{@request_pending_since},-}	#{?@request_progress_at,#{@request_progress_at},-}')"
   if [ -n "$client" ]; then
     clients="$(tmux list-clients -F '#{client_name}	#{window_id}')"
     while IFS="$tab" read -r c w; do [ "$c" != "$client" ] || { window="$w"; break; }; done <<<"$clients"
@@ -111,7 +120,7 @@ list_agents() {
     projects="$projects""D$tab$path$tab$project$nl"
   done <<<"$paths"
   printf '%s\n%s%s' "$snapshot" "$records" "$projects" |
-    LIST_PREFIX="$AGENTS_PREFIX" LIST_NOW="$now" LIST_WINDOW="$window" LIST_SCOPE="$scope" LIST_MODE="$mode" LC_ALL=C awk -f "$here/tmux-agents-list.awk"
+    LIST_REPLY_OVERDUE_SECS="$reply_overdue_secs" LIST_PREFIX="$AGENTS_PREFIX" LIST_NOW="$now" LIST_WINDOW="$window" LIST_SCOPE="$scope" LIST_MODE="$mode" LC_ALL=C awk -f "$here/tmux-agents-list.awk"
 }
 
 # Preview timing uses the same formatter as rows, refreshed on every capture.
@@ -233,16 +242,20 @@ short_task() {
 # per-project counts. Agents waiting for permission take over the focus and turn red; past
 # TMUX_AGENTS_BLINK_SECS (default 60) unanswered, they blink.
 chip() {
-  local now frames spin rows id name dead st session since activity state act attention waiting _member_flag tracked blink_secs
+  local now frames spin rows id name dead st session since activity state act attention waiting _member_flag tracked blink_secs _pending _progress overdue reply_overdue_secs
+  reply_overdue_setting
   settings_get AGENTS_PREFIX TMUX_AGENTS_PREFIX @tmux_agents_session_prefix agents
   settings_get blink_secs TMUX_AGENTS_BLINK_SECS @tmux_agents_blink_secs 60
-  local -a ids names states acts projs sinces
+  local -a ids names states acts projs sinces overdues
   now="$(date +%s)"
   frames=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
   # CHIP_SPIN lets the chip daemon put a placeholder here and animate it.
   spin="${CHIP_SPIN:-${frames[$((now % 10))]}}"
-  rows="$(tmux list-panes -a -F '#{pane_id}	#{?@agent,#{@agent},-}	#{pane_dead}	#{?@state,#{@state},-}	#{session_name}	#{?@perm_since,#{@perm_since},-}	#{?@activity,#{@activity},-}	#{?@parent,1,0}	#{?@attention_since,#{@attention_since},-}	#{?@msg_waiting_since,#{@msg_waiting_since},-}	#{?@member,#{@member},0}	#{?@tracked,#{@tracked},0}' \
-    | awk -F '\t' '(($8 == 1 && $2 != "-") || $10 != "-") && ($11 != 1 || ($3 != 1 && ($6 != "-" || ($12 == 1 && $4 == "needs_you") || $10 != "-"))) && !seen[$1]++')"
+  rows="$(tmux list-panes -a -F '#{pane_id}	#{?@agent,#{@agent},-}	#{pane_dead}	#{?@state,#{@state},-}	#{session_name}	#{?@perm_since,#{@perm_since},-}	#{?@activity,#{@activity},-}	#{?@parent,1,0}	#{?@attention_since,#{@attention_since},-}	#{?@msg_waiting_since,#{@msg_waiting_since},-}	#{?@member,#{@member},0}	#{?@tracked,#{@tracked},0}	#{?@request_pending_since,#{@request_pending_since},-}	#{?@request_progress_at,#{@request_progress_at},-}' \
+    | awk -v now="$now" -v timeout="$reply_overdue_secs" -F '\t' '{ base=$13+0; if ($14 ~ /^[0-9]+$/ && $14+0>base) base=$14+0
+      overdue=($3!=1 && timeout>0 && $13 ~ /^[0-9]+$/ && $13+0>0 && now-base>=timeout)
+      if ((($8 == 1 && $2 != "-") || $10 != "-" || overdue) && ($11 != 1 || ($3 != 1 && ($6 != "-" || ($12 == 1 && $4 == "needs_you") || $10 != "-" || overdue))) && !seen[$1]++) print $0 "\t" overdue
+    }')"
   if [ -z "$rows" ]; then
     [ "$(tmux show-options -gv status)" != 2 ] || tmux run-shell -b "'$here/tmux-agents' --chip-layout off"
     return 0
@@ -250,7 +263,7 @@ chip() {
   # State comes from what agents report: tmux-agent-report sets @activity,
   # Claude's permission hook sets @perm_since, a reply to the parent sets
   # done, and a turn that ends without either sets needs_you.
-  while IFS="$(printf '\t')" read -r id name dead st session since activity _ attention waiting _member_flag tracked; do
+  while IFS="$(printf '\t')" read -r id name dead st session since activity _ attention waiting _member_flag tracked _pending _progress overdue; do
     [ "$name" != - ] || name="$id"
     if [ "$dead" = 1 ]; then
       state=exited act="exited"
@@ -272,25 +285,29 @@ chip() {
       state=work act="$activity"
       [ "$act" != - ] || act="starting"
     fi
+    [ "$overdue" != 1 ] || act="$act · reply overdue"
+    overdues+=("$overdue")
     ids+=("$id"); names+=("$name"); states+=("$state"); acts+=("$act"); projs+=("$(short_project "$session")"); sinces+=("$since")
   done <<EOF
 $rows
 EOF
 
   # Per-project counts, in first-seen order.
-  local out="" seen_projs=" " pj i n w d idle pm nd mw ex seg
+  local out="" seen_projs=" " pj i n w d idle pm nd mw ex od seg
   for pj in "${projs[@]}"; do
     case "$seen_projs" in *" $pj "*) continue ;; esac
     seen_projs="$seen_projs$pj "
-    w=0 d=0 idle=0 pm=0 nd=0 mw=0 ex=0
+    w=0 d=0 idle=0 pm=0 nd=0 mw=0 ex=0 od=0
     for ((i = 0; i < ${#ids[@]}; i++)); do
       [ "${projs[i]}" = "$pj" ] || continue
+      [ "${overdues[i]}" != 1 ] || od=$((od+1))
       case "${states[i]}" in work) w=$((w+1)) ;; idle) idle=$((idle+1)) ;; done) d=$((d+1)) ;; perm) pm=$((pm+1)) ;; needs) nd=$((nd+1)) ;; message) mw=$((mw+1)) ;; exited) ex=$((ex+1)) ;; esac
     done
     seg="#[fg=colour250]$pj#[default]"
     [ "$pm" -eq 0 ] || seg="$seg #[fg=white,bg=red,bold] ⚠ $pm #[default]"
     [ "$nd" -eq 0 ] || seg="$seg #[fg=black,bg=colour214,bold] ◆ $nd #[default]"
     [ "$mw" -eq 0 ] || seg="$seg #[fg=black,bg=colour214,bold] ✉ $mw #[default]"
+    [ "$od" -eq 0 ] || seg="$seg #[fg=colour179]◷ $od#[default]"
     [ "$w" -eq 0 ] || seg="$seg #[fg=colour117]$spin $w#[default]"
     [ "$idle" -eq 0 ] || seg="$seg #[fg=colour244]○ $idle#[default]"
     [ "$d" -eq 0 ] || seg="$seg #[fg=colour114]✓ $d#[default]"
@@ -299,9 +316,10 @@ EOF
   done
 
   # Focus: rotate through agents that need the user (permission or
-  # otherwise) if any, else all.
+  # otherwise) if any, then overdue receivers, then all.
   local -a cand=()
   for ((i = 0; i < ${#ids[@]}; i++)); do case "${states[i]}" in perm|needs|message) cand+=("$i") ;; esac; done
+  [ ${#cand[@]} -gt 0 ] || for ((i = 0; i < ${#ids[@]}; i++)); do [ "${overdues[i]}" != 1 ] || cand+=("$i"); done
   [ ${#cand[@]} -gt 0 ] || for ((i = 0; i < ${#ids[@]}; i++)); do cand+=("$i"); done
   i="${cand[$(( (now / 4) % ${#cand[@]} ))]}"
   local icon style focus
@@ -320,6 +338,8 @@ EOF
     if [ "${states[i]}" = perm ]; then style="fg=white,bg=red,bold"; else style="fg=black,bg=colour214,bold"; fi
     [ $((now - sinces[i])) -lt "$blink_secs" ] || style="$style,blink"
     focus="#[$style] $focus #[default]"
+  elif [ "${overdues[i]}" = 1 ]; then
+    focus="#[fg=colour179]$focus#[default]"
   elif [ "${states[i]}" = idle ]; then
     focus="#[fg=colour244]$focus#[default]"
   else

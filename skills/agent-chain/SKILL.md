@@ -87,11 +87,12 @@ The secondary and worker are long-lived members: they stay out of the default su
 
 ## Messages
 
-- At the beginning of each new user request, the main runs `tmux-agent-report --from <me> "<what you are doing>"`. Codex has no turn-start hook; its completion notify alone does not mark new direct user requests working. Use explicit `--waiting` when ending a turn for background work, as the tmux-agents skill describes.
-- Everything goes through `tmux-ask`. Long reports go in a file; the message is a short summary plus the path.
+- At the beginning of each new direct user request, including repeated identical tasks, the main runs `tmux-agent-report --from <me> --local "<what you are doing>"`; when that local task is complete, it runs `tmux-agent-report --from <me> --local-done` without trailing text. Other requests and waits remain active. Follow the tmux-agents skill's `--local` rule to reset notification deduplication when identical input cannot identify a new turn. Codex has no turn-start hook, so its turn-end notify cannot protect work before that notification. Use ordinary progress reports inside peer requests and explicit `--waiting` for background waits, following the tmux-agents skill.
+- Everything goes through `tmux-ask`. Answer each request with its supplied `--request-id`, following the tmux-agents skill's rules for older ambiguous replies. A reply completes that request, including from a nonparent; other requests and work remain active. Long reports go in a file; the message is a short summary plus the path.
 - The user reads the secondary's messages to the main agent directly, so the main agent doesn't restate them; it brings up a decision as a one-line summary plus options.
 - Send FYIs as notices (`tmux-ask --notice`), not requests: a request makes the receiver work again and the sender wait for a reply, even if it says "no reply needed". A decision request states the default and what is blocked meanwhile.
 - Reply as soon as a request's main work is done (e.g. the release is out). Don't hold the reply for follow-ups such as a deploy going live; send those later as notices. For a request with several parts, send a notice as each part lands.
+- `reply overdue` means a delivered request lacks observable progress for the configured interval. Inspect the receiver with `tmux-peek`; it does not itself mean `needs you`.
 - An instruction the user gives directly to any agent wins; that agent tells the others what changed.
 
 ## Working across projects

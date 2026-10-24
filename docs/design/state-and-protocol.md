@@ -22,6 +22,11 @@ Live state uses tmux user options on the panes (`set-option -p`); session record
 | `@worked`, `@last_turn`, `@turns`, `@turn_start` | Accrued working seconds, last completed turn's working time, completed turn count, and the current active interval's start. A live total adds the active interval; absent totals mean unknown. |
 | `@turn_active`, `@turn_work` | Internal unfinished-turn flag and accrued active seconds within that turn. Waits retain them; done, idle and closure finalize and clear them. |
 | `@msg_waiting_since` | Epoch when a queued message began waiting; set after the escalation threshold and cleared on delivery. Pins the receiver in the list and highlights it in the chip. |
+| `@request_pending_since` | Earliest delivered unanswered incoming request epoch. |
+| `@request_progress_at` | Latest observable report/work event epoch; overdue inactivity starts at the later of this and `@request_pending_since`. |
+| `@request_local_work` | Independent local work marked with `--local` or a direct user turn; cleared with `--local-done`. |
+| `@request_local_done` | Explicit local completion marker consumed by the next accepted Codex notify so that turn's original user input does not reopen completed work. The marker is persisted and restored on resume. Explicit new local work clears it. |
+| `@request_notify_digest` | Last accepted Codex notify identity, persisted in request context; explicit `--local` clears it. |
 | `@awaiting` | Agent IDs this pane sent requests to and hasn't had a reply from yet, rendered as labels. |
 | `@activity`, `@waiting_on`, `@perm_since` | Sub agent reports for the [status chip](sub-agents.md#status-chip). |
 | `@attention_since`, `@codex_thread` | When a sub agent started needing the user; the Codex thread id of a sub agent, for `notify`. |
@@ -103,7 +108,7 @@ The initial picker does not load settings before fzf draws. List, chip and previ
 - `codex@WHERE` / `claude@WHERE` looks elsewhere (`where_panes`): a number is a window in the caller's session, `session:window` a window anywhere, anything else a project (the same project `tmux-spawn` uses, exact name first, then by part of it). A project's main agent wins over its sub agents, so "the codex in stone-age" isn't ambiguous just because it has spawned Codex sub agents.
 - `--list` prints every pane the caller could connect to, by window, for requests the shorthand can't express ("the codex fixing the login bug"); the agent picks one or asks.
 - Several matches or none is an error listing the candidates, so the agent asks the user.
-- **Notice across windows.** Connecting to an agent (`claude` or `codex`) in another window sends it a `tmux-ask --notice`: who connected, from which project and window, and how to message back. It didn't see the connection happen, and the first request might come much later. Notices say no reply or action is needed. Sub agents get none: their parent manages them, and a turn ended without replying would mark them as needing the user.
+- **Notice across windows.** Connecting to an agent (`claude` or `codex`) in another window sends it a `tmux-ask --notice`: who connected, from which project and window, and how to message back. It didn't see the connection happen, and the first request might come much later. Notices say no reply or action is needed. Sub agents get none: their parent manages them. Notice-only turns preserve their state.
 - Unnamed panes are named with `auto_name`.
 
 An earlier version matched names globally first and command substrings for any target, so `codex` could pick a pane of that name in another window and `code` matched `codex-notes`. Codex's review of the change caught both.
@@ -116,7 +121,7 @@ An earlier version matched names globally first and command substrings for any t
 [request from claude to codex via tmux-ask]
 <message>
 
-(You are codex. When done, send your answer back with: tmux-ask --from codex --reply claude <<'MSG'
+(You are codex. When done, send your answer back with: tmux-ask --from codex --reply --request-id r0123456789ab claude <<'MSG'
 <your reply>
 MSG)
 [end of request from claude to codex]
@@ -129,6 +134,24 @@ MSG)
 (This is a reply. Do not answer it unless you have a new request.)
 [end of reply from codex to claude]
 ```
+
+### Request completion
+
+Requests have an ID of `r` plus 12 hex digits and stable requester/receiver agent IDs. The socket-scoped `requests/<RID>.record` persists `request_id`, `requester_id`, `receiver_id`, `created_at`, `delivered_at`, `replied_at` and `status` (`pending`, `answered` or `cancelled`). A failed tmux window/pane open cancels the undelivered spawn request and records `cancelled_at`. The generated reply command carries `--request-id RID`, which is used with `--reply` to resolve exactly that request. Ownership controls lifecycle and cleanup, not which request a reply completes.
+
+Request creation, reply publication and completion share a socket-scoped ledger lock. Completion checks incoming requests, local work, outgoing waits, unfinished children and background work before changing state and clearing completed work context under that same lock. Turn-end commits also take this lock and recheck the observed request set and local marker, plus current waits, before applying their state decision. A newly accepted request invalidates an older turn-end snapshot. Notification deduplication and local-completion receipts remain available after work finishes. Ordinary progress updates only the receiver's context and timestamps, without reading completed request history; outstanding publication journals trigger recovery when needed.
+
+Publication stages the message body before committing its ledger change. A write-ahead journal retains the publication path so a later ledger operation can finish an interrupted rename into the delivery queue. Reply publication validates the pending request and both agent IDs under the lock, so concurrent replies for one request cannot both publish; the losing caller removes its own temporary body and metadata. A repeated explicit reply to an answered request is rejected. This does not make delivery exactly once: delivery recovery can still replay a paste whose acknowledgement was interrupted.
+
+Answered and cancelled records become eligible for cleanup after seven days. Cleanup runs on `sync`, or at most daily during other ledger operations that scan requests; context-only progress does not scan history. Pending requests, unfinished publications and records referenced by this socket's queued `.meta` files are retained regardless of age. New request IDs remain unique after cleanup. An explicit reply to an expired request ID fails rather than matching another request. This retention is separate from closed-agent list retention.
+
+For older CLI calls without `--request-id`, a unique pending request between the pair is matched automatically. Multiple pending matches are rejected with their IDs so the caller can select the intended request. Legacy replies without tracking remain compatible but cannot clear unrelated tracked requests.
+
+All incoming requests must be answered, with no other work remaining, before restoring the appropriate done or idle state. A reply preserves parent tasks, local work, background waits, outgoing waits, unfinished children and other requests. At turn end, unanswered requests without an agent or background wait need the user. Elapsed inactivity instead produces the separate [reply overdue](sub-agents.md#reply-overdue) condition; it does not change `@state`.
+
+Independent local work is explicit: `tmux-agent-report --local "<task>"` sets its marker, and `--local-done` clears only that marker without accepting trailing text. Normal request progress does not create local work. Hook classification checks complete matching protocol markers, including Claude pasted-content wrappers. Text outside them is local user input; request/reply bodies are peer work, and complete notices preserve existing state. Claude classifies nonprotocol user input at turn start; Codex uses notify input messages at turn end and therefore needs an explicit `--local` report at the beginning of direct user work. Local completion and background completion are separate: a normal progress report clears a reported background wait, while a new request preserves that wait and may clear only a parent-notice coordination marker. These are reported events, not inference from the TUI or arbitrary background processes.
+
+Codex notify deduplication runs inside the ledger lock. When `turn-id` or `turn_id` is present, the identity combines the thread ID and turn ID; otherwise it hashes the canonical complete JSON payload. A notification matching the last accepted identity is ignored and does not reopen completed local work. The `--local-done` receipt survives resume and prevents the next accepted notification from treating that turn's original input as new local work. Explicit `--local` clears both the completion receipt and the last notification identity. Without a turn ID, a new task with an identical payload cannot be distinguished from a duplicate notification: agents must start each direct user task with `--local`, including repeated identical tasks.
 
 ### Design decisions
 
@@ -147,13 +170,13 @@ MSG)
 
 `user_busy` is true when the receiver's pane is in copy mode (where `send-keys Enter` would go to copy mode instead of the program), or a client is showing it and had a keypress in the last `TMUX_ASK_IDLE_SECS` (8s). Then:
 
-1. `tmux-ask` writes the body to `/tmp/tmux-agents-<uid>/queue/<socket>/<epoch>-<pid>-<pane>.msg`. A same-stem `.meta` file records `from_pane`, `from_id`, `from_name`, `to_pane`, `to_id`, `to_name`, `kind` and `queued_at` as `key=value` lines. It is one fixed place per tmux server, so hooks running in the server's environment find it, and per server because pane ids repeat across servers (a test server's `%1` is not the user's `%1`).
+1. `tmux-ask` writes the body to `/tmp/tmux-agents-<uid>/queue/<socket>/<epoch>-<pid>-<pane>.msg`. A same-stem `.meta` file records `from_pane`, `from_id`, `from_name`, `to_pane`, `to_id`, `to_name`, `kind`, `request_id` and `queued_at` as `key=value` lines. It is one fixed place per tmux server, so hooks running in the server's environment find it, and per server because pane ids repeat across servers (a test server's `%1` is not the user's `%1`).
 2. It starts `tmux-ask --deliver` with `run-shell -b`, so the deliverer lives in the tmux server rather than the sender, and prints `queued`. The skill tells agents that `queued` means sent, so they don't resend.
 3. The deliverer polls every 2s, waits for older queued files for the same pane (names sort by time), and delivers once the user is idle. A pane in copy mode with no keypress from a client showing it for `TMUX_ASK_COPY_IDLE_SECS` (default 300, 0 = never) was probably left there by accident: the deliverer cancels copy mode (`send-keys -X cancel`), tells the clients, and delivers. Settings reach the deliverer explicitly on its command line, because `run-shell` runs with the server's environment, not the sender's.
 4. While the receiver lives, polling never expires. After `TMUX_ASK_QUEUE_SECS` (30 min), it sets `@msg_waiting_since` so the receiver shows amber `✉ message waiting` in the list and chip. Delivery clears the marker.
 5. A receiver that disappears leaves the body as `.undelivered`. The sender gets a notice from `tmux-ask` saying the message did not arrive and giving its path. If the receiver has a session record with an id, the notice says reopening will deliver it. Only when the sender is gone too does this fall back to a toast for every client.
 
-`tmux-ask --pending` lists queued and undelivered files in both legacy flat queues and per-server queues; legacy files without metadata get identities from their protocol header. `--retry [--to NAME]` resolves a live receiver name to its agent ID, then retries matching `to_id` messages oldest first through normal delivery, preserving busy-user queuing. A different agent reusing the label does not receive them. It retries only the current server and legacy flat queue; another server's same-named pane is not a destination. Unavailable receivers keep their files. `tmux-spawn --resume` invokes this after adopting the reopened pane.
+`tmux-ask --pending` lists queued and undelivered files in both legacy flat queues and per-server queues; legacy files without metadata get identities from their protocol header. `--retry [--to NAME]` resolves a live receiver name to its agent ID, then retries matching `to_id` messages oldest first through normal delivery, preserving busy-user queuing. A different agent reusing the label does not receive them. Retry and resume retain `request_id`; rename preserves request association through stable requester/receiver IDs. It retries only the current server and legacy flat queue; another server's same-named pane is not a destination. Unavailable receivers keep their files. `tmux-spawn --resume` invokes this after adopting the reopened pane. Retry takes a blocking lock scoped to the current socket, so simultaneous retries wait instead of silently skipping work and separate sockets proceed independently. The per-pane delivery lock remains nonblocking; an existing delivery worker retains ownership of that pane.
 
 Leaving copy mode doesn't wait for the poll: a `pane-mode-changed[42]` hook runs `tmux-ask --kick <pane>`, which sends that pane's queued messages at once, in order, skipping the typing window. tmux counts mouse scrolling as client activity, so waiting it out cost 8 to 10s after every scroll. The hook and deliverer serialize each receiver with a kernel advisory lock (system Perl `Fcntl`). A claimed body becomes `.sending`; successful delivery removes it and its metadata. Process exit releases the lock, including SIGKILL. A later kick, deliverer or retry restores orphaned `.sending` files, and retry also restarts queued messages whose worker did not start. If a process dies after paste but before cleanup, replay may duplicate the message: delivery is at least once, not exactly once.
 

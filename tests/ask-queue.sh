@@ -161,7 +161,7 @@ check has_sending
 # The owner's short-lived sleep child also inherited the descriptor.
 sleep 2.1
 # A stale retry PID file is harmless: the kernel lock is authoritative.
-check test -f "$(dirname "$Q")/.retry.lock"
+check test -f "$Q/.retry.lock"
 "$B/tmux-ask" --retry --to receiver </dev/null
 check no_queued
 check captured %2 interrupted-body

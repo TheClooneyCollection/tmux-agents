@@ -89,6 +89,8 @@ if [ "${1:-}" = "--run" ]; then
     tmux set-option -p -t "$TMUX_PANE" @tracked 0
     prompt=""
   fi
+  if [ -n "${7:-}" ]; then request_state delivered "$7"; fi
+  if [ "$mode" = resume ]; then request_state restore "$TMUX_PANE"; fi
   build_agent_command "$agent" spawn "$sid" "$mode"
   if [ -n "$prompt" ]; then exec "${agent_command[@]}" "$prompt"; else exec "${agent_command[@]}"; fi
 fi
@@ -277,6 +279,7 @@ if [ -n "$resume$resume_id" ]; then
   else
     printf 'reopened %s (%s) with its conversation; its parent is gone, so it is not connected to anyone.\n' "$resume" "$pane"
   fi
+  request_state restore "$pane"
   "$here/tmux-ask" --retry --to "$resume"
   exit 0
 fi
@@ -361,6 +364,10 @@ session="$(agents_session_for "$cwd")"
 manual_task=0
 if ! full_agent_kind "$agent" && [ -n "$task" ]; then manual_task=1; task=""; fi
 
+agent_id="$(new_agent_id)"
+spawn_request_id=""
+[ -z "$task" ] || spawn_request_id="$(new_request_id)"
+
 # Hand the prompt over in a file, so no shell ever has to quote it.
 file="$(mktemp "${TMPDIR:-/tmp}/tmux-spawn.XXXXXX")"
 # Ask for progress reports; the chip above the status bar shows them.
@@ -368,7 +375,7 @@ if [ -n "$task" ]; then
   task="$task
 
 (Progress: when you start, and at each major step, run tmux-agent-report --from $name \"<what you're doing, a few words>\". It shows in the user's status bar.)"
-  request_body "$me" "$task" "$name" > "$file"
+  request_body "$me" "$task" "$name" "--request-id $spawn_request_id" > "$file"
 fi
 # Record the session so the sub agent can be reopened once closed. Claude
 # takes the id we give it; Codex's is filled in when its first turn ends.
@@ -377,7 +384,6 @@ if [ "$agent" = claude ]; then
   sid="$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)"
   sid="$(printf '%s' "$sid" | tr '[:upper:]' '[:lower:]')"
 fi
-agent_id="$(new_agent_id)"
 record_set "$agent_id" name "$name"
 record_set "$agent_id" kind "$agent"
 record_set "$agent_id" id "$sid"
@@ -387,13 +393,25 @@ record_set "$agent_id" parent_name "$owner_name"
 record_set "$agent_id" depth "$spawn_depth"
 [ "$member" -eq 0 ] || record_set "$agent_id" member 1
 
+if [ -n "$spawn_request_id" ]; then
+  request_state create "$spawn_request_id" "$(pane_agent_id "$self")" "$agent_id" spawn
+fi
+
 if [ -n "$split_pane" ]; then
-  pane="$(open_split "$split_pane" "$cwd" "'$here/tmux-spawn' --run '$agent' '$file' '$sid' new '$agent_id'" "$spawn_depth")"
+  if ! pane="$(open_split "$split_pane" "$cwd" "'$here/tmux-spawn' --run '$agent' '$file' '$sid' new '$agent_id' '$spawn_request_id'" "$spawn_depth")"; then
+    [ -z "$spawn_request_id" ] || request_state cancel "$spawn_request_id"
+    rm -f "$file"
+    exit 1
+  fi
   ensure_agent_id "$pane" "$agent_id" >/dev/null
   adopt "$pane" "$owner" "$name" split
   location="in a visible split of $split_pane"
 else
-  pane="$(open_window "$session" "$cwd" "$name" "'$here/tmux-spawn' --run '$agent' '$file' '$sid' new '$agent_id'" "$spawn_depth")"
+  if ! pane="$(open_window "$session" "$cwd" "$name" "'$here/tmux-spawn' --run '$agent' '$file' '$sid' new '$agent_id' '$spawn_request_id'" "$spawn_depth")"; then
+    [ -z "$spawn_request_id" ] || request_state cancel "$spawn_request_id"
+    rm -f "$file"
+    exit 1
+  fi
   ensure_agent_id "$pane" "$agent_id" >/dev/null
   adopt "$pane" "$owner" "$name"
   location="hidden in session \"$session\""
@@ -404,6 +422,9 @@ if full_agent_kind "$agent"; then
   else agent_start_work "$pane" working; fi
 else
   tmux set-option -p -t "$pane" @tracked 0
+fi
+if [ -n "$spawn_request_id" ]; then
+  request_state sync
 fi
 
 if [ -n "$for_name" ]; then

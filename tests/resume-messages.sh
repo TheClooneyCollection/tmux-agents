@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Real queue -> receiver closure -> bounce -> resume, on an isolated server.
+# RESUME_MESSAGES_BIN selects frozen binaries. RESUME_MESSAGES_TRACE_DIR saves
+# queue/ledger observations and final artifacts outside the disposable test state.
 set -eu
 here="$(cd "$(dirname "$0")/.." && pwd)"
-B="$here/bin"
+B="${RESUME_MESSAGES_BIN:-$here/bin}"
+trace_dir="${RESUME_MESSAGES_TRACE_DIR:-}"
+trace_pid=""
 sock="tmux-agents-resume-test-$$"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/tmux-agents-resume.XXXXXX")"
 queue="/tmp/tmux-agents-$(id -u)/queue/$sock"
@@ -10,6 +14,17 @@ queue="/tmp/tmux-agents-$(id -u)/queue/$sock"
 # Invoked by the EXIT trap.
 # shellcheck disable=SC2329
 cleanup() {
+  local result=$?
+  if [ -n "$trace_pid" ]; then
+    kill "$trace_pid" 2>/dev/null || true
+    wait "$trace_pid" 2>/dev/null || true
+  fi
+  if [ -n "$trace_dir" ]; then
+    printf '%s\n' "$result" >"$trace_dir/exit-status"
+    cp -R "$tmp" "$trace_dir/final-state"
+    if [ -d "$queue" ]; then cp -R "$queue" "$trace_dir/final-queue"; fi
+    tmux -L "$sock" list-panes -a -F '#{pane_id} #{@agent_id} #{@agent} #{@state} #{@awaiting} #{@request_pending_since}' >"$trace_dir/final-panes" 2>/dev/null || true
+  fi
   cleanup_test_server || return
   rm -rf "$tmp"
 }
@@ -38,10 +53,52 @@ tmux set-option -g default-shell /bin/sh
 tmux set-option -p -t %0 @agent main
 . "$B/lib.sh"
 ensure_agent_ids "$tmp/empty-queue"
+# Optional diagnostics observe only this suite's socket queue and state tree.
+# Nanosecond timestamps are observation times, with a 20ms sampling interval.
+if [ -n "$trace_dir" ]; then
+  mkdir -p "$trace_dir"
+  printf '%s\n' "$sock" "$tmp" "$B" >"$trace_dir/paths"
+  python3 -u - "$queue" "$tmp/state" "$trace_dir/timeline.jsonl" <<'TRACE' &
+import base64, hashlib, json, os, sys, time
+roots = sys.argv[1:3]
+previous = {}
+with open(sys.argv[3], 'a') as output:
+    while True:
+        current = {}
+        for root in roots:
+            for directory, _, names in os.walk(root):
+                for name in names:
+                    path = os.path.join(directory, name)
+                    try:
+                        with open(path, 'rb') as source:
+                            data = source.read()
+                        current[path] = (hashlib.sha256(data).hexdigest(), data)
+                    except (FileNotFoundError, IsADirectoryError):
+                        continue
+        stamp = dict(time_ns=time.time_ns(), monotonic_ns=time.monotonic_ns())
+        for path in sorted(set(previous) | set(current)):
+            if current.get(path) == previous.get(path):
+                continue
+            event = dict(stamp, path=path, operation='write' if path in current else 'remove')
+            if path in current:
+                event.update(sha256=current[path][0], content_b64=base64.b64encode(current[path][1]).decode())
+            output.write(json.dumps(event) + '\n')
+        output.flush()
+        previous = current
+        time.sleep(.02)
+TRACE
+  trace_pid=$!
+fi
 fail=0 count=0
 check() {
   local label="$1"; shift
   count=$((count + 1))
+  if [ -n "$trace_dir" ]; then
+    python3 - "$label" >>"$trace_dir/checkpoints.jsonl" <<'CHECKPOINT'
+import json, sys, time
+print(json.dumps(dict(time_ns=time.time_ns(), monotonic_ns=time.monotonic_ns(), check=sys.argv[1])))
+CHECKPOINT
+  fi
   if "$@"; then echo "ok    $label"; else echo "FAIL  $label"; fail=1; fi
 }
 # Invoked indirectly by test helpers or by commands under test.
@@ -107,6 +164,8 @@ sleep 1
 "$B/tmux-ask" --from main --reply receiver 'resume-second-reply' >"$tmp/queued-2"
 sleep 1
 "$B/tmux-ask" --from main receiver 'resume-third-request' >"$tmp/queued-3"
+request_id="$(request_state incoming "$old")"
+check 'queued request has its own identity' test -n "$request_id"
 check 'all three sends really queued' test "$(grep -l '^queued ' "$tmp"/queued-* | wc -l | tr -d ' ')" = 3
 check 'queue retains all three message bodies' test "$(file_count '*.msg')" = 3
 check 'every queued message has metadata' test "$(file_count '*.meta')" = 3
@@ -143,6 +202,7 @@ check 'resume creates a different pane' test "$new" != "$old"
 check 'resume assigns an available label' test "$(info "$new" @agent)" = receiver-2
 check 'resume restores ownership before retry' test "$(info "$new" @parent)" = %0
 check 'resume delivers original messages exactly once, oldest first' wait_for received
+check 'retry preserves the exact request identity' test "$(request_state incoming "$new")" = "$request_id"
 check 'retried request leaves resumed receiver working' test "$(info "$new" @state)" = working
 check 'sender still awaits the resumed receiver' test "$(info %0 @awaiting)" = "$receiver_id"
 check 'successful retry removes saved messages' test "$(receiver_file_count undelivered)" = 0
@@ -154,7 +214,20 @@ check 'explicit retry does not duplicate delivered messages' received
 "$B/tmux-dismiss" --from main receiver-2 >"$tmp/dismiss-again"
 spawn --resume receiver-2 >"$tmp/resume-again"
 new="$(pane_of receiver-2)"
-check 'resume without pending messages stays done' test "$(info "$new" @state)" = "done"
+check 'second resumed stub is ready' wait_for ready "$new"
+check 'delivered but unanswered request survives second resume' test "$(info "$new" @state)" = working
+check 'second resume retains same pending request identity' test "$(request_state incoming "$new")" = "$request_id"
 check 'second resume does not replay delivered messages' received
+"$B/tmux-ask" --from receiver-2 --reply --request-id "$request_id" main 'resumed task completed' >"$tmp/reply"
+check 'explicit reply completes the resumed request' test -z "$(request_state incoming "$new")"
+check 'reply returns receiver to original idle state' test "$(info "$new" @state)" = idle
+check 'reply clears sender obligation' test -z "$(info %0 @awaiting)"
+"$B/tmux-dismiss" --from main receiver-2 >"$tmp/dismiss-completed"
+spawn --resume receiver-2 >"$tmp/resume-completed"
+new="$(pane_of receiver-2)"
+check 'completed resumed stub is ready' wait_for ready "$new"
+check 'resume after answering starts done' test "$(info "$new" @state)" = "done"
+check 'completed resume has no incoming request' test -z "$(request_state incoming "$new")"
+check 'completed resume never replays delivered messages' received
 printf '%s checks; failures=%s\n' "$count" "$fail"
 exit "$fail"
