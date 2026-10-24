@@ -113,6 +113,8 @@ check 'exactly one reply publisher succeeds' test "$(( (ra==0) + (rb==0) ))" = 1
 if [ "$ra" = 0 ]; then winner="$a" loser="$b"; else winner="$b" loser="$a"; fi
 check 'winner publishes its own body identity' contains "$winner" "publication-body:$r1:$winner"
 check 'loser never publishes its body' test ! -f "$loser"
+check 'loser removes staged body' test ! -f "$loser.tmp"
+check 'loser removes staged metadata' test ! -f "${loser%.msg}.meta"
 check 'winning reply answers original request' contains "$ledger/$r1.record" status=answered
 check 'reply commit clears journal' absent "$ledger/$r1.record" publication=
 # Kill the ledger process precisely after the durable request journal rename,
@@ -203,5 +205,17 @@ check 'undelivered retry does not recreate overdue projection' test -z "$(opt "$
 check 'undelivered retry consumes exact source' test ! -f "${p4%.msg}.undelivered"
 tmux capture-pane -p -t "$receiver" >"$tmp/received"
 check 'undelivered retry retains exact body identity' contains "$tmp/received" "publication-body:$r4:"
+# Terminal records expire after seven days; pending requests and queued
+# references remain available regardless of age.
+for spec in 'r000000000201 answered' 'r000000000202 answered' 'r000000000203 pending'; do
+  read -r rid status <<< "$spec"
+  printf 'request_id=%s\nrequester_id=%s\nreceiver_id=%s\nstatus=%s\ncreated_at=1\ndelivered_at=1\nreplied_at=1\n' "$rid" "$from" "$to" "$status" >"$ledger/$rid.record"
+done
+printf 'request_id=r000000000202\n' >"$queue/retained.meta"
+printf 'retained old answer\n' >"$queue/retained.undelivered"
+state sync
+check 'old terminal history is pruned' test ! -f "$ledger/r000000000201.record"
+check 'old queued terminal identity is retained' test -f "$ledger/r000000000202.record"
+check 'old pending request is never pruned' test -f "$ledger/r000000000203.record"
 echo "$((count-fail))/$count passed"
 [ "$fail" -eq 0 ]

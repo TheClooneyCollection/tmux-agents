@@ -39,7 +39,7 @@ sub valid_request { defined $_[0] && $_[0] =~ /^r[0-9a-f]{12}$/ }
 my %requests;
 # Reports update one context; completed history is irrelevant to them. Small
 # journal markers still make interrupted publication recoverable on any event.
-my $context_only=$op =~ /^(progress|local|local-done|wait)$/;
+my $context_only=$op =~ /^(progress|local|local-done|wait|notify)$/;
 my @journals=glob "$root/r*.journal";
 $context_only=0 if @journals;
 my @paths=$context_only ? () : glob("$root/r*.record");
@@ -51,7 +51,7 @@ for my $path (@journals) {
     (my $rid=$path)=~s{.*/|\.journal$}{}g;
     unlink $path unless $requests{$rid} && $requests{$rid}{publication};
 }
-my @keys=qw(agent_id state tracked parent waiting_on awaiting request_progress_at request_local_work request_local_done request_pending_since attention_since shell pane_dead);
+my @keys=qw(agent_id state tracked parent waiting_on awaiting request_progress_at request_local_work request_local_done request_notify_digest request_pending_since attention_since shell pane_dead);
 my $fmt='#{pane_id}' . join('', map { $_ eq 'pane_dead' ? "\t#{pane_dead}" : "\t\#{\@$_}" } @keys);
 open my $snap, '-|', 'tmux', 'list-panes', '-a', '-F', $fmt or die "$!";
 my (%panes,%by_pane);
@@ -129,6 +129,13 @@ if ($op eq 'create' || $op eq 'publish-create') {
         delete $r->{publication}; save_fields("$root/$rid.record",$r);
         unlink "$root/$rid.journal";
     }
+} elsif ($op eq 'cancel') {
+    my $r=$requests{$args[0]} or exit 0;
+    if ($r->{status} eq 'pending' && !$r->{delivered_at}) {
+        $r->{status}='cancelled'; $r->{cancelled_at}=$now;
+        save_fields("$root/$args[0].record",$r);
+        unlink "$root/$r->{receiver_id}.context" if !pending($r->{receiver_id}) && !$panes{$r->{receiver_id}};
+    }
 } elsif ($op eq 'delivered') {
     my $r=$requests{$args[0]} or die "unknown request\n";
     if ($r->{status} eq 'pending' && !$r->{delivered_at}) {
@@ -146,8 +153,15 @@ if ($op eq 'create' || $op eq 'publish-create') {
     }
 } elsif ($op eq 'publish-answer') {
     my ($rid,$from,$to,$publication)=@args;
-    my $r=$requests{$rid} or die "unknown request\n";
-    die "request does not match this pending reply\n" unless $r->{status} eq 'pending' && $r->{receiver_id} eq $from && $r->{requester_id} eq $to;
+    my $r=$requests{$rid};
+    unless ($r && $r->{status} eq 'pending' && $r->{receiver_id} eq $from && $r->{requester_id} eq $to) {
+        # This invocation lost the commit race; its private staged pair is
+        # not referenced by the winning publication and must not accumulate.
+        unlink "$publication.tmp";
+        (my $meta=$publication)=~s/\.msg$/.meta/;
+        unlink $meta if $meta ne $publication;
+        die "request does not match this pending reply\n";
+    }
     die "missing staged reply body\n" unless -f "$publication.tmp";
     # Write ahead: another publisher cannot claim this request. Recovery
     # finishes the rename if this process dies between journal and publish.
@@ -167,7 +181,27 @@ if ($op eq 'create' || $op eq 'publish-create') {
     setopt($id,'request_local_done','1');
     my $c=context($id);
     $c->{base} ||= $panes{$id}{parent} ? 'done' : 'idle';
-    $c->{local_work}=0; save_context($id,$c);
+    $c->{local_work}=0; $c->{local_done}=1; save_context($id,$c);
+} elsif ($op eq 'notify') {
+    my $id=$by_pane{$args[0]} // ''; exit 1 unless $id;
+    my ($digest,$kind)=@args[1,2];
+    my $c=context($id);
+    exit 1 if ($c->{notify_digest} // '') eq $digest;
+    $c->{notify_digest}=$digest; $c->{progress_at}=$now;
+    if ($kind eq 'local' && !$panes{$id}{request_local_done}) {
+        $c->{base} ||= $panes{$id}{parent} ? 'done' : 'idle';
+        $c->{local_work}=1;
+        # A completion callback cannot reconstruct an unreported work start.
+        # From idle/done it flags unfinished local work without opening a
+        # synthetic working interval during notification processing.
+        state($id,$panes{$id}{state} =~ /^(idle|done)$/ ? 'needs_you' : 'working');
+        setopt($id,'request_local_work','1');
+    }
+    save_context($id,$c);
+    setopt($id,'request_notify_digest',$digest);
+    setopt($id,'request_progress_at',"$now");
+    setopt($id,'request_local_done','');
+    delete $c->{local_done}; save_context($id,$c);
 } elsif ($op eq 'progress' || $op eq 'local') {
     my $id=$by_pane{$args[0]} // ''; exit 0 unless $id;
     setopt($id,'request_progress_at',"$now");
@@ -178,12 +212,34 @@ if ($op eq 'create' || $op eq 'publish-create') {
         state($id,'working');
         setopt($id,'request_local_work','1');
         setopt($id,'request_local_done','');
+        setopt($id,'request_notify_digest','');
+        delete $c->{notify_digest}; delete $c->{local_done};
         $c->{base} ||= $panes{$id}{parent} ? 'done' : 'idle';
         $c->{local_work}=1; save_context($id,$c);
     }
 } elsif ($op eq 'incoming') {
     my $id=$by_pane{$args[0]} // ''; exit 0 unless $id;
     $result=join(' ',sort map { $_->{request_id} } pending($id));
+} elsif ($op eq 'turn-end') {
+    my ($pane,$expected,$local_expected,$desired,$activity)=@args;
+    my $id=$by_pane{$pane} // ''; exit 0 unless $id;
+    my $v=$panes{$id};
+    # A hook computes display text outside the ledger lock. Its commit must
+    # not overwrite work accepted after that snapshot, including a new RID.
+    my $current=join(' ',sort map { $_->{request_id} } pending($id));
+    exit 0 unless $current eq $expected && ($v->{request_local_work} // '') eq $local_expected;
+    if ($desired eq 'idle' || $desired eq 'needs_you') {
+        exit 0 if length($v->{waiting_on} // '') || length($v->{awaiting} // '');
+        exit 0 if grep { $_->{requester_id} eq $id && $_->{status} eq 'pending' } values %requests;
+        exit 0 if grep { $_->{parent} eq $pane && $_->{state} ne 'done' && $_->{shell} ne '1' && $_->{pane_dead} ne '1' } values %panes;
+        exit 0 if $desired eq 'idle' && (length($current) || $v->{request_local_work});
+    }
+    system('/bin/bash','-c','. "$1"; agent_turn_state "$2" end "$3"','request-state',"$FindBin::Bin/lib.sh",$pane,$desired)==0 or die "cannot finish turn\n";
+    open my $state_read, '-|', 'tmux','show-options','-pqv','-t',$pane,'@state' or die "$!";
+    my $actual=<$state_read> // ''; close $state_read; chomp $actual;
+    if ($actual eq 'needs_you') { setopt($id,'attention_since',"$now") unless $v->{attention_since}; }
+    else { setopt($id,'attention_since',''); }
+    setopt($id,'activity',$activity) if length($activity) && $actual eq 'working';
 } elsif ($op eq 'finish' || $op eq 'legacy-finish') {
     my $id=$by_pane{$args[0]} // ''; exit 1 unless $id;
     my $v=$panes{$id}; my $c=context($id);
@@ -200,7 +256,8 @@ if ($op eq 'create' || $op eq 'publish-create') {
     state($id,$c->{base} || 'done');
     setopt($id,'attention_since','');
     setopt($id,'waiting_on','');
-    unlink "$root/$id.context";
+    if ($c->{notify_digest} || $c->{local_done}) { my %receipt=map { $_=>$c->{$_} } grep { exists $c->{$_} } qw(notify_digest local_done); save_context($id,\%receipt); }
+    else { unlink "$root/$id.context"; }
 } elsif ($op eq 'wait') {
     my $id=$by_pane{$args[0]} // ''; exit 0 unless $id;
     my $c=context($id);
@@ -213,6 +270,8 @@ if ($op eq 'create' || $op eq 'publish-create') {
     setopt($id,'request_local_work',$c->{local_work} ? '1' : '');
     setopt($id,'waiting_on',$c->{saved_wait} // '');
     setopt($id,'request_progress_at',$c->{progress_at} // '');
+    setopt($id,'request_notify_digest',$c->{notify_digest} // '');
+    setopt($id,'request_local_done',$c->{local_done} // '');
     state($id,'working') if pending($id) || $c->{local_work} || $c->{saved_wait};
 } elsif ($op ne 'sync') { die "unknown request ledger operation\n"; }
 # Derive compatibility waits and overdue UI fields from the durable ledger.
@@ -234,6 +293,26 @@ unless ($context_only || $op eq 'resolve' || $op eq 'incoming') {
         # Keep waits created by older tools that have no ledger entry.
         for my $old (split /\s+/, $panes{$id}{awaiting} // '') { $out{$old}=1 unless $known{$old}; }
         setopt($id,'awaiting',join(' ',sort keys %out));
+    }
+}
+# Keep terminal identities for seven days, longer while a queued message
+# refers to them. Never age out pending obligations. Context-only progress
+# does not scan history; maintenance runs on sync and at most daily otherwise.
+unless ($context_only || $op eq 'resolve' || $op eq 'incoming') {
+    my $maintenance=read_fields("$root/.maintenance");
+    if ($op eq 'sync' || $now-($maintenance->{pruned_at} // 0)>86400) {
+        my %queued;
+        my $queue="/tmp/tmux-agents-$</queue/$socket";
+        for my $path (glob "$queue/*.meta") {
+            my $m=read_fields($path);
+            $queued{$m->{request_id}}=1 if valid_request($m->{request_id});
+        }
+        for my $r (values %requests) {
+            next if $r->{status} eq 'pending' || $r->{publication} || $queued{$r->{request_id}};
+            my $ended=$r->{replied_at} || $r->{cancelled_at} || 0;
+            unlink "$root/$r->{request_id}.record" if $ended && $now-$ended>604800;
+        }
+        save_fields("$root/.maintenance",{pruned_at=>$now});
     }
 }
 print "$result\n" if length $result;

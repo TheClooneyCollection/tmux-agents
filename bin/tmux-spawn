@@ -398,12 +398,20 @@ if [ -n "$spawn_request_id" ]; then
 fi
 
 if [ -n "$split_pane" ]; then
-  pane="$(open_split "$split_pane" "$cwd" "'$here/tmux-spawn' --run '$agent' '$file' '$sid' new '$agent_id' '$spawn_request_id'" "$spawn_depth")"
+  if ! pane="$(open_split "$split_pane" "$cwd" "'$here/tmux-spawn' --run '$agent' '$file' '$sid' new '$agent_id' '$spawn_request_id'" "$spawn_depth")"; then
+    [ -z "$spawn_request_id" ] || request_state cancel "$spawn_request_id"
+    rm -f "$file"
+    exit 1
+  fi
   ensure_agent_id "$pane" "$agent_id" >/dev/null
   adopt "$pane" "$owner" "$name" split
   location="in a visible split of $split_pane"
 else
-  pane="$(open_window "$session" "$cwd" "$name" "'$here/tmux-spawn' --run '$agent' '$file' '$sid' new '$agent_id' '$spawn_request_id'" "$spawn_depth")"
+  if ! pane="$(open_window "$session" "$cwd" "$name" "'$here/tmux-spawn' --run '$agent' '$file' '$sid' new '$agent_id' '$spawn_request_id'" "$spawn_depth")"; then
+    [ -z "$spawn_request_id" ] || request_state cancel "$spawn_request_id"
+    rm -f "$file"
+    exit 1
+  fi
   ensure_agent_id "$pane" "$agent_id" >/dev/null
   adopt "$pane" "$owner" "$name"
   location="hidden in session \"$session\""

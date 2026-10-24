@@ -33,7 +33,7 @@ check() { local label="$1"; shift; if "$@"; then echo "ok $label"; else echo "FA
 st() { tmux show -pqv -t %1 "$1"; }
 reset_case() {
   rm -rf "$XDG_STATE_HOME/tmux-agents/$sock/requests"
-  for opt in state attention_since waiting_on awaiting request_local_work request_local_done request_progress_at request_pending_since codex_thread; do
+  for opt in state attention_since waiting_on awaiting request_local_work request_local_done request_progress_at request_pending_since request_notify_digest codex_thread; do
     tmux set -pu -t %1 "@$opt" 2>/dev/null || true
   done
   tmux set -p -t %1 @tracked 1
@@ -88,6 +88,12 @@ notify 'direct user task'
 check 'notify does not reopen explicitly completed local work' test -z "$(st @request_local_work)"
 check 'completed direct user task stays idle' test "$(st @state)" = idle
 check 'notify consumes local-done marker' test -z "$(st @request_local_done)"
+notify 'direct user task'
+check 'duplicate notify keeps completed local work idle' test "$(st @state)" = idle
+check 'duplicate notify does not recreate local marker' test -z "$(st @request_local_work)"
+"$B/tmux-agent-report" --pane %1 --local 'direct user task' >/dev/null
+notify 'direct user task'
+check 'explicit local starts a new identical task' test "$(st @state)" = needs_you
 notify 'next direct user task'
 check 'next direct user task starts local work' test "$(st @request_local_work)" = 1
 
@@ -119,5 +125,35 @@ reject --local-done --waiting text
 reject --local
 reject --local --turn-end text
 reject --local-done --save-work
+reset_case
+"$B/tmux-agent-report" --pane %1 --local 'parallel completion' >/dev/null
+"$B/tmux-agent-report" --pane %1 --local-done
+notify 'parallel completion' & first_notify=$!
+notify 'parallel completion' & second_notify=$!
+wait "$first_notify"
+wait "$second_notify"
+check 'concurrent duplicate notify consumes receipt once' test -z "$(st @request_local_done)"
+check 'concurrent duplicate notify keeps task complete' test "$(st @state)" = idle
+check 'concurrent duplicate notify never recreates local work' test -z "$(st @request_local_work)"
+
+# Inject a real incoming request after turn-end has read its empty request
+# set, before its terminal state commit. The body of the hook is unmodified.
+reset_case
+export REQUEST_RACE_FROM="$sender_id" REQUEST_RACE_TO="$receiver_id" REQUEST_RACE_MARKER="$state_dir/injected"
+cat >>"$B/lib.sh" <<'RACE'
+request_state() {
+  local output core
+  core="$(dirname "${BASH_SOURCE[0]}")/tmux-request-state"
+  output="$(/usr/bin/perl "$core" "$@")" || return $?
+  if [ "$1" = incoming ] && [ ! -f "$REQUEST_RACE_MARKER" ]; then
+    : >"$REQUEST_RACE_MARKER"
+    /usr/bin/perl "$core" create r0123456789ac "$REQUEST_RACE_FROM" "$REQUEST_RACE_TO"
+  fi
+  printf '%s\n' "$output"
+}
+RACE
+"$B/tmux-agent-report" --pane %1 --turn-end </dev/null
+check 'late request retains pending identity' test "$(request_state incoming %1)" = r0123456789ac
+check 'old turn-end cannot idle a newly received request' test "$(st @state)" = working
 printf '%s failures\n' "$fail"
 [ "$fail" -eq 0 ]

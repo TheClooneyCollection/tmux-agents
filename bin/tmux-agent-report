@@ -102,7 +102,7 @@ turn_end() {
   local_active="$(tmux show-options -pqv -t "$p" @request_local_work)"
   if [ -z "$incoming" ] && [ "$local_active" != 1 ]; then
     case "$(tmux show-options -pqv -t "$p" @state)" in
-      done|idle) agent_turn_state "$p" end ""; return 0 ;;
+      done|idle) request_state turn-end "$p" "$incoming" "$local_active" "" ""; return 0 ;;
     esac
   fi
   kids="$(tmux list-panes -a -F '#{pane_id} #{@parent} #{pane_dead} #{?@state,#{@state},-} #{@agent} #{?@shell,#{@shell},0}' \
@@ -123,15 +123,11 @@ turn_end() {
   who="$(printf '%s' "$who" | sed 's/ /, /g')"
   [ -z "$waiting_on" ] || who="${who:+$who, }$waiting_on"
   if [ -n "$who" ]; then
-    agent_turn_state "$p" end working
-    tmux set-option -p -t "$p" @activity "waiting for $who"
-    tmux set-option -pu -t "$p" @attention_since 2>/dev/null || true
+    request_state turn-end "$p" "$incoming" "$local_active" working "waiting for $who"
   elif [ -z "$incoming" ] && [ "$local_active" != 1 ] && [ -z "$(tmux show-options -pqv -t "$p" @parent)" ]; then
-    agent_turn_state "$p" end idle
-    tmux set-option -pu -t "$p" @attention_since 2>/dev/null || true
+    request_state turn-end "$p" "$incoming" "$local_active" idle ""
   else
-    agent_turn_state "$p" end needs_you
-    [ -n "$(tmux show-options -pqv -t "$p" @attention_since)" ] || tmux set-option -p -t "$p" @attention_since "$(date +%s)"
+    request_state turn-end "$p" "$incoming" "$local_active" needs_you ""
   fi
 }
 
@@ -225,13 +221,15 @@ fi
 
 case "$turn" in
   end)
-    request_state progress "$pane"
     if [ -n "$notify_json" ]; then
+      notify_digest="$(printf '%s' "$notify_json" | /usr/bin/perl -MJSON::PP -MDigest::SHA=sha256_hex -0777 -ne '
+        my $j=decode_json($_); my $key=$j->{"turn-id"} // $j->{turn_id};
+        print sha256_hex(defined($key) ? ($j->{"thread-id"} // "")."\0".$key : JSON::PP->new->canonical->encode($j));
+      ')"
       local_prompt="$(printf '%s' "$notify_json" | prompt_kind notify)"
-      if [ "$local_prompt" = local ] && [ "$(tmux show-options -pqv -t "$pane" @request_local_done)" != 1 ]; then
-        request_state local "$pane"
-      fi
-      tmux set-option -pu -t "$pane" @request_local_done 2>/dev/null || true
+      request_state notify "$pane" "$notify_digest" "$local_prompt" || exit 0
+    else
+      request_state progress "$pane"
     fi
     turn_end "$pane"; exit 0 ;;
 

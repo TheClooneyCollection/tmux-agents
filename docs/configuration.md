@@ -33,6 +33,8 @@ set -g @tmux_agents_name_format exact
 
 `TMUX_AGENTS_CODEX_HOMES` also keeps its tmux global-environment fallback when neither a local override nor the option is set. Settings are read once per command; restart an existing picker or chip daemon to apply changes to its cached settings. Set overrides after sourcing `tmux-agents.conf`, which installs the chip FPS default, except for `@tmux_agents_shell_key` and `@tmux_agents_command_key`: set them before sourcing, because their bindings are installed at source time. Internal pane state and test hooks are not user settings.
 
+`resume_days` controls closed-agent list retention. Request records have a separate fixed seven-day retention after answering or cancellation; pending requests and records referenced by queued messages do not expire by age. See [request completion](design/state-and-protocol.md#request-completion) for cleanup triggers and notification deduplication.
+
 With `sub_auto` on, `tmux-spawn` adds Claude's `--permission-mode auto` or Codex's `-c approvals_reviewer="auto_review"`. With it off, neither flag is added. The setting applies to new and resumed Claude/Codex agents, including members. Other executables keep their own permission behavior; no permission flags or rules are added.
 
 `tmux-agents start PROFILE` uses the same Codex-home lookup and given-name preferences as `tmux-spawn`. The launcher runs in the current pane and supplies per-process identity pins and turn hooks without editing global agent config. It keeps the agent's permission defaults; pass agent-specific options after `--`. Shell wrappers are optional and provide identity pins only. See [Starting agents](guide.md#starting-agents).

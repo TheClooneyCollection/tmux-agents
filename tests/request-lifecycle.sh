@@ -176,5 +176,40 @@ request_state() {
 request_finish "$receiver" || true
 check 'interleaved request remains pending' contains "$ledger/$race_id.record" status=pending
 check 'completion cannot overwrite newer request state' test "$(opt "$receiver" state)" = working
+# A failed tmux open must not leave an unanswerable spawn obligation.
+real_tmux="$(command -v tmux)"
+mkdir -p "$tmp/fail-open"
+cat >"$tmp/fail-open/tmux" <<'SHIM'
+#!/bin/sh
+case "$1" in new-window|new-session|split-window) echo 'injected open failure' >&2; exit 42 ;; esac
+exec "$REQUEST_REAL_TMUX" "$@"
+SHIM
+chmod +x "$tmp/fail-open/tmux"
+export REQUEST_REAL_TMUX="$real_tmux"
+if PATH="$tmp/fail-open:$PATH" "$B/tmux-spawn" claude --from main --exact --name failed-open failed-open-task >"$tmp/failed-open" 2>&1; then
+  check 'spawn open failure is reported' false
+else
+  check 'spawn open failure is reported' contains "$tmp/failed-open" 'injected open failure'
+fi
+failed_id="$(for rec in "$(sessions_dir)"/a*; do [ -f "$rec" ] || continue; if grep -qx name=failed-open "$rec"; then basename "$rec"; fi; done)"
+check 'failed spawn has no pending obligation' test -z "$(for rec in "$ledger"/r*.record; do if grep -qx "receiver_id=$failed_id" "$rec" && grep -qx status=pending "$rec"; then echo pending; fi; done)"
+check 'failed spawn is absent from requester waits' test "$(opt %0 awaiting)" != "$failed_id"
+# A local completion receipt survives a real close/resume before Codex's
+# delayed completion callback. Use the existing stable conversation identity.
+"$B/tmux-spawn" claude --from main --exact --name receipt-worker >"$tmp/receipt-spawn"
+receipt_pane="$(pane_of receipt-worker)"
+check 'receipt helper ready' wait_for ready "$receipt_pane"
+receipt_id="$(pane_agent_id "$receipt_pane")"
+"$B/tmux-agent-report" --pane "$receipt_pane" --local 'receipt task' >"$tmp/receipt-local"
+"$B/tmux-agent-report" --pane "$receipt_pane" --local-done
+"$B/tmux-dismiss" --from main receipt-worker >"$tmp/receipt-dismiss"
+"$B/tmux-spawn" --from main --resume receipt-worker >"$tmp/receipt-resume"
+receipt_pane="$(pane_of receipt-worker)"
+check 'receipt helper resumed' wait_for ready "$receipt_pane"
+check 'local-done receipt survives resume' test "$(opt "$receipt_pane" request_local_done)" = 1
+receipt_notify="$(/usr/bin/perl -MJSON::PP -e 'print encode_json({type=>"agent-turn-complete","thread-id"=>$ARGV[0],"input-messages"=>["receipt task"],"last-assistant-message"=>"finished"})' "$(record_get "$receipt_id" id)")"
+"$B/tmux-agent-report" --agent-id "$receipt_id" --codex-notify "$receipt_notify"
+check 'delayed notify after resume preserves completion' test "$(opt "$receipt_pane" state)" = "done"
+check 'delayed notify after resume does not reopen local' test -z "$(opt "$receipt_pane" request_local_work)"
 echo "$((count-fail))/$count passed"
 [ "$fail" -eq 0 ]
