@@ -58,7 +58,11 @@ Notes for AI agents working on tmux-agents.
 ## Commits and releases
 
 - Commit style: `feat: ...`, `fix: ...`, `docs: ...`, `test: ...`, `chore: ...`.
-- Merge PRs with rebase merges only (`gh pr merge N --rebase`), never merge commits or squash, so main's history stays linear. Rebase a branch onto main before merging it. The GitHub repo allows only rebase merging, and rulesets on main require linear history and the 7 CI jobs (admins may bypass). Never use `gh pr merge --admin` to skip red or pending CI unless the user says so.
+- **Main is one straight line.** `git log --graph main` must never fork: no merge commits, no squash commits, ever. Every change lands as a fast-forward of the branch's own commits.
+  - Before merging, rebase the branch onto the current `origin/main` (`git rebase origin/main`, then `git push --force-with-lease`) so the merge is a pure fast-forward. If main moved after CI ran, let CI rerun on the rebased head.
+  - Merge only with `gh pr merge N --rebase`. Never `--merge`, never `--squash`, never a local `git merge` into main. Checking out main and `git merge --ff-only <branch>` is the only acceptable alternative.
+  - The GitHub repo allows only rebase merging, and rulesets on main require linear history and the 7 CI jobs (admins may bypass). Never use `gh pr merge --admin` to skip red or pending CI unless the user says so.
+  - After merging, confirm with `git log --oneline --graph -5 origin/main` that the graph is still a single line.
 - Release: turn CHANGELOG.md's "Unreleased" into the version (semver: minor for new options or changed behaviour, patch for fixes and docs), run every suite, commit and push, then `gh release create vX.Y.Z --target main` as a separate step. Before tagging, check new messages, HEAD and existing tags; a hold on the release must be lifted explicitly.
 - Reply as soon as the release is out; send follow-ups (syncs, announcements) as notices.
 - Never move or delete a published tag. If something missed a release, ship a follow-up patch.
