@@ -189,13 +189,11 @@ args=open(sys.argv[1],'rb').read().split(b'\0')[:-1]
 notify=json.loads(next(a for a in args if a.startswith(b'notify=')).split(b'=',1)[1])
 subprocess.run(notify+[json.dumps({'type':'agent-turn-complete','thread-id':'launcher-first-thread','input-messages':['plain user prompt'],'last-assistant-message':'Finished'})],check=True)
 PYTEST
-check 'direct user notify preserves unfinished local work' test "$(info "$pane" state)" = needs_you
-check 'direct user notify records local obligation' test "$(info "$pane" request_local_work)" = 1
+check 'direct user notify completes the prompt idle' test "$(info "$pane" state)" = idle
+check 'direct user notify leaves no local obligation' test -z "$(info "$pane" request_local_work)"
 check 'notify before work never charges idle time' test "$(info "$pane" worked)" = 0
 check 'notify before work never starts clock' test -z "$(info "$pane" turn_start)"
-"$B/tmux-agent-report" --pane "$pane" --local-done
-check 'explicit local completion returns launcher idle' test "$(info "$pane" state)" = idle
-check 'explicit local completion clears attention' test -z "$(info "$pane" attention_since)"
+check 'completed prompt clears attention' test -z "$(info "$pane" attention_since)"
 check 'actual launcher notify saves conversation' test "$(record_get "$(info "$pane" agent_id)" id)" = launcher-first-thread
 TMUX_PANE=%0 "$B/tmux-agents-start" chain "$tmp" --worker extra
 chain="$(tmux display -p '#{pane_id}')"
@@ -276,10 +274,8 @@ for pane, main, secondary, worker, homes in [
 PYTEST
 check 'two chains preserve separate env maps, safely encoded pins and actual notify' test "$?" = 0
 for chain_codex in "$chain_a" "$chain_b"; do
-  check 'Codex main unfinished user task needs attention' test "$(info "$chain_codex" state)" = needs_you
-  check 'Codex main retains local obligation' test "$(info "$chain_codex" request_local_work)" = 1
-  "$B/tmux-agent-report" --pane "$chain_codex" --local-done
-  check 'Codex main explicit completion ends idle' test "$(info "$chain_codex" state)" = idle
+  check 'Codex main finished prompt ends idle' test "$(info "$chain_codex" state)" = idle
+  check 'Codex main finished prompt leaves no local obligation' test -z "$(info "$chain_codex" request_local_work)"
   check 'Codex main completion clears clock' test -z "$(info "$chain_codex" turn_start)"
   check 'Codex main completion has no attention' test -z "$(info "$chain_codex" attention_since)"
   "$B/tmux-agent-report" --from "$(info "$chain_codex" agent)" --local 'next user task' >/dev/null
@@ -362,11 +358,9 @@ auto_pane="$(tmux new-window -d -P -F '#{pane_id}' -c "$tmp" "'$B/tmux-agents-st
 wait_file "$tmp/$auto_pane.init"
 check 'auto profile stub ready' bash -c 'tmux capture-pane -p -t "$1" | grep -q "FAKE codex"' _ "$auto_pane"
 check 'auto profile launch uses codex prefix' test "$(pane_name "$auto_pane")" = "$expected_auto_name"
-# A real top-level task keeps its obligation until explicitly completed.
+# A real top-level prompt is complete when its turn ends with nothing pending.
 printf '%s\n' '{"prompt":"user task"}' | "$B/tmux-agent-report" --pane "$auto_pane" --turn-start
 "$B/tmux-agent-report" --pane "$auto_pane" --turn-end </dev/null
-check 'launched top-level unfinished local task needs user' test "$(info "$auto_pane" state)" = needs_you
-"$B/tmux-agent-report" --pane "$auto_pane" --local-done
 check 'launched top-level ends idle' test "$(info "$auto_pane" state)" = idle
 check 'launched top-level has no attention marker' test -z "$(info "$auto_pane" attention_since)"
 check 'launched top-level completes one turn' test "$(info "$auto_pane" turns)" = 1

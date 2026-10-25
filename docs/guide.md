@@ -55,7 +55,7 @@ if tmux -L chain-test has-session; then
 fi
 ```
 
-Saying “start the chain” to an existing top-level agent keeps it as main. Role settings affect new chains only. Main keeps its permission defaults; Claude/Codex members use `sub_auto` (default `on`). Codex main has identity pins and turn-end notify, but no turn-start hook, so main starts each new direct user task with `tmux-agent-report --from ME --local "<task>"` and clears that local task with `--local-done` when finished.
+Saying “start the chain” to an existing top-level agent keeps it as main. Role settings affect new chains only. Main keeps its permission defaults; Claude/Codex members use `sub_auto` (default `on`). Codex main has identity pins and turn-end notify, but no turn-start hook, so a direct user task that spans several turns starts with `tmux-agent-report --from ME --local "<task>"` and ends with `--local-done`; a task finished within one turn needs neither.
 
 ## Shell panes
 
@@ -159,9 +159,9 @@ Names shorten under project headings. Search parts, such as `claude tmux seconda
 
 Helpers report progress with `tmux-agent-report --from ME "running tests"`. Before ending a turn to wait, use `tmux-agent-report --from ME --waiting "test run"`; a progress notice to your own parent also keeps you working. A normal progress report clears the wait. A new request clears a parent-notice coordination marker but preserves an explicit `--waiting` background wait. A reply completes only its matching request; other requests, parent tasks, local work and background waits remain active. Once all incoming requests are answered and no other work remains, the agent returns to the appropriate done or idle state. Claude detects its own background shell commands at turn end; Codex needs `--waiting`. Neither mechanism knows when arbitrary external work has finished. Never use it to hide a user question. An idle turn does not ask for attention.
 
-For a direct user task or independent local work, run `tmux-agent-report --from ME --local "<task>"` at the start and `tmux-agent-report --from ME --local-done` when that work is complete. `--local-done` takes no trailing text and only clears local work; incoming requests, outgoing waits, unfinished children and background waits still prevent completion. Ordinary progress reports within a request do not create an independent local task.
+A direct user prompt is local work for the turn it starts, and ends with that turn once nothing else is outstanding; no report is needed. For local work that spans turns (you will keep going after this turn without a request, child or background wait to show for it), run `tmux-agent-report --from ME --local "<task>"` at the start and `tmux-agent-report --from ME --local-done` when that work is complete. `--local-done` takes no trailing text and only clears local work; incoming requests, outgoing waits, unfinished children and background waits still prevent completion. Ordinary progress reports within a request do not create an independent local task.
 
-Claude's nonprotocol user turn-start marks local work automatically. Codex has no turn-start hook: report `--local` when the task begins so peer replies cannot finish it in the meantime. Codex's completion notification also uses its input messages to protect direct local work, but it is a turn-end safeguard, not a substitute for the starting report. Always use `--local` for each new direct task, including repeated identical text: without a turn ID, identical notification payloads cannot be distinguished from retries. `--local` resets notification deduplication. The local completion marker survives resume. Complete local work explicitly with `--local-done`; use a normal progress report after a background wait ends.
+Claude's nonprotocol user turn-start marks local work automatically, and the turn end clears it. Codex has no turn-start hook: for multi-turn direct work, report `--local` when the task begins so peer replies cannot finish it in the meantime. Codex's completion notification also uses its input messages to recognise direct local work, but only at turn end. Use `--local` for each new multi-turn direct task, including repeated identical text: without a turn ID, identical notification payloads cannot be distinguished from retries. `--local` resets notification deduplication. The local completion marker survives resume. Complete explicit local work with `--local-done`; use a normal progress report after a background wait ends.
 
 `4m · worked 1h5m` means current-state age and total active working time. Permission, needs-you and message waits pause the same turn; idle/done complete it. Pauses do not count. Reopening retains saved work; abrupt removal can lose the uncheckpointed interval. See [accounting](design/state-and-protocol.md#working-time-accounting) and [preview details](design/sub-agents.md#browsing-tmux-agents).
 
@@ -219,8 +219,8 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 | `tmux-spawn [AGENT] --from ME [--member] [task]` | Spawn; accepts stdin, `--name`, `--split` and `--for`. |
 | `tmux-spawn --list-closed` | List saved conversations. |
 | `tmux-spawn --from ME --resume PEER` / `--resume-id ID` | Reopen a conversation. |
-| `tmux-agent-report --from ME [--waiting\|--local] "text"` | Report progress, a work wait or new independent local work. |
-| `tmux-agent-report --from ME --local-done` | Complete local work only; takes no trailing text. |
+| `tmux-agent-report --from ME [--waiting\|--local] "text"` | Report progress, a work wait or multi-turn local work. |
+| `tmux-agent-report --from ME --local-done` | Complete `--local` work only; takes no trailing text. |
 | `tmux-agents` | Open the agent list. |
 | `tmux-dismiss --from ME PEER` | Close a descendant and its subtree. |
 

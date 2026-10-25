@@ -186,7 +186,9 @@ publish() {
   if [ "$retry" = retry ]; then
     mv "$file.tmp" "$file" || return 1
   elif [ "${kind:-}" = request ] && [ -n "${request_id:-}" ]; then
-    request_state publish-create "$request_id" "$from_id" "$to_id" "$file"
+    # A rejected request leaves no orphan pair behind for --pending or retry.
+    request_state publish-create "$request_id" "$from_id" "$to_id" "$file" ||
+      { rm -f "$file.tmp" "${file%.msg}.meta"; return 1; }
   elif [ "${kind:-}" = reply ] && [ -n "${request_id:-}" ]; then
     request_state publish-answer "$request_id" "$from_id" "$to_id" "$file"
   else
@@ -204,7 +206,11 @@ bounce() {
   text="your ${kind:-message} to ${to_name:-$to_pane} wasn't delivered: ${to_name:-$to_pane} $reason. The text is kept at $kept."
   reopen=""
   if valid_agent_id "$to_id"; then reopen="$(record_get "$to_id" id)"; fi
-  [ -z "$reopen" ] || text="$text It will be delivered if $to_name is reopened; you needn't resend it."
+  if [ -n "$reopen" ]; then text="$text It will be delivered if $to_name is reopened; you needn't resend it."
+  elif [ "${kind:-}" = request ] && [ -n "${request_id:-}" ]; then
+    # Nobody can ever answer this request; stop the sender waiting for it.
+    request_state cancel "$request_id" || true
+  fi
   if [ -n "$sender" ] && [ "$from_name" != tmux-ask ] &&
       [ "$(tmux show-options -pqv -t "$sender" @shell)" != 1 ]; then
     # A bounce is an ordinary durable notice, with no request-state effects.
@@ -252,8 +258,9 @@ try_delivery_locked() {
   active_file="$source"
   if ! mv "$source" "$sending"; then return 1; fi
   if deliver "$peer" "$(cat "$sending")"; then
-    if [ "$kind" = request ] && [ -n "$request_id" ]; then request_state delivered "$request_id"; fi
     rm -f "$sending" "${source%.msg}.meta"
+    # The paste happened: a ledger hiccup must never re-queue the message.
+    if [ "$kind" = request ] && [ -n "$request_id" ]; then request_state delivered "$request_id" || true; fi
     active_file=""
     refresh_waiting "$peer"
     return 0

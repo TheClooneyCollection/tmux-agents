@@ -89,7 +89,8 @@ if [ "${1:-}" = "--run" ]; then
     tmux set-option -p -t "$TMUX_PANE" @tracked 0
     prompt=""
   fi
-  if [ -n "${7:-}" ]; then request_state delivered "$7"; fi
+  # Bookkeeping only: a ledger error must not keep the agent from starting.
+  if [ -n "${7:-}" ]; then request_state delivered "$7" || true; fi
   if [ "$mode" = resume ]; then request_state restore "$TMUX_PANE"; fi
   build_agent_command "$agent" spawn "$sid" "$mode"
   if [ -n "$prompt" ]; then exec "${agent_command[@]}" "$prompt"; else exec "${agent_command[@]}"; fi

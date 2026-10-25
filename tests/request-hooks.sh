@@ -68,7 +68,8 @@ for kind in request reply notice; do
     check "notify $kind $wrapper is protocol" test -z "$(st @request_local_work)"
     reset_case
     notify "$message user draft"
-    check "notify $kind $wrapper draft is local" test "$(st @request_local_work)" = 1
+    check "notify $kind $wrapper draft completes with its turn" test -z "$(st @request_local_work)"
+    check "notify $kind $wrapper draft ends idle" test "$(st @state)" = idle
   done
 done
 reset_case
@@ -136,24 +137,23 @@ check 'concurrent duplicate notify consumes receipt once' test -z "$(st @request
 check 'concurrent duplicate notify keeps task complete' test "$(st @state)" = idle
 check 'concurrent duplicate notify never recreates local work' test -z "$(st @request_local_work)"
 
-# Inject a real incoming request after turn-end has read its empty request
-# set, before its terminal state commit. The body of the hook is unmodified.
+# Inject a real incoming request right before the turn-end commit. The
+# decision runs under the ledger lock, so it must count that request.
 reset_case
 export REQUEST_RACE_FROM="$sender_id" REQUEST_RACE_TO="$receiver_id" REQUEST_RACE_MARKER="$state_dir/injected"
 cat >>"$B/lib.sh" <<'RACE'
 request_state() {
-  local output core
+  local core
   core="$(dirname "${BASH_SOURCE[0]}")/tmux-request-state"
-  output="$(/usr/bin/perl "$core" "$@")" || return $?
-  if [ "$1" = incoming ] && [ ! -f "$REQUEST_RACE_MARKER" ]; then
+  if [ "$1" = turn-end ] && [ ! -f "$REQUEST_RACE_MARKER" ]; then
     : >"$REQUEST_RACE_MARKER"
     /usr/bin/perl "$core" create r0123456789ac "$REQUEST_RACE_FROM" "$REQUEST_RACE_TO"
   fi
-  printf '%s\n' "$output"
+  /usr/bin/perl "$core" "$@"
 }
 RACE
 "$B/tmux-agent-report" --pane %1 --turn-end </dev/null
 check 'late request retains pending identity' test "$(request_state incoming %1)" = r0123456789ac
-check 'old turn-end cannot idle a newly received request' test "$(st @state)" = working
+check 'turn-end counts a request accepted before its commit' test "$(st @state)" = needs_you
 printf '%s failures\n' "$fail"
 [ "$fail" -eq 0 ]

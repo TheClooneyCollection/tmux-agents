@@ -26,3 +26,11 @@ Ownership describes lifecycle and cleanup, while the request identifies the work
 - Marking every reply done, which can swallow another requester or parent's active task.
 - Treating a timeout as `needs you`, which confuses slow or ongoing work with a request for human intervention. Optional timeout escalation was discussed but was not selected.
 - Changing live agent states as part of this implementation. This task authorizes implementation and validation only, with no release or installation update.
+
+## Follow-up (2026-10-24 review)
+
+A review of the implementation found three groups of problems; the user asked for all of them to be fixed:
+
+- Ledger bookkeeping after a successful paste or spawn was fatal under `set -e`. A `delivered` error re-queued the pasted request every retry, or closed a new pane before its agent started. Those calls are now best effort, and a request publication the ledger rejects removes its own staged files.
+- Completion could get stuck: a pending request to a receiver that no longer exists blocked its requester forever, and local work inferred from a user prompt was never completed unless the agent called `--local-done`, so every top-level session without the skill ended each turn as `needs you`. Inferred local work now ends with its turn when nothing else is outstanding; only explicit `--local` requires `--local-done`. Outgoing waits count live receivers only. A top-level agent's restore base is `idle`, never the sub agent `done`.
+- Each turn end ran three ledger processes and parsed the Codex notify payload three times. The turn end is now one ledger operation and one parser, and free-text pane options are tab free so the ledger's pane snapshot cannot be shifted.

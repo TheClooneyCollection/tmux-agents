@@ -15,10 +15,11 @@ usage: tmux-agent-report [--from ME] "what you're doing now"
        tmux-agent-report [--agent-id ID] --codex-notify JSON (Codex notify)
 
 Agents call it when they start a task and at each major step, with a
-short phrase ("reading map loader", "running import tests"). Use --local
-for independent user work and --local-done, with no text, when it finishes.
-Ordinary progress reports do not start an independent local task. The chip
-above the status bar shows it next to the agent's name.
+short phrase ("reading map loader", "running import tests"). A user prompt
+is local work for the turn it starts; it ends with that turn. Use --local
+for user work that spans turns and --local-done, with no text, when it
+finishes. Ordinary progress reports do not start an independent local
+task. The chip above the status bar shows it next to the agent's name.
 
 Hooks call --perm on when the agent is waiting for a permission answer
 and --perm off when it moves on; the chip turns that agent red.
@@ -76,7 +77,7 @@ fi
 prompt_kind() {
   /usr/bin/perl -MJSON::PP -e '
     local $/; my $j=eval { decode_json(<STDIN>) } || {};
-    my @inputs=$ARGV[0] eq "notify" ? @{$j->{"input-messages"} || []} : ($j->{prompt} // "");
+    my @inputs=($j->{prompt} // "");
     my $kind="notice";
     for my $p (@inputs) {
       $p =~ s/\A\s+|\s+\z//g;
@@ -91,45 +92,11 @@ prompt_kind() {
       last if $kind eq "local";
     }
     print $kind;
-  ' "$1"
+  '
 }
 
-# An unanswered request needs the user only after work and waits are checked.
-turn_end() {
-  local p="$1" kids awaited live="" n who waiting_on incoming local_active
-  request_finish "$p" && return 0
-  incoming="$(request_state incoming "$p")"
-  local_active="$(tmux show-options -pqv -t "$p" @request_local_work)"
-  if [ -z "$incoming" ] && [ "$local_active" != 1 ]; then
-    case "$(tmux show-options -pqv -t "$p" @state)" in
-      done|idle) request_state turn-end "$p" "$incoming" "$local_active" "" ""; return 0 ;;
-    esac
-  fi
-  kids="$(tmux list-panes -a -F '#{pane_id} #{@parent} #{pane_dead} #{?@state,#{@state},-} #{@agent} #{?@shell,#{@shell},0}' \
-    | awk -v p="$p" '$2 == p && $3 == 0 && $4 != "done" && $6 != 1 && !seen[$1]++ { print $5 }' | tr '\n' ' ')"
-  awaited="$(tmux show-options -pqv -t "$p" @awaiting)"
-  for n in $awaited; do
-    if [ -n "$(find_pane_by_id "$n")" ]; then live="$live $(agent_name_by_id "$n")"; else remove_word "$p" @awaiting "$n"; fi
-  done
-  who="$(printf '%s %s\n' "$kids" "$live" | tr ' ' '\n' | awk 'NF && !seen[$0]++' | tr '\n' ' ' | sed 's/ $//')"
-  # Waiting after a notice to its parent, or on its own background work:
-  # reported with --waiting, or (for Claude) Bash commands still running
-  # when the turn ended.
-  waiting_on="$(tmux show-options -pqv -t "$p" @waiting_on)"
-  if [ -z "$waiting_on" ] && [ "$(claude_background "$p")" -gt 0 ]; then
-    waiting_on="background command"
-  fi
-  # Names are single words; the waiting reason is a phrase, added last.
-  who="$(printf '%s' "$who" | sed 's/ /, /g')"
-  [ -z "$waiting_on" ] || who="${who:+$who, }$waiting_on"
-  if [ -n "$who" ]; then
-    request_state turn-end "$p" "$incoming" "$local_active" working "waiting for $who"
-  elif [ -z "$incoming" ] && [ "$local_active" != 1 ] && [ -z "$(tmux show-options -pqv -t "$p" @parent)" ]; then
-    request_state turn-end "$p" "$incoming" "$local_active" idle ""
-  else
-    request_state turn-end "$p" "$incoming" "$local_active" needs_you ""
-  fi
-}
+# The turn-end decision (completion, waits, needs you) runs as one ledger
+# operation under the request lock: tmux-request-state turn-end.
 
 [ -z "$notify_json" ] || { tmux list-sessions >/dev/null 2>&1 || exit 0; }
 ensure_agent_ids
@@ -137,10 +104,13 @@ ensure_agent_ids
 # Codex notify: find the pane from the turn's messages, or by thread id.
 if [ -n "$notify_json" ]; then
   tmux list-sessions >/dev/null 2>&1 || exit 0
-  fields="$(printf '%s' "$notify_json" | /usr/bin/perl -MJSON::PP -e '
-    local $/; my $j = eval { decode_json(<STDIN>) } || {};
+  # One pass over the payload: routing fields, dedup digest, prompt kind
+  # and the log excerpt. Unit separators keep empty fields in place.
+  fields="$(printf '%s' "$notify_json" | /usr/bin/perl -MJSON::PP -MDigest::SHA=sha256_hex -e '
+    local $/; my $raw = <STDIN>; my $j = eval { decode_json($raw) } || {};
     my $to = "";
-    for my $m (@{ $j->{"input-messages"} || [] }) {
+    my @inputs = @{ $j->{"input-messages"} || [] };
+    for my $m (@inputs) {
       if ($m =~ /\[(?:request|reply) from \S+ to (\S+) via tmux-ask\]/) { $to = $1; last }
     }
     # Codex names a new session in a side thread whose whole answer is
@@ -149,9 +119,28 @@ if [ -n "$notify_json" ]; then
     my $t = $last =~ /^\s*\{/ ? eval { JSON::PP->new->decode($last) } : undef;
     my $type = $j->{type} // "";
     $type = "title" if ref $t eq "HASH" && exists $t->{title} && keys %$t == 1;
-    print join("\t", $type, $j->{"thread-id"} // "", $to);
+    my $key = $j->{"turn-id"} // $j->{turn_id};
+    my $digest = sha256_hex(defined($key) ? ($j->{"thread-id"} // "")."\0".$key : JSON::PP->new->canonical->encode($j));
+    # Classify complete protocol messages, never just their first line.
+    my $kind = "notice";
+    for my $p (@inputs) {
+      $p =~ s/\A\s+|\s+\z//g;
+      if ($p =~ /\A<pasted_content id="([^"\r\n]+)">(.*?)<\/pasted_content id="\1">\z/s) { $p = $2; }
+      $p =~ s/\A\s+|\s+\z//g;
+      if (!length $p) { $kind = "local"; last; }
+      while (length $p) {
+        if ($p =~ s/\A\[(request|reply|notice) from (\S+) to (\S+) via tmux-ask\]\r?\n.*?\[end of \1 from \2 to \3\]\s*//s) {
+          $kind = "message" if $1 ne "notice";
+        } else { $kind = "local"; last; }
+      }
+      last if $kind eq "local";
+    }
+    (my $words = $last) =~ s/\s+/ /g;
+    print join("\x1f", $type, $j->{"thread-id"} // "", $to, $digest, $kind, substr($words, 0, 80));
   ' 2>/dev/null)" || exit 0
-  type="${fields%%	*}"; rest="${fields#*	}"; thread="${rest%%	*}"; to="${rest#*	}"
+  IFS=$'\x1f' read -r type thread to notify_digest local_prompt last_words <<EOF
+$fields
+EOF
   [ "$type" = agent-turn-complete ] && [ -n "$thread" ] || exit 0
   notify_target=""
   if [ -n "$notify_agent_id" ]; then
@@ -164,8 +153,7 @@ if [ -n "$notify_json" ]; then
     [ -z "$known" ] || [ "$known" = "$thread" ] || exit 0
   fi
   # One line per turn end, to debug state changes: time thread to= last words.
-  { mkdir -p "/tmp/tmux-agents-$(id -u)" && printf '%s %s to=%s %s\n' "$(date '+%F %T')" "$thread" "${to:--}" \
-      "$(printf '%s' "$notify_json" | /usr/bin/perl -MJSON::PP -e 'local $/; my $j = eval { decode_json(<STDIN>) } || {}; my $m = $j->{"last-assistant-message"} // ""; $m =~ s/\s+/ /g; print substr($m, 0, 80)' 2>/dev/null)" \
+  { mkdir -p "/tmp/tmux-agents-$(id -u)" && printf '%s %s to=%s %s\n' "$(date '+%F %T')" "$thread" "${to:--}" "${last_words:-}" \
       >> "/tmp/tmux-agents-$(id -u)/notify.log"; } 2>/dev/null || true
   pane="$(tmux list-panes -a -F '#{pane_id} #{@codex_thread}' | awk -v t="$thread" '$2 == t { print $1; exit }')"
   if [ -z "$pane" ]; then
@@ -222,23 +210,18 @@ fi
 case "$turn" in
   end)
     if [ -n "$notify_json" ]; then
-      notify_digest="$(printf '%s' "$notify_json" | /usr/bin/perl -MJSON::PP -MDigest::SHA=sha256_hex -0777 -ne '
-        my $j=decode_json($_); my $key=$j->{"turn-id"} // $j->{turn_id};
-        print sha256_hex(defined($key) ? ($j->{"thread-id"} // "")."\0".$key : JSON::PP->new->canonical->encode($j));
-      ')"
-      local_prompt="$(printf '%s' "$notify_json" | prompt_kind notify)"
-      request_state notify "$pane" "$notify_digest" "$local_prompt" || exit 0
+      request_state turn-end "$pane" "$notify_digest" "$local_prompt"
     else
-      request_state progress "$pane"
+      request_state turn-end "$pane"
     fi
-    turn_end "$pane"; exit 0 ;;
+    exit 0 ;;
 
   start)
     # A notice (tmux-ask --notice) asks for nothing, so it doesn't start new
     # work: keep what the agent is waiting on, and a needs-you stays one.
     # Claude passes the prompt to the hook as JSON on stdin.
     if [ ! -t 0 ]; then
-      prompt="$(prompt_kind start)"
+      prompt="$(prompt_kind)"
       [ "$prompt" != notice ] || exit 0
     fi
     request_state progress "$pane"
@@ -266,10 +249,10 @@ if [ "$local_done" -eq 1 ]; then
   exit 0
 fi
 request_state progress "$pane"
-if [ "$local_work" -eq 1 ]; then request_state local "$pane"; agent_set_state "$pane" working; fi
+if [ "$local_work" -eq 1 ]; then request_state local "$pane" explicit; agent_set_state "$pane" working; fi
 text="$*"
 [ -n "$text" ] || { usage >&2; exit 1; }
-text="$(printf '%s' "$text" | tr '\n' ' ' | cut -c1-60)"
+text="$(printf '%s' "$text" | tr '\n\t' '  ' | cut -c1-60)"
 if [ "$waiting" -eq 1 ]; then
   # Ending the turn to wait for background work: not a "needs you".
   request_state wait "$pane" "$text"
