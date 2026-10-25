@@ -103,10 +103,9 @@ tmux set -p -t "$plain" @state working
 plain_json='{"type":"agent-turn-complete","thread-id":"plain-thread","input-messages":["hello"],"last-assistant-message":"hello back"}'
 "$B/tmux-agent-report" --agent-id "$plain_id" --codex-notify "$plain_json"
 [ "$(tmux show -pqv -t "$plain" @tracked)" = 1 ]
-[ "$(tmux show -pqv -t "$plain" @state)" = needs_you ]
-[ "$(tmux show -pqv -t "$plain" @request_local_work)" = 1 ]
-"$B/tmux-agent-report" --pane "$plain" --local-done
+# A plain user prompt is local work for that turn only: it ends idle.
 [ "$(tmux show -pqv -t "$plain" @state)" = idle ]
+[ -z "$(tmux show -pqv -t "$plain" @request_local_work)" ]
 [ -z "$(tmux show -pqv -t "$plain" @attention_since)" ]
 [ "$(record_get "$plain_id" id)" = plain-thread ]
 # A side-thread title and a different conversation cannot replace the binding.

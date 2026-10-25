@@ -71,9 +71,10 @@ reset
 tmux set -pu -t %1 @parent
 turn_start "user task"
 tmux set -p -t %1 @attention_since 1
-"$B/tmux-agent-report" --pane %1 --local-done
+check "user prompt starts local work for its turn" test "$(st %1 @request_local_work)" = 1
 turn_end
 expect "top-level with nothing pending goes idle" idle
+check "the prompt's local work ends with its turn" test -z "$(st %1 @request_local_work)"
 check "top-level clears old attention" test -z "$(st %1 @attention_since)"
 check "idle completes the worked-time turn" test "$(st %1 @turns)" = 1
 check "idle stops active work clock" test -z "$(st %1 @turn_start)"
@@ -81,7 +82,6 @@ turn_end
 check "duplicate idle turn end does not count twice" test "$(st %1 @turns)" = 1
 turn_start "next user prompt"
 expect "turn-start wakes idle top-level" working
-"$B/tmux-agent-report" --pane %1 --local-done
 turn_end
 "$B/tmux-agent-report" --pane %1 "resumed top-level work" >/dev/null
 expect "progress report wakes idle top-level" working
@@ -101,10 +101,18 @@ turn_end
 expect "outgoing answer leaves incoming and local work unfinished" needs_you
 ask %1 --reply boss "incoming task complete"
 turn_end
-expect "incoming reply preserves independent local task" needs_you
+expect "top-level goes idle after all requests finish" idle
+# Only --local promises a --local-done: that work outlives its turns.
+"$B/tmux-agent-report" --pane %1 --local "long user task" >/dev/null
+turn_end
+expect "explicit local work keeps needing the user at turn end" needs_you
+ask %0 kid "side question"
+ask %1 --reply boss "side answer"
+turn_end
+expect "answering a request preserves explicit local work" needs_you
 "$B/tmux-agent-report" --pane %1 --local-done
 turn_end
-expect "top-level goes idle after all requests and local work finish" idle
+expect "top-level goes idle after explicit local work finishes" idle
 # Ownership, including member ownership, keeps the existing needs-you rule.
 tmux set -p -t %1 @parent %0
 reset
@@ -244,8 +252,8 @@ expect "Codex, done, another turn end" "done"
 reset
 tmux set -p -t %1 @codex_thread main-thread; tmux set -p -t %1 @state "done"
 notify main-thread "still working on the user task" "please review this directly"
-expect "Codex direct user input reopens done as unfinished local work" needs_you
-check "Codex direct input retains local obligation" test "$(st %1 @request_local_work)" = 1
+expect "Codex direct user input reopens done and needs the user" needs_you
+check "Codex direct input completes with its turn" test -z "$(st %1 @request_local_work)"
 
 echo "Real cases: needs you"
 

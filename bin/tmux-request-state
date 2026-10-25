@@ -51,13 +51,15 @@ for my $path (@journals) {
     (my $rid=$path)=~s{.*/|\.journal$}{}g;
     unlink $path unless $requests{$rid} && $requests{$rid}{publication};
 }
-my @keys=qw(agent_id state tracked parent waiting_on awaiting request_progress_at request_local_work request_local_done request_notify_digest request_pending_since attention_since shell pane_dead);
+# Free text (waiting_on) is last: a stray tab inside it cannot shift fixed columns.
+my @keys=qw(agent_id agent state tracked parent awaiting request_progress_at request_local_work request_local_done request_notify_digest request_pending_since attention_since shell pane_dead waiting_on);
 my $fmt='#{pane_id}' . join('', map { $_ eq 'pane_dead' ? "\t#{pane_dead}" : "\t\#{\@$_}" } @keys);
 open my $snap, '-|', 'tmux', 'list-panes', '-a', '-F', $fmt or die "$!";
-my (%panes,%by_pane);
+my (%panes,%by_pane,@all_panes);
 while (<$snap>) {
     chomp; my ($p,@v)=split /\t/, $_, scalar(@keys)+1;
     my %v; @v{@keys}=@v; $v{pane}=$p;
+    push @all_panes,\%v;
     next unless valid_id($v{agent_id});
     $panes{$v{agent_id}}=\%v; $by_pane{$p}=$v{agent_id};
 }
@@ -78,14 +80,82 @@ sub state {
 sub pending {
     my ($id)=@_; return grep { $_->{receiver_id} eq $id && $_->{status} eq 'pending' } values %requests;
 }
+# A receiver that is gone cannot be waited on; its pending request keeps its
+# identity (delivery resumes if it is reopened) but blocks nobody meanwhile.
+sub live { my ($id)=@_; $panes{$id} && $panes{$id}{pane_dead} ne '1' }
+sub outgoing {
+    my ($id)=@_;
+    return grep { $_->{requester_id} eq $id && $_->{status} eq 'pending' && live($_->{receiver_id}) } values %requests;
+}
+sub kids {
+    my ($pane)=@_;
+    return grep { $_->{parent} eq $pane && $_->{state} ne 'done' && $_->{shell} ne '1' && $_->{pane_dead} ne '1' } @all_panes;
+}
+sub legacy_awaits {
+    my ($id)=@_; my %known=map { $_->{receiver_id}=>1 } grep { $_->{requester_id} eq $id } values %requests;
+    return grep { !$known{$_} && live($_) } split /\s+/, $panes{$id}{awaiting} // '';
+}
+my %background;
+sub background {
+    my ($pane)=@_;
+    return $background{$pane} if exists $background{$pane};
+    open my $bg, '-|', '/bin/bash','-c','. "$1"; claude_background "$2"','request-state',"$FindBin::Bin/lib.sh",$pane or die "$!";
+    my $running=<$bg> // 0; close $bg; chomp $running;
+    return $background{$pane}=($running > 0 ? 1 : 0);
+}
+# Everything that keeps an agent from finishing, apart from local work. A
+# parent-notice pause is coordination, not work: it never blocks completion.
+sub busy {
+    my ($id)=@_; my $v=$panes{$id};
+    return 1 if pending($id) || outgoing($id) || kids($v->{pane}) || legacy_awaits($id);
+    return 1 if length($v->{waiting_on} // '') && $v->{waiting_on} !~ / \(after a notice\)$/;
+    return 0;
+}
 sub context { read_fields("$root/$_[0].context") }
+# Accept one Codex turn-end notification; false for a repeated identity.
+sub notify {
+    my ($id,$digest,$kind)=@_;
+    my $c=context($id);
+    return 0 if ($c->{notify_digest} // '') eq $digest;
+    $c->{notify_digest}=$digest; $c->{progress_at}=$now;
+    if ($kind eq 'local' && !$panes{$id}{request_local_done}) {
+        $c->{base} ||= $panes{$id}{parent} ? 'done' : 'idle';
+        # Inferred local work: the turn that ends now completes it unless
+        # the agent reported it explicitly (--local) or other work remains.
+        $c->{local_work}=1;
+        # A completion callback cannot reconstruct an unreported work start.
+        # From idle/done it flags unfinished local work without opening a
+        # synthetic working interval during notification processing.
+        state($id,$panes{$id}{state} =~ /^(idle|done)$/ ? 'needs_you' : 'working');
+        setopt($id,'request_local_work','1');
+    }
+    setopt($id,'request_notify_digest',$digest);
+    setopt($id,'request_progress_at',"$now");
+    setopt($id,'request_local_done','');
+    delete $c->{local_done}; save_context($id,$c);
+    return 1;
+}
+# Restore the pre-request state once nothing is outstanding. False while
+# work remains or no request ever recorded a base to return to.
+sub finish {
+    my ($id,$legacy)=@_; my $v=$panes{$id}; my $c=context($id);
+    return 0 if busy($id) || $c->{local_work} || $v->{request_local_work};
+    return 0 unless $c->{base} || $legacy;
+    return 0 if background($v->{pane});
+    state($id,$c->{base} || 'done');
+    setopt($id,'attention_since','');
+    setopt($id,'waiting_on','');
+    if ($c->{notify_digest} || $c->{local_done}) { my %receipt=map { $_=>$c->{$_} } grep { exists $c->{$_} } qw(notify_digest local_done); save_context($id,\%receipt); }
+    else { unlink "$root/$id.context"; }
+    return 1;
+}
 sub save_context { save_fields("$root/$_[0].context",$_[1]) }
 sub activate {
     my ($r,$spawn,$prepare_only)=@_; my $id=$r->{receiver_id}; return unless $panes{$id};
     my $c=context($id);
     if (!length($c->{base} // '')) {
         my $v=$panes{$id};
-        $c->{base}= $spawn ? 'done' : ($v->{state} eq 'idle' ? 'idle' : 'done');
+        $c->{base}= $spawn ? 'done' : ($v->{state} eq 'idle' || !length($v->{parent} // '') ? 'idle' : 'done');
         $c->{local_work}= !$spawn && ($v->{request_local_work} || ($v->{state} !~ /^(done|idle)$/ && !length($v->{waiting_on} // '') && !length($v->{awaiting} // '') && ($panes{$r->{requester_id}}{pane} // '') ne $v->{parent})) ? 1 : 0;
         $c->{saved_wait}=$v->{waiting_on} // '';
         save_context($id,$c);
@@ -181,27 +251,10 @@ if ($op eq 'create' || $op eq 'publish-create') {
     setopt($id,'request_local_done','1');
     my $c=context($id);
     $c->{base} ||= $panes{$id}{parent} ? 'done' : 'idle';
-    $c->{local_work}=0; $c->{local_done}=1; save_context($id,$c);
+    $c->{local_work}=0; delete $c->{local_explicit}; $c->{local_done}=1; save_context($id,$c);
 } elsif ($op eq 'notify') {
     my $id=$by_pane{$args[0]} // ''; exit 1 unless $id;
-    my ($digest,$kind)=@args[1,2];
-    my $c=context($id);
-    exit 1 if ($c->{notify_digest} // '') eq $digest;
-    $c->{notify_digest}=$digest; $c->{progress_at}=$now;
-    if ($kind eq 'local' && !$panes{$id}{request_local_done}) {
-        $c->{base} ||= $panes{$id}{parent} ? 'done' : 'idle';
-        $c->{local_work}=1;
-        # A completion callback cannot reconstruct an unreported work start.
-        # From idle/done it flags unfinished local work without opening a
-        # synthetic working interval during notification processing.
-        state($id,$panes{$id}{state} =~ /^(idle|done)$/ ? 'needs_you' : 'working');
-        setopt($id,'request_local_work','1');
-    }
-    save_context($id,$c);
-    setopt($id,'request_notify_digest',$digest);
-    setopt($id,'request_progress_at',"$now");
-    setopt($id,'request_local_done','');
-    delete $c->{local_done}; save_context($id,$c);
+    notify($id,@args[1,2]) or exit 1;
 } elsif ($op eq 'progress' || $op eq 'local') {
     my $id=$by_pane{$args[0]} // ''; exit 0 unless $id;
     setopt($id,'request_progress_at',"$now");
@@ -215,25 +268,49 @@ if ($op eq 'create' || $op eq 'publish-create') {
         setopt($id,'request_notify_digest','');
         delete $c->{notify_digest}; delete $c->{local_done};
         $c->{base} ||= $panes{$id}{parent} ? 'done' : 'idle';
-        $c->{local_work}=1; save_context($id,$c);
+        $c->{local_work}=1;
+        # --local is a promise to call --local-done; a prompt start is not.
+        if (($args[1] // '') eq 'explicit') { $c->{local_explicit}=1 } else { delete $c->{local_explicit} }
+        save_context($id,$c);
     }
 } elsif ($op eq 'incoming') {
     my $id=$by_pane{$args[0]} // ''; exit 0 unless $id;
     $result=join(' ',sort map { $_->{request_id} } pending($id));
 } elsif ($op eq 'turn-end') {
-    my ($pane,$expected,$local_expected,$desired,$activity)=@args;
+    # One locked decision per turn end: optional Codex notify acceptance,
+    # completion, then the needs-you rule over the same ledger snapshot.
+    my ($pane,$digest,$kind)=@args;
     my $id=$by_pane{$pane} // ''; exit 0 unless $id;
-    my $v=$panes{$id};
-    # A hook computes display text outside the ledger lock. Its commit must
-    # not overwrite work accepted after that snapshot, including a new RID.
-    my $current=join(' ',sort map { $_->{request_id} } pending($id));
-    exit 0 unless $current eq $expected && ($v->{request_local_work} // '') eq $local_expected;
-    if ($desired eq 'idle' || $desired eq 'needs_you') {
-        exit 0 if length($v->{waiting_on} // '') || length($v->{awaiting} // '');
-        exit 0 if grep { $_->{requester_id} eq $id && $_->{status} eq 'pending' } values %requests;
-        exit 0 if grep { $_->{parent} eq $pane && $_->{state} ne 'done' && $_->{shell} ne '1' && $_->{pane_dead} ne '1' } values %panes;
-        exit 0 if $desired eq 'idle' && (length($current) || $v->{request_local_work});
+    if (length($digest // '')) { notify($id,$digest,$kind) or exit 0; }
+    else { my $c=context($id); $c->{progress_at}=$now; save_context($id,$c); setopt($id,'request_progress_at',"$now"); }
+    my $v=$panes{$id}; my $c=context($id);
+    # Local work inferred from a prompt ends with its turn when nothing else
+    # is outstanding. Only --local keeps it open until --local-done. The
+    # prompt was the work: there is no earlier state to restore, so the
+    # ordinary idle/needs-you rule below decides.
+    my $completed_local=0;
+    if ($c->{local_work} && !$c->{local_explicit} && !busy($id) && !background($pane)) {
+        $c->{local_work}=0; delete $c->{base}; delete $c->{local_explicit}; save_context($id,$c);
+        setopt($id,'request_local_work',''); $completed_local=1;
     }
+    exit 0 if !$completed_local && finish($id);
+    my @incoming=pending($id); my $local=$c->{local_work} || $v->{request_local_work};
+    if (!@incoming && !$local && $v->{state} =~ /^(done|idle)$/) {
+        system('/bin/bash','-c','. "$1"; agent_turn_state "$2" end ""','request-state',"$FindBin::Bin/lib.sh",$pane)==0 or die "cannot finish turn\n";
+        exit 0;
+    }
+    my %seen; my @who;
+    for my $k (sort { $a->{pane} cmp $b->{pane} } kids($pane)) { push @who,$k->{agent} if length($k->{agent} // '') && !$seen{$k->{agent}}++; }
+    for my $r (sort { $a->{created_at} <=> $b->{created_at} } outgoing($id)) { my $n=$panes{$r->{receiver_id}}{agent} // ''; push @who,$n if length($n) && !$seen{$n}++; }
+    for my $n (legacy_awaits($id)) { my $name=$panes{$n}{agent} // ''; push @who,$name if length($name) && !$seen{$name}++; }
+    # Names are single words; the waiting reason is a phrase, added last.
+    my $reason=$v->{waiting_on} // '';
+    $reason='background command' if !length($reason) && background($pane);
+    my $who=join(', ',@who); $who.=(length($who) ? ', ' : '').$reason if length $reason;
+    my ($desired,$activity)=('','');
+    if (length $who) { ($desired,$activity)=('working',"waiting for $who"); }
+    elsif (!@incoming && !$local && !length($v->{parent} // '')) { $desired='idle'; }
+    else { $desired='needs_you'; }
     system('/bin/bash','-c','. "$1"; agent_turn_state "$2" end "$3"','request-state',"$FindBin::Bin/lib.sh",$pane,$desired)==0 or die "cannot finish turn\n";
     open my $state_read, '-|', 'tmux','show-options','-pqv','-t',$pane,'@state' or die "$!";
     my $actual=<$state_read> // ''; close $state_read; chomp $actual;
@@ -242,22 +319,8 @@ if ($op eq 'create' || $op eq 'publish-create') {
     setopt($id,'activity',$activity) if length($activity) && $actual eq 'working';
 } elsif ($op eq 'finish' || $op eq 'legacy-finish') {
     my $id=$by_pane{$args[0]} // ''; exit 1 unless $id;
-    my $v=$panes{$id}; my $c=context($id);
     # Validation, terminal projection and context removal share the create lock.
-    exit 1 if pending($id) || $c->{local_work} || $v->{request_local_work};
-    exit 1 if length($v->{waiting_on} // '') && $v->{waiting_on} !~ / \(after a notice\)$/;
-    exit 1 if grep { $_->{requester_id} eq $id && $_->{status} eq 'pending' } values %requests;
-    exit 1 if length($v->{awaiting} // '');
-    exit 1 if grep { $_->{parent} eq $v->{pane} && $_->{state} ne 'done' && $_->{shell} ne '1' && $_->{pane_dead} ne '1' } values %panes;
-    exit 1 unless $c->{base} || $op eq 'legacy-finish';
-    open my $bg, '-|', '/bin/bash','-c','. "$1"; claude_background "$2"','request-state',"$FindBin::Bin/lib.sh",$v->{pane} or die "$!";
-    my $running=<$bg> // 0; close $bg;
-    exit 1 if $running > 0;
-    state($id,$c->{base} || 'done');
-    setopt($id,'attention_since','');
-    setopt($id,'waiting_on','');
-    if ($c->{notify_digest} || $c->{local_done}) { my %receipt=map { $_=>$c->{$_} } grep { exists $c->{$_} } qw(notify_digest local_done); save_context($id,\%receipt); }
-    else { unlink "$root/$id.context"; }
+    finish($id,$op eq 'legacy-finish') or exit 1;
 } elsif ($op eq 'wait') {
     my $id=$by_pane{$args[0]} // ''; exit 0 unless $id;
     my $c=context($id);
@@ -282,7 +345,7 @@ unless ($context_only || $op eq 'resolve' || $op eq 'incoming') {
         $known{$r->{requester_id}}{$r->{receiver_id}}=1;
         next unless $r->{status} eq 'pending';
         push @{$in{$r->{receiver_id}}},$r;
-        $out{$r->{requester_id}}{$r->{receiver_id}}=1;
+        $out{$r->{requester_id}}{$r->{receiver_id}}=1 if live($r->{receiver_id});
     }
     for my $id (keys %panes) {
         my @in=@{$in{$id} // []};
@@ -290,8 +353,8 @@ unless ($context_only || $op eq 'resolve' || $op eq 'incoming') {
         setopt($id,'request_pending_since',@delivered ? $delivered[0] : '');
         my %known=%{$known{$id} // {}};
         my %out=%{$out{$id} // {}};
-        # Keep waits created by older tools that have no ledger entry.
-        for my $old (split /\s+/, $panes{$id}{awaiting} // '') { $out{$old}=1 unless $known{$old}; }
+        # Keep waits created by older tools that have no ledger entry, dropping only IDs of panes that are gone.
+        for my $old (split /\s+/, $panes{$id}{awaiting} // '') { $out{$old}=1 if !$known{$old} && (!valid_id($old) || live($old)); }
         setopt($id,'awaiting',join(' ',sort keys %out));
     }
 }
