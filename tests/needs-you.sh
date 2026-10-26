@@ -29,6 +29,8 @@ cleanup() { cleanup_test_server || return; rm -rf "$state_dir"; }
 trap cleanup EXIT
 
 tmux set-option -g default-shell /bin/sh
+# Use the synchronous chip format; this suite tests state, not animation.
+tmux set-option -g @tmux_agents_chip_fps 1
 . "$B/lib.sh"
 ensure_agent_ids "$state_dir/empty-queue"
 
@@ -44,7 +46,7 @@ reset() {
   # suite's socket ledger beneath its own temporary state directory.
   rm -rf "$state_dir/tmux-agents/$sock/requests"
   for p in %0 %1; do
-    for o in @attention_since @waiting_on @awaiting @activity @codex_thread @request_local_work @request_local_done @request_progress_at @request_pending_since; do tmux set -pu -t "$p" "$o" 2>/dev/null; done
+    for o in @explicit_needs_you @attention_since @waiting_on @awaiting @activity @codex_thread @request_local_work @request_local_done @request_progress_at @request_pending_since; do tmux set -pu -t "$p" "$o" 2>/dev/null; done
   done
   tmux set -p -t %1 @tracked 1; tmux set -p -t %1 @state working
 }
@@ -65,6 +67,99 @@ check() {
   local label="$1"; shift
   if "$@"; then echo "ok    $label"; else echo "FAIL  $label"; fail=1; fi
 }
+
+echo "Explicit user attention through the public CLI"
+for role in top-level sub-agent; do
+  reset
+  if [ "$role" = top-level ]; then tmux set -pu -t %1 @parent; else tmux set -p -t %1 @parent %0; fi
+  if [ "$role" = top-level ]; then
+    tmux set -g status on
+    tmux set -g 'status-format[0]' original-status
+    tmux set -gu @tmux_agents_main_format
+    check "top-level fixture starts without chip layout" test "$(tmux show -gv status)" = on
+  fi
+  "$B/tmux-agent-report" --from kid --needs-you "choose deployment region" >/dev/null
+  if [ "$role" = top-level ]; then
+    check "top-level explicit attention enables chip layout" test "$(tmux show -gv status)" = 2
+    check "top-level chip retains original status" test "$(tmux show -gv 'status-format[1]')" = original-status
+    check "top-level chip format renders chip" test "$(tmux show -gv 'status-format[0]')" = "#($B/tmux-agents --chip)"
+  fi
+  expect "$role explicitly needs user before turn end" needs_you
+  check "$role reason is activity" test "$(st %1 @activity)" = "choose deployment region"
+  check "$role has attention time" test -n "$(st %1 @attention_since)"
+  tmux set -p -t %1 @attention_since 123
+  "$B/tmux-agent-report" --from kid --needs-you "choose deployment region" >/dev/null
+  turn_end
+  expect "$role explicit attention survives turn end" needs_you
+  check "$role retains reason" test "$(st %1 @activity)" = "choose deployment region"
+  check "$role repeated report retains attention age" test "$(st %1 @attention_since)" = 123
+  FZF_PROMPT='agents · all windows> ' "$B/tmux-agents" --list | tr '\0' '\n' >"$state_dir/explicit-list"
+  check "$role included in default list" grep -q '^%1 ' "$state_dir/explicit-list"
+  check "$role pinned in attention section" grep -q '▸ needs you' "$state_dir/explicit-list"
+  "$B/tmux-agents" --preview-info %1 >"$state_dir/explicit-preview"
+  check "$role preview includes full reason" grep -q 'choose deployment region' "$state_dir/explicit-preview"
+  "$B/tmux-agents" --chip >"$state_dir/explicit-chip"
+  check "$role chip shows user attention" grep -q 'NEEDS YOU' "$state_dir/explicit-chip"
+  "$B/tmux-agent-report" --from kid "resuming deployment" >/dev/null
+  expect "$role progress clears attention" working
+  check "$role progress clears attention time" test -z "$(st %1 @attention_since)"
+  "$B/tmux-agent-report" --from kid --needs-you "choose again" >/dev/null
+  turn_start "use London"
+  expect "$role user turn start clears attention" working
+  check "$role turn start clears explicit marker" test -z "$(st %1 @explicit_needs_you)"
+  "$B/tmux-agent-report" --from kid --needs-you "another choice" >/dev/null
+  turn_start "$(notice_body boss fyi kid)"
+  check "$role notice turn start clears explicit marker" test -z "$(st %1 @explicit_needs_you)"
+  "$B/tmux-agent-report" --from kid --needs-you "another choice" >/dev/null
+  ask %0 kid "new work clears explicit attention"
+  expect "$role new request resumes work" working
+  check "$role new request clears explicit marker" test -z "$(st %1 @explicit_needs_you)"
+done
+reset
+tmux set -pu -t %1 @parent
+ask %0 kid "deployment request must remain pending"
+request_dir="$(dirname "$(sessions_dir)")/requests"
+pending_record=""
+for record in "$request_dir"/r*.record; do
+  [ -f "$record" ] || continue
+  if grep -qx 'status=pending' "$record"; then pending_record="$record"; fi
+done
+check "request fixture has a ledger record" test -n "$pending_record"
+"$B/tmux-agent-report" --from kid --needs-you "approve deployment" >/dev/null
+turn_end
+check "explicit attention preserves pending request identity" grep -qx 'status=pending' "$pending_record"
+tmux set -p -t %1 @codex_thread explicit-thread
+notify explicit-thread "awaiting approval" "deploy this"
+expect "Codex notify preserves explicit attention" needs_you
+check "Codex notify preserves reason" test "$(st %1 @activity)" = "approve deployment"
+check "Codex notify leaves request pending" grep -qx 'status=pending' "$pending_record"
+"$B/tmux-agent-report" --from kid "approved, deploying" >/dev/null
+check "progress leaves request pending" grep -qx 'status=pending' "$pending_record"
+# Ordinary top-level rows stay excluded once their attention clears.
+FZF_PROMPT='agents · all windows> ' "$B/tmux-agents" --list | tr '\0' '\n' >"$state_dir/ordinary-list"
+if grep -q '^%1 ' "$state_dir/ordinary-list"; then echo 'FAIL ordinary top-level included'; fail=1; fi
+reset
+tmux set -pu -t %1 @tracked
+if "$B/tmux-agent-report" --from kid --needs-you "untracked question" >"$state_dir/invalid" 2>&1; then echo 'FAIL untracked report accepted'; fail=1; fi
+tmux set -p -t %1 @state needs_you
+FZF_PROMPT='agents · all windows> ' "$B/tmux-agents" --list | tr '\0' '\n' >"$state_dir/untracked-list"
+if grep -q '^%1 ' "$state_dir/untracked-list"; then echo 'FAIL untracked top-level attention included'; fail=1; fi
+"$B/tmux-agents" --chip >"$state_dir/untracked-chip"
+if grep -q 'NEEDS YOU' "$state_dir/untracked-chip"; then echo 'FAIL untracked chip attention'; fail=1; fi
+reset
+for args in missing empty waiting local "done"; do
+  case "$args" in
+    missing) set -- --needs-you ;;
+    empty) set -- --needs-you '' ;;
+    waiting) set -- --needs-you --waiting reason ;;
+    local) set -- --local --needs-you reason ;;
+    done) set -- --local-done --needs-you reason ;;
+  esac
+  if "$B/tmux-agent-report" --from kid "$@" >"$state_dir/invalid" 2>&1; then echo "FAIL invalid needs-you arguments: $args"; fail=1; else echo "ok    rejected needs-you arguments: $args"; fi
+done
+tmux set -p -t %1 @parent %0
+# Existing accounting cases start from a fresh turn counter.
+for o in @turns @turn_start @last_turn @worked; do tmux set -pu -t %1 "$o"; done
 
 echo "Top-level turn ends and wakeups"
 reset

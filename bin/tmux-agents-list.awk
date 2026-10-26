@@ -208,7 +208,7 @@ END {
         base=pending[p]+0
         if (numeric(progress[p]) && progress[p]+0>base) base=progress[p]+0
         overdue=(dead[p]!=1 && !isshell[p] && ENVIRON["LIST_REPLY_OVERDUE_SECS"]+0>0 && numeric(pending[p]) && pending[p]+0>0 && now-base>=ENVIRON["LIST_REPLY_OVERDUE_SECS"]+0)
-        if (!((name[p]!="-" && (mode=="all" || parent[p]!="-" || isshell[p])) || waiting[p]!="-" || overdue)) continue
+        if (!((name[p]!="-" && (mode=="all" || parent[p]!="-" || isshell[p] || (dead[p]!=1 && tracked[p] && state[p]=="needs_you"))) || waiting[p]!="-" || overdue)) continue
         if (command_id[p]!="" && command_id[p]!="-") { rank=3; status=command_status[p] }
         else if (dead[p]==1) { rank=5; status="✗ exited" }
         else if (perm[p]!="-") { rank=0; status="⚠ permission" }
@@ -222,7 +222,7 @@ END {
         section=index(session[p],prefix)==1 ? substr(session[p],length(prefix)+1) : project[path[p]]
         rowproject=section
         report=(command_id[p]!="" && command_id[p]!="-" ? command_text[p] : activity[p])
-        if (dead[p]!=1 && (waiting[p]!="-" || (parent[p]!="-" && (perm[p]!="-" || (tracked[p] && state[p]=="needs_you"))))) {
+        if (dead[p]!=1 && (waiting[p]!="-" || (parent[p]!="-" && perm[p]!="-") || (tracked[p] && state[p]=="needs_you"))) {
             since=perm[p]!="-" ? perm[p] : (waiting[p]!="-" ? waiting[p] : attention[p])
             if (since !~ /^[0-9]+$/) since=now
             rank=since-20000000000

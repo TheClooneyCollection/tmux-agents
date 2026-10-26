@@ -84,11 +84,16 @@ check 'permission list suppresses waiting label' absent "$tmp/list" '✉ message
 tmux set -pu -t "$receiver" @perm_since
 tmux set -pu -t "$receiver" @msg_waiting_since
 list 'agents · this window> '
-check 'cleared unparented receiver returns outside subagent view' lacks "$tmp/list" "$receiver"
+check 'cleared message marker retains top-level needs-you row' has "$tmp/list" "$receiver"
 check 'cleared unnamed receiver disappears' lacks "$tmp/list" "$unnamed"
 chip
-check 'cleared receiver disappears from chip' absent "$tmp/chip" 'receiver'
+check 'cleared message marker restores top-level needs-you focus' contains "$tmp/chip" 'receiver: NEEDS YOU'
 check 'cleared marker removes waiting counts' absent "$tmp/chip" '✉'
+"$B/tmux-agent-report" --from receiver "resuming work" >/dev/null
+list 'agents · this window> '
+check 'ordinary top-level receiver leaves default view' lacks "$tmp/list" "$receiver"
+chip
+check 'ordinary top-level receiver leaves chip' absent "$tmp/chip" 'receiver'
 # Ordinary agent states remain intact, including restored state after delivery.
 tmux set -p -t "$local_agent" @tracked 1; tmux set -p -t "$local_agent" @state idle
 tmux set -p -t "$need" @tracked 1; tmux set -p -t "$need" @state "done"

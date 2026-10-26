@@ -88,6 +88,13 @@ list 'agents · all windows> ' "$tmp/all"
 check 'all windows includes other sub agent' has "$tmp/all" "$other"
 check 'all windows still pins first' test "$(awk '/^%/ {print $1; exit}' "$tmp/all")" = "$need"
 check 'all windows has no duplicate pins' test "$(grep -c "^$perm " "$tmp/all")" = 1
+# Explicit top-level user attention is global even outside this window.
+"$B/tmux-agent-report" --from main-b --needs-you "choose a region" >/dev/null
+list 'agents · this window> ' "$tmp/top-level-attention"
+check 'other-window top-level attention is pinned' has "$tmp/top-level-attention" "$main_b"
+"$B/tmux-agent-report" --from main-b "resuming work" >/dev/null
+list 'agents · this window> ' "$tmp/top-level-resumed"
+check 'ordinary top-level stays excluded after progress' lacks "$tmp/top-level-resumed" "$main_b"
 list 'all · this window> ' "$tmp/named"
 check 'named local view includes main' has "$tmp/named" %0
 check 'named local view excludes other main' lacks "$tmp/named" "$main_b"

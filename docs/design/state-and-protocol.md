@@ -17,6 +17,7 @@ Live state uses tmux user options on the panes (`set-option -p`); session record
 | `@closed` | Agent IDs of peers the user closed (set by `note_closed` before `kill-pane`), rendered as labels. |
 | `@tracked` | `1` when start/spawn supplies turn hooks, or after the first turn-start, turn-end or notify report. Without it, status is `-` and work accounting is hidden. |
 | `@state` | On tracked agents: `idle`, `done`, `working` or `needs_you`. See [done state](sub-agents.md#done-state-and-cleanup) and [chip data](sub-agents.md#data-not-screen-scraping). |
+| `@explicit_needs_you` | Explicit user-attention marker set by `--needs-you`; reason lives in `@activity`. Preserved at turn end, cleared by normal progress or turn start. Does not complete requests. |
 | `@state_since` | Epoch of the current state transition. Repeated reports in the same state do not restart its age. |
 | `@started` | Original spawn epoch, retained on resume; absent for agents whose start time is unknown. |
 | `@worked`, `@last_turn`, `@turns`, `@turn_start` | Accrued working seconds, last completed turn's working time, completed turn count, and the current active interval's start. A live total adds the active interval; absent totals mean unknown. |

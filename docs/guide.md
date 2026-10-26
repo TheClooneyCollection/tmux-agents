@@ -151,11 +151,13 @@ Names shorten under project headings. Search parts, such as `claude tmux seconda
 | `○ idle` | No task yet, or a top-level turn ended with nothing pending; ready for the next prompt. Pending work keeps top-level agents working. |
 | `✓ done` | All incoming requests are answered and no other work remains. A new request starts work again. |
 | `⚠ permission` | Waiting for approval; open its pane. Auto mode is configurable, not a guarantee against prompts. |
-| `◆ needs you` | An agent ended its turn with unfinished work and no agent or background wait; inspect its question. |
+| `◆ needs you` | An agent explicitly requested user attention, or ended its turn with unfinished work and no agent or background wait; inspect its question. |
 | `✉ message waiting` | Delivery has waited past the attention threshold; finish typing/scrolling, do not resend. |
 | `◷ reply overdue` | A delivered, unanswered request has no observable progress for the configured interval; inspect the receiver. This does not change its work state. |
 | `✗ exited` | Process exited; its pane/history remains until closed. |
 | `- untracked` | No turn tracking or worked time; messaging still works. |
+
+For a user question or decision, run `tmux-agent-report --from ME --needs-you "reason"` before asking. Tracked top-level agents also appear in the default list and status chip while they need you. The reason is shown as activity and survives turn end; ordinary progress or turn start clears the explicit attention. Pending requests stay pending.
 
 Helpers report progress with `tmux-agent-report --from ME "running tests"`. Before ending a turn to wait, use `tmux-agent-report --from ME --waiting "test run"`; a progress notice to your own parent also keeps you working. A normal progress report clears the wait. A new request clears a parent-notice coordination marker but preserves an explicit `--waiting` background wait. A reply completes only its matching request; other requests, parent tasks, local work and background waits remain active. Once all incoming requests are answered and no other work remains, the agent returns to the appropriate done or idle state. Claude detects its own background shell commands at turn end; Codex needs `--waiting`. Neither mechanism knows when arbitrary external work has finished. Never use it to hide a user question. An idle turn does not ask for attention.
 
@@ -219,7 +221,7 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 | `tmux-spawn [AGENT] --from ME [--member] [task]` | Spawn; accepts stdin, `--name`, `--split` and `--for`. |
 | `tmux-spawn --list-closed` | List saved conversations. |
 | `tmux-spawn --from ME --resume PEER` / `--resume-id ID` | Reopen a conversation. |
-| `tmux-agent-report --from ME [--waiting\|--local] "text"` | Report progress, a work wait or multi-turn local work. |
+| `tmux-agent-report --from ME [--waiting\|--local\|--needs-you] "text"` | Report progress, a work wait, multi-turn local work or user attention. |
 | `tmux-agent-report --from ME --local-done` | Complete `--local` work only; takes no trailing text. |
 | `tmux-agents` | Open the agent list. |
 | `tmux-dismiss --from ME PEER` | Close a descendant and its subtree. |
