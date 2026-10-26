@@ -35,7 +35,8 @@ short="$(tmux new-window -d -P -F '#{pane_id}' "printf 'SHORT-TAIL\n'; exec cat"
 tmux set -p -t "$long" @agent preview-long-agent
 tmux set -p -t "$long" @tracked 1; tmux set -p -t "$long" @state working
 tmux set -p -t "$long" @worked 0
-tmux set -p -t "$long" @turn_start "$(date +%s)"
+# Start beyond the seconds-only display to exercise minute-resolution timing.
+tmux set -p -t "$long" @turn_start "$(( $(date +%s) - 120 ))"
 tmux set -p -t "$long" @activity '长活动 needs to stay visible while the pane output follows its last line'
 tmux set -p -t "$short" @agent preview-short-agent
 # Keep this capture shorter than the preview body (avoid trailing blank rows).
@@ -114,8 +115,12 @@ body_view() { grep -n -o 'BODY-ROW-[0-9]*' "$tmp/screen"; }
 # in-flight first-scroll limitation and its immediate-scroll reproduction are
 # recorded in docs/decisions/2026-10-05-list-layout-and-worked-time.md.
 wait_live_frame() {
-  local previous i
+  local previous i worked
   previous="$(grep 'worked ' "$tmp/screen")"
+  # The formatter drops seconds after one minute. Advance the stored work
+  # explicitly so the next timer frame is observable at either resolution.
+  worked="$(tmux show-options -pqv -t "$long" @worked)"
+  tmux set -p -t "$long" @worked "$((worked + 60))"
   for ((i=0;i<100;i++)); do
     tmux capture-pane -p -t "$ui" >"$tmp/screen"
     if [ "$(grep 'worked ' "$tmp/screen")" != "$previous" ] && grep -q 'BODY-ROW' "$tmp/screen"; then return 0; fi
