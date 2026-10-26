@@ -12,6 +12,7 @@ set -g @tmux_agents_name_format exact
 | `@tmux_agents_command_key` | `TMUX_AGENTS_COMMAND_KEY` | `C-s` | History command picker key; `none` disables. Set before sourcing, then re-source. |
 | `@tmux_agents_shell_close_secs` | `TMUX_AGENTS_SHELL_CLOSE_SECS` | `3` | Successful command countdown in whole seconds; `0` closes immediately. Any key keeps the pane open. |
 | `@tmux_agents_name_format` | `TMUX_AGENTS_NAME_FORMAT` | `prefixed` | Given-name format: `exact` or `prefixed` |
+| `@tmux_agents_sub_exit` | `TMUX_AGENTS_SUB_EXIT` | `shell` | New visible splits: `shell` returns to the default shell on agent exit; `keep` retains the dead pane. Hidden and resumed agents are unchanged. |
 | `@tmux_agents_sub_auto` | `TMUX_AGENTS_SUB_AUTO` | `on` | Spawned and resumed Claude/Codex agents, including members: `on` adds auto permission flags; `off` uses agent defaults. Does not affect `start`. |
 | `@tmux_agents_chain_main` | `TMUX_AGENTS_CHAIN_MAIN` | `claude` | Main agent for a new `start chain` window |
 | `@tmux_agents_chain_secondary` | `TMUX_AGENTS_CHAIN_SECONDARY` | `claude` | Secondary for a new chain |
@@ -38,6 +39,12 @@ set -g @tmux_agents_name_format exact
 With `sub_auto` on, `tmux-spawn` adds Claude's `--permission-mode auto` or Codex's `-c approvals_reviewer="auto_review"`. With it off, neither flag is added. The setting applies to new and resumed Claude/Codex agents, including members. Other executables keep their own permission behavior; no permission flags or rules are added.
 
 `tmux-agents start PROFILE` uses the same Codex-home lookup and given-name preferences as `tmux-spawn`. The launcher runs in the current pane and supplies per-process identity pins and turn hooks without editing global agent config. It keeps the agent's permission defaults; pass agent-specific options after `--`. Shell wrappers are optional and provide identity pins only. See [Starting agents](guide.md#starting-agents).
+
+## Sub agent exit
+
+New `tmux-spawn --split` panes return to tmux’s `default-shell` after the agent exits. The conversation record closes and worked time is saved; agent state and peer connections are cleared, and direct children become unowned. The pane remains usable as a shell.
+
+Set `@tmux_agents_sub_exit keep` to retain the dead split and transcript instead. Nonempty `TMUX_AGENTS_SUB_EXIT` wins over the option; empty values fall through to the default `shell`. Only `shell` and `keep` are accepted. The setting applies at launch, including visible members. Hidden spawns and resumes retain dead panes in either mode; top-level `tmux-agents start` keeps its existing shell-return behavior.
 
 ## Reply overdue
 

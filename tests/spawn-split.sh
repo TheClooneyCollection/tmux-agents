@@ -12,6 +12,7 @@ for a in claude codex; do
   printf '#!/bin/sh\necho "FAKE %s $*"\necho "DEPTH=$TMUX_AGENTS_DEPTH HOMES=$TMUX_AGENTS_CODEX_HOMES"\nexec cat\n' "$a" > "$tmp/bin/$a"
   chmod +x "$tmp/bin/$a"
 done
+unset TMUX_AGENTS_SUB_EXIT
 unset TMUX TMUX_PANE CLAUDECODE TMUX_AGENTS_KIND TMUX_AGENTS_PINNED TMUX_AGENTS_DEPTH
 export XDG_STATE_HOME="$tmp/state" TMUX_ASK_ENTER_DELAY=0 TMUX_SPAWN_BIN="$tmp/bin"
 export TMUX_AGENTS_CODEX_HOMES="extra=$tmp/codex-home"
@@ -69,8 +70,8 @@ check 'main links only to secondary' test "$(info %0 @peers)" = "$secondary"
 check 'detached splits keep main active' test "$(info %0 pane_active)" = 1
 check 'main pane remain-on-exit is untouched' test "$(tmux show-options -p -t %0 remain-on-exit)" = "$main_options"
 check 'shared window options are untouched' test "$(tmux show-options -w -t %0)" = "$window_options"
-check 'secondary has pane-local remain-on-exit' test "$(tmux show-options -pqv -t "$secondary" remain-on-exit)" = on
-check 'worker has pane-local remain-on-exit' test "$(tmux show-options -pqv -t "$worker" remain-on-exit)" = on
+check 'secondary does not enable remain-on-exit' test "$(tmux show-options -pqv -t "$secondary" remain-on-exit)" != on
+check 'worker does not enable remain-on-exit' test "$(tmux show-options -pqv -t "$worker" remain-on-exit)" != on
 check 'no hidden session or window was created' test "$(tmux list-windows -a -F '#{window_id}')" = "$main_win"
 record="$XDG_STATE_HOME/tmux-agents/$(basename "$S")/sessions/$(info "$worker" @agent_id)"
 check 'record keeps caller depth 1' grep -qx 'depth=1' "$record"

@@ -6,6 +6,7 @@ Each file: the context, the decision, why, and what was rejected. Name new ones 
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-26 | [Visible sub agents return to a shell](2026-10-26-sub-agent-exit-shell.md) |
 | 2026-10-24 | [Request completion and overdue replies](2026-10-24-request-completion-and-overdue.md) |
 | 2026-10-16 | [Commands in shell popups](2026-10-16-command-shell-panes.md) |
 | 2026-10-16 | [Targeting and naming chain windows](2026-10-16-chain-window-target.md) |
