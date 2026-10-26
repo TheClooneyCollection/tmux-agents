@@ -10,6 +10,8 @@ New `tmux-spawn --split` panes return to tmux's `default-shell` when the agent e
 
 In `shell` mode, save worked time, close the session record, notify and disconnect peers, detach direct children, and clear the pane's agent state before starting the shell. Cleanup checks the original agent ID so an old process cannot erase a replacement identity. Do not enable `remain-on-exit` for these splits.
 
+The returned shell restores the pane's environment from before launch preparation, preserving unset variables, empty values and the exact `PATH`. Profile `CODEX_HOME`, agent identity pins, chain role overrides and launch path prefixes apply only to the agent. The split depth counter must not survive in the returned shell: normally `TMUX_AGENTS_DEPTH` is unset there; an explicitly preexisting value is restored. The same environment boundary applies to the outer shell of `start chain`, after its child launcher exits.
+
 `keep` retains the dead split and its transcript, using the existing `pane-died` work-saving hook. Hidden spawns and resumed agents keep that behavior regardless of this preference. Top-level `start` cleanup stays unchanged.
 
 ## Why
