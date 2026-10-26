@@ -39,7 +39,13 @@ cleared() { [ -z "$(info "$1" @agent_id)" ]; }
 # shellcheck disable=SC2329
 dead() { [ "$(info "$1" pane_dead)" = 1 ]; }
 # shellcheck disable=SC2329
-shell_running() { [ "$(info "$1" pane_current_command)" = sh ]; }
+shell_ready() {
+  local marker="$tmp/shell-ready-${1#%}"
+  rm -f "$marker"
+  tmux send-keys -t "$1" -l "printf shell-ready > '$marker'"
+  tmux send-keys -t "$1" Enter
+  wait_for test -s "$marker"
+}
 # shellcheck disable=SC2329
 saved() { [ "$(record_get "$1" worked)" = 37 ]; }
 spawn() {
@@ -74,10 +80,7 @@ done
 check 'reverse peers disconnected' test -z "$(info %0 @peers)"
 check 'direct child becomes unowned' test -z "$(info "$owned" @parent)"
 check 'parent learns closed identity' test "$(info %0 @closed)" = "$id"
-check 'shell process starts' wait_for shell_running "$child"
-tmux send-keys -t "$child" -l "printf shell-ready > '$tmp/shell-ready'"
-tmux send-keys -t "$child" Enter
-check 'default shell accepts commands' wait_for test -s "$tmp/shell-ready"
+check 'default shell accepts commands' shell_ready "$child"
 tmux kill-pane -t "$child"
 TMUX_PANE=%0 "$B/tmux-spawn" --from main --resume-id "$id" </dev/null > "$tmp/resume"
 child="$(tmux list-panes -a -F '#{pane_id} #{@agent_id}' | awk -v id="$id" '$2 == id {print $1}')"
@@ -109,7 +112,7 @@ replacement="$(new_agent_id)"
 tmux set -p -t "$child" @agent_id "$replacement"
 tmux set -p -t "$child" @activity replacement-state
 tmux send-keys -t "$child" C-d
-check 'identity guard returns to shell' wait_for shell_running "$child"
+check 'identity guard returns to shell' shell_ready "$child"
 check 'old exit preserves replacement identity' test "$(pane_agent_id "$child")" = "$replacement"
 check 'old exit preserves replacement options' test "$(info "$child" @activity)" = replacement-state
 tmux kill-pane -t "$child"
