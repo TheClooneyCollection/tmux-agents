@@ -86,7 +86,8 @@ if [ "${1:-}" = "--run" ]; then
   fi
   if [ "$split_exit" = shell ]; then
     pane="$TMUX_PANE" agent_id="${6:?split agent ID required}"
-    shell="$(tmux show-options -v -t "$pane" default-shell)"
+    # Include inherited global defaults when the session has no override.
+    shell="$(tmux show-options -Av -t "$pane" default-shell)"
     # shellcheck disable=SC2329
     finish_split() {
       trap - EXIT
