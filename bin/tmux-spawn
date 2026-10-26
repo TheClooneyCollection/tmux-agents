@@ -71,7 +71,24 @@ resolve_codex_homes codex_homes
 
 # Inside the new pane: start the agent with the task as its first prompt.
 if [ "${1:-}" = "--run" ]; then
+  launch_env_snapshot
   agent="$2" file="$3" sid="${4:-}" mode="${5:-new}"
+  # Forward launch-only values privately: tmux -e public exports would become
+  # part of the returned shell's baseline, including absent chain overrides.
+  export TMUX_AGENTS_DEPTH="${TMUX_SPAWN_DEPTH:-0}"
+  unset TMUX_SPAWN_DEPTH
+  for role in MAIN SECONDARY WORKER; do
+    forwarded="TMUX_SPAWN_CHAIN_$role"
+    if [ "${!forwarded+x}" = x ]; then
+      export "TMUX_AGENTS_CHAIN_$role=${!forwarded}"
+    fi
+    unset "$forwarded"
+  done
+  if [ "${TMUX_SPAWN_PATH+x}" = x ]; then export PATH="$TMUX_SPAWN_PATH"; fi
+  unset TMUX_SPAWN_PATH
+  if [ "${TMUX_SPAWN_LAUNCH_BIN+x}" = x ]; then export TMUX_SPAWN_BIN="$TMUX_SPAWN_LAUNCH_BIN"; fi
+  if [ "${TMUX_SPAWN_AUTO+x}" = x ]; then export TMUX_AGENTS_SUB_AUTO="$TMUX_SPAWN_AUTO"; fi
+  unset TMUX_SPAWN_LAUNCH_BIN TMUX_SPAWN_AUTO
   # Preserve the caller's resolution across tmux's global-env inheritance.
   codex_homes="${TMUX_SPAWN_CODEX_HOMES-$codex_homes}"
   unset TMUX_SPAWN_CODEX_HOMES
@@ -94,6 +111,7 @@ if [ "${1:-}" = "--run" ]; then
       if [ "$(pane_agent_id "$pane")" = "$agent_id" ]; then
         clear_agent "$pane"
       fi
+      launch_env_restore
       exec "$shell"
     }
     trap finish_split EXIT
@@ -209,12 +227,11 @@ adopt() {
 # Open a new window for a sub agent in session $1, directory $2, name $3,
 # running $4 with depth $5. Prints the pane id.
 open_window() {
-  local env_args=(-e "TMUX_SPAWN_SUB_EXIT=keep" -e "TMUX_AGENTS_DEPTH=$5" -e "TMUX_SPAWN_CODEX_HOMES=$codex_homes")
-  if [ -n "$agent" ] && ! full_agent_kind "$agent"; then env_args+=(-e "PATH=$PATH"); fi
-  env_args+=(-e "TMUX_AGENTS_CHAIN_MAIN=${TMUX_AGENTS_CHAIN_MAIN:-}" -e "TMUX_AGENTS_CHAIN_SECONDARY=${TMUX_AGENTS_CHAIN_SECONDARY:-}" -e "TMUX_AGENTS_CHAIN_WORKER=${TMUX_AGENTS_CHAIN_WORKER:-}")
-  [ -z "${TMUX_SPAWN_BIN:-}" ] || env_args+=(-e "TMUX_SPAWN_BIN=$TMUX_SPAWN_BIN")
-  [ -z "${TMUX_AGENTS_SUB_AUTO:-}" ] || env_args+=(-e "TMUX_AGENTS_SUB_AUTO=$TMUX_AGENTS_SUB_AUTO")
-  [ -z "${TMUX_AGENTS_CODEX_HOMES:-}" ] || env_args+=(-e "TMUX_AGENTS_CODEX_HOMES=$TMUX_AGENTS_CODEX_HOMES")
+  local env_args=(-e "TMUX_SPAWN_SUB_EXIT=keep" -e "TMUX_SPAWN_DEPTH=$5" -e "TMUX_SPAWN_CODEX_HOMES=$codex_homes")
+  if [ -n "$agent" ] && ! full_agent_kind "$agent"; then env_args+=(-e "TMUX_SPAWN_PATH=$PATH"); fi
+  env_args+=(-e "TMUX_SPAWN_CHAIN_MAIN=${TMUX_AGENTS_CHAIN_MAIN:-}" -e "TMUX_SPAWN_CHAIN_SECONDARY=${TMUX_AGENTS_CHAIN_SECONDARY:-}" -e "TMUX_SPAWN_CHAIN_WORKER=${TMUX_AGENTS_CHAIN_WORKER:-}")
+  [ -z "${TMUX_SPAWN_BIN:-}" ] || env_args+=(-e "TMUX_SPAWN_LAUNCH_BIN=$TMUX_SPAWN_BIN")
+  [ -z "${TMUX_AGENTS_SUB_AUTO:-}" ] || env_args+=(-e "TMUX_SPAWN_AUTO=$TMUX_AGENTS_SUB_AUTO")
   if tmux has-session -t "=$1" 2>/dev/null; then
     tmux new-window -d -t "=$1:" -n "$3" -c "$2" "${env_args[@]}" -P -F '#{pane_id}' "$4"
   else
@@ -225,13 +242,12 @@ open_window() {
 # Split a resolved pane, leaving focus and the shared window options alone.
 # Directory, command and environment match open_window.
 open_split() {
-  local direction=-h env_args=(-e "TMUX_SPAWN_SUB_EXIT=$sub_exit" -e "TMUX_AGENTS_DEPTH=$4" -e "TMUX_SPAWN_CODEX_HOMES=$codex_homes")
-  if [ -n "$agent" ] && ! full_agent_kind "$agent"; then env_args+=(-e "PATH=$PATH"); fi
-  env_args+=(-e "TMUX_AGENTS_CHAIN_MAIN=${TMUX_AGENTS_CHAIN_MAIN:-}" -e "TMUX_AGENTS_CHAIN_SECONDARY=${TMUX_AGENTS_CHAIN_SECONDARY:-}" -e "TMUX_AGENTS_CHAIN_WORKER=${TMUX_AGENTS_CHAIN_WORKER:-}")
+  local direction=-h env_args=(-e "TMUX_SPAWN_SUB_EXIT=$sub_exit" -e "TMUX_SPAWN_DEPTH=$4" -e "TMUX_SPAWN_CODEX_HOMES=$codex_homes")
+  if [ -n "$agent" ] && ! full_agent_kind "$agent"; then env_args+=(-e "TMUX_SPAWN_PATH=$PATH"); fi
+  env_args+=(-e "TMUX_SPAWN_CHAIN_MAIN=${TMUX_AGENTS_CHAIN_MAIN:-}" -e "TMUX_SPAWN_CHAIN_SECONDARY=${TMUX_AGENTS_CHAIN_SECONDARY:-}" -e "TMUX_SPAWN_CHAIN_WORKER=${TMUX_AGENTS_CHAIN_WORKER:-}")
   [ "$split_direction" != --below ] || direction=-v
-  [ -z "${TMUX_SPAWN_BIN:-}" ] || env_args+=(-e "TMUX_SPAWN_BIN=$TMUX_SPAWN_BIN")
-  [ -z "${TMUX_AGENTS_SUB_AUTO:-}" ] || env_args+=(-e "TMUX_AGENTS_SUB_AUTO=$TMUX_AGENTS_SUB_AUTO")
-  [ -z "${TMUX_AGENTS_CODEX_HOMES:-}" ] || env_args+=(-e "TMUX_AGENTS_CODEX_HOMES=$TMUX_AGENTS_CODEX_HOMES")
+  [ -z "${TMUX_SPAWN_BIN:-}" ] || env_args+=(-e "TMUX_SPAWN_LAUNCH_BIN=$TMUX_SPAWN_BIN")
+  [ -z "${TMUX_AGENTS_SUB_AUTO:-}" ] || env_args+=(-e "TMUX_SPAWN_AUTO=$TMUX_AGENTS_SUB_AUTO")
   tmux split-window -d "$direction" -l "$split_size" -t "$1" -c "$2" "${env_args[@]}" -P -F '#{pane_id}' "$3"
 }
 

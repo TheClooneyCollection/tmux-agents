@@ -10,6 +10,7 @@ usage() {
 case "${1:-}" in -h|--help) usage; exit 0 ;; '') usage >&2; exit 1 ;; esac
 case "${1:-}:${2:-}" in chain:-h|chain:--help) usage; exit 0 ;; esac
 require_tmux
+launch_env_snapshot
 resolve_codex_homes codex_homes
 # Child panes get the caller-resolved profile mapping, not a stale server value.
 codex_homes="${TMUX_START_CODEX_HOMES-$codex_homes}"
@@ -89,7 +90,9 @@ if [ -n "$window" ]; then
     target="$(tmux display -p -t "$pane" '#{session_id}'):"
   fi
   # tmux executes its command through a shell; quote each argument once.
-  # The new pane then runs a child agent and returns to its own shell.
+  # env applies forwarded overrides only to the child launcher. Its exports
+  # (including PINNED and profile PATH) cannot reach this outer shell, which
+  # retains the pane's original environment when it execs the default shell.
   args=(env "TMUX_AGENTS_CHAIN_MAIN=${TMUX_AGENTS_CHAIN_MAIN:-}" "TMUX_AGENTS_CHAIN_SECONDARY=${TMUX_AGENTS_CHAIN_SECONDARY:-}" "TMUX_AGENTS_CHAIN_WORKER=${TMUX_AGENTS_CHAIN_WORKER:-}" TMUX_START_NAME_EXACT=1 "TMUX_START_CHAIN_WORK=$start_chain_work" "TMUX_START_CODEX_HOMES=$codex_homes" "TMUX_SPAWN_BIN=${TMUX_SPAWN_BIN:-}" "XDG_STATE_HOME=${XDG_STATE_HOME:-$HOME/.local/state}" "$here/tmux-agents-start" "$kind")
   if ! full_agent_kind "$kind"; then args=(env "PATH=$PATH" "${args[@]}"); fi
   [ -z "$name" ] || args+=(--name "$name")
@@ -141,8 +144,10 @@ agent_id="$(new_agent_id)"
 # Only clean our identity: a replacement must never be erased by an old exit.
 # shellcheck disable=SC2329
 finish() {
-  [ "$(pane_agent_id "$pane")" = "$agent_id" ] || return 0
-  clear_agent "$pane"
+  if [ "$(pane_agent_id "$pane")" = "$agent_id" ]; then
+    clear_agent "$pane"
+  fi
+  launch_env_restore
 }
 [ -z "$existing_name" ] || clear_agent "$pane" 1
 trap finish EXIT

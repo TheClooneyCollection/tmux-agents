@@ -1224,6 +1224,39 @@ codex_profile_for_home() {
 }
 
 
+# Environment changed by launchers or build_agent_command. Keep the registry
+# beside the builder so returned shells restore values (including empty ones),
+# absence, and the exact PATH instead of maintaining a separate unset list.
+launch_env_snapshot() {
+  launch_env_names=(PATH CODEX_HOME CLAUDECODE TMUX_SPAWN_BIN TMUX_AGENTS_SUB_AUTO TMUX_AGENTS_KIND
+    TMUX_AGENTS_PINNED TMUX_AGENTS_DEPTH TMUX_AGENTS_CHAIN_MAIN
+    TMUX_AGENTS_CHAIN_SECONDARY TMUX_AGENTS_CHAIN_WORKER TMUX_AGENTS_CODEX_HOMES)
+  launch_env_values=() launch_env_present=()
+  local key
+  for key in "${launch_env_names[@]}"; do
+    # Indirect set detection also works on Bash 3.2.
+    if [ "${!key+x}" = x ]; then
+      launch_env_present+=(1)
+      launch_env_values+=("${!key}")
+    else
+      launch_env_present+=(0)
+      launch_env_values+=("")
+    fi
+  done
+}
+
+launch_env_restore() {
+  local i key
+  for i in "${!launch_env_names[@]}"; do
+    key="${launch_env_names[$i]}"
+    if [ "${launch_env_present[$i]}" = 1 ]; then
+      export "$key=${launch_env_values[$i]}"
+    else
+      unset "$key"
+    fi
+  done
+}
+
 # build_agent_command KIND spawn|start [SESSION_ID] [new|resume].
 # Publishes agent_command and the child PATH/CODEX_HOME environment.
 build_agent_command() {
