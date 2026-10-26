@@ -6,6 +6,7 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 usage: tmux-agent-report [--from ME] "what you're doing now"
+       tmux-agent-report [--from ME] --needs-you "reason"
        tmux-agent-report [--from ME] --local "new local work"
        tmux-agent-report [--from ME] --local-done
        tmux-agent-report [--from ME] --waiting "what you're waiting for"
@@ -20,6 +21,11 @@ is local work for the turn it starts; it ends with that turn. Use --local
 for user work that spans turns and --local-done, with no text, when it
 finishes. Ordinary progress reports do not start an independent local
 task. The chip above the status bar shows it next to the agent's name.
+
+Use --needs-you with a reason to request user attention for any tracked
+agent, including a top-level agent. It preserves pending requests and the
+reason through turn end. The next turn start or progress report clears it.
+Untracked agents must first be launched with tracking or receive a turn hook.
 
 Hooks call --perm on when the agent is waiting for a permission answer
 and --perm off when it moves on; the chip turns that agent red.
@@ -36,7 +42,7 @@ the pane (@codex_thread) for later turns.
 USAGE
 }
 
-FROM_PANE="" pane="" perm="" turn="" notify_json="" notify_agent_id="" waiting=0 save_work=0 local_work=0 local_done=0
+FROM_PANE="" pane="" perm="" turn="" notify_json="" notify_agent_id="" waiting=0 save_work=0 local_work=0 local_done=0 needs_you=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
@@ -47,6 +53,7 @@ while [ $# -gt 0 ]; do
     --perm) perm="${2:-}"; shift 2 ;;
     # Codex sub agents spawned before hooks were dropped still call this.
     --codex-hook) cat >/dev/null 2>&1; exit 0 ;;
+    --needs-you) needs_you=1; shift ;;
     --waiting) waiting=1; shift ;;
     --local) local_work=1; shift ;;
     --local-done) local_done=1; shift ;;
@@ -59,8 +66,8 @@ while [ $# -gt 0 ]; do
 done
 
 # Validate user-facing work modes before identity or state mutations.
-if [ $((local_work + local_done + waiting)) -gt 1 ] ||
-   { [ $((local_work + local_done + waiting)) -gt 0 ] && [ -n "$turn$perm" ]; }; then
+if [ $((local_work + local_done + waiting + needs_you)) -gt 1 ] ||
+   { [ $((local_work + local_done + waiting + needs_you)) -gt 0 ] && [ -n "$turn$perm" ]; }; then
   usage >&2; exit 1
 fi
 if [ "$local_done" -eq 1 ]; then
@@ -68,7 +75,7 @@ if [ "$local_done" -eq 1 ]; then
 elif [ -z "$turn$perm" ] && [ "$save_work" -eq 0 ]; then
   [ -n "$*" ] || { usage >&2; exit 1; }
 fi
-if [ $((local_work + local_done + waiting)) -gt 0 ] && [ "$save_work" -eq 1 ]; then
+if [ $((local_work + local_done + waiting + needs_you)) -gt 0 ] && [ "$save_work" -eq 1 ]; then
   usage >&2; exit 1
 fi
 
@@ -200,6 +207,20 @@ else
   pane="$(self_pane)"
 fi
 
+if [ "$needs_you" -eq 1 ]; then
+  [ "$(tmux show-option -pqv -t "$pane" @shell)" != 1 ] &&
+    [ "$(tmux show-option -pqv -t "$pane" @tracked)" = 1 ] || {
+      echo "tmux-agent-report: --needs-you requires a tracked agent" >&2; exit 1;
+    }
+  text="$(printf '%s' "$*" | tr '\n\t' '  ' | cut -c1-60)"
+  [ -n "${text//[[:space:]]/}" ] || { usage >&2; exit 1; }
+  request_state needs-you "$pane" "$text"
+  # A top-level agent may be the first pane requiring a chip on this server.
+  "$(dirname "$0")/tmux-agents" --chip-layout on >/dev/null 2>&1 || true
+  echo "needs you: $text"
+  exit 0
+fi
+
 [ "$(tmux show-option -pqv -t "$pane" @shell)" != 1 ] || exit 0
 
 [ "$save_work" -eq 0 ] || { agent_save_work "$pane"; exit 0; }
@@ -217,12 +238,12 @@ case "$turn" in
     exit 0 ;;
 
   start)
-    # A notice (tmux-ask --notice) asks for nothing, so it doesn't start new
-    # work: keep what the agent is waiting on, and a needs-you stays one.
+    # A notice asks for nothing and normally preserves inferred attention.
+    # An explicit attention report lasts only until the next turn start.
     # Claude passes the prompt to the hook as JSON on stdin.
     if [ ! -t 0 ]; then
       prompt="$(prompt_kind)"
-      [ "$prompt" != notice ] || exit 0
+      [ "$prompt" != notice ] || [ "$(tmux show-option -pqv -t "$pane" @explicit_needs_you)" = 1 ] || exit 0
     fi
     request_state progress "$pane"
     [ "${prompt:-local}" != local ] || request_state local "$pane"

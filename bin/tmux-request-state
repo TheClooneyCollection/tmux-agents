@@ -39,7 +39,7 @@ sub valid_request { defined $_[0] && $_[0] =~ /^r[0-9a-f]{12}$/ }
 my %requests;
 # Reports update one context; completed history is irrelevant to them. Small
 # journal markers still make interrupted publication recoverable on any event.
-my $context_only=$op =~ /^(progress|local|local-done|wait|notify)$/;
+my $context_only=$op =~ /^(progress|local|local-done|wait|notify|needs-you)$/;
 my @journals=glob "$root/r*.journal";
 $context_only=0 if @journals;
 my @paths=$context_only ? () : glob("$root/r*.record");
@@ -52,7 +52,7 @@ for my $path (@journals) {
     unlink $path unless $requests{$rid} && $requests{$rid}{publication};
 }
 # Free text (waiting_on) is last: a stray tab inside it cannot shift fixed columns.
-my @keys=qw(agent_id agent state tracked parent awaiting request_progress_at request_local_work request_local_done request_notify_digest request_pending_since attention_since shell pane_dead waiting_on);
+my @keys=qw(agent_id agent state tracked parent awaiting request_progress_at request_local_work request_local_done request_notify_digest request_pending_since attention_since shell pane_dead explicit_needs_you waiting_on);
 my $fmt='#{pane_id}' . join('', map { $_ eq 'pane_dead' ? "\t#{pane_dead}" : "\t\#{\@$_}" } @keys);
 open my $snap, '-|', 'tmux', 'list-panes', '-a', '-F', $fmt or die "$!";
 my (%panes,%by_pane,@all_panes);
@@ -118,7 +118,7 @@ sub notify {
     my $c=context($id);
     return 0 if ($c->{notify_digest} // '') eq $digest;
     $c->{notify_digest}=$digest; $c->{progress_at}=$now;
-    if ($kind eq 'local' && !$panes{$id}{request_local_done}) {
+    if ($kind eq 'local' && !$panes{$id}{request_local_done} && !$panes{$id}{explicit_needs_you}) {
         $c->{base} ||= $panes{$id}{parent} ? 'done' : 'idle';
         # Inferred local work: the turn that ends now completes it unless
         # the agent reported it explicitly (--local) or other work remains.
@@ -139,6 +139,7 @@ sub notify {
 # work remains or no request ever recorded a base to return to.
 sub finish {
     my ($id,$legacy)=@_; my $v=$panes{$id}; my $c=context($id);
+    return 0 if $v->{explicit_needs_you};
     return 0 if busy($id) || $c->{local_work} || $v->{request_local_work};
     return 0 unless $c->{base} || $legacy;
     return 0 if background($v->{pane});
@@ -161,6 +162,7 @@ sub activate {
         save_context($id,$c);
     }
     return if $prepare_only;
+    setopt($id,'explicit_needs_you','');
     state($id,'working');
     setopt($id,'attention_since','');
     # A parent coordination marker is superseded by a new request. Actual
@@ -245,6 +247,15 @@ if ($op eq 'create' || $op eq 'publish-create') {
     my $r=$requests{$args[0]} or die "unknown request\n";
     $r->{status}='answered'; $r->{replied_at}=$now;
     save_fields("$root/$args[0].record",$r);
+} elsif ($op eq 'needs-you') {
+    my $id=$by_pane{$args[0]} // '';
+    die "--needs-you requires a tracked agent\n" unless $id && $panes{$id}{tracked} eq '1' && $panes{$id}{shell} ne '1';
+    die "--needs-you requires a reason\n" unless length($args[1] // '');
+    # Attention is not a reply or completion. Keep every obligation intact.
+    setopt($id,'explicit_needs_you','1');
+    state($id,'needs_you');
+    setopt($id,'attention_since',"$now") unless $panes{$id}{attention_since};
+    setopt($id,'activity',$args[1]);
 } elsif ($op eq 'local-done') {
     my $id=$by_pane{$args[0]} // ''; exit 0 unless $id;
     setopt($id,'request_local_work','');
@@ -257,6 +268,7 @@ if ($op eq 'create' || $op eq 'publish-create') {
     notify($id,@args[1,2]) or exit 1;
 } elsif ($op eq 'progress' || $op eq 'local') {
     my $id=$by_pane{$args[0]} // ''; exit 0 unless $id;
+    setopt($id,'explicit_needs_you','');
     setopt($id,'request_progress_at',"$now");
     my $c=context($id);
     $c->{progress_at}=$now;
@@ -284,6 +296,8 @@ if ($op eq 'create' || $op eq 'publish-create') {
     if (length($digest // '')) { notify($id,$digest,$kind) or exit 0; }
     else { my $c=context($id); $c->{progress_at}=$now; save_context($id,$c); setopt($id,'request_progress_at',"$now"); }
     my $v=$panes{$id}; my $c=context($id);
+    # Explicit user attention outlives notifications and turn completion.
+    exit 0 if $v->{explicit_needs_you};
     # Local work inferred from a prompt ends with its turn when nothing else
     # is outstanding. Only --local keeps it open until --local-done. The
     # prompt was the work: there is no earlier state to restore, so the

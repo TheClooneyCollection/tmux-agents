@@ -908,7 +908,7 @@ clear_agent() {
     [ "$keep_connections" = 1 ] || remove_word "$other" @peers "$pane"
     [ "$(tmux show-options -pqv -t "$other" @parent)" != "$pane" ] || tmux set-option -pu -t "$other" @parent
   done
-  for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored activity awaiting waiting_on attention_since codex_thread request_local_work request_local_done request_notify_digest request_progress_at request_pending_since; do
+  for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored activity awaiting waiting_on attention_since explicit_needs_you codex_thread request_local_work request_local_done request_notify_digest request_progress_at request_pending_since; do
     case "$key" in agent|peers|peer_names) [ "$keep_connections" != 1 ] || continue ;; esac
     tmux set-option -pu -t "$pane" "@$key" 2>/dev/null || true
   done
