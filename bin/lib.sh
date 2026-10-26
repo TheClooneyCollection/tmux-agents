@@ -899,6 +899,22 @@ _agent_work() {
   ' "$d" "$1" "$2" "$3" "$4"
 }
 
+# Takeover and exit share state cleanup; only takeover retains connections.
+clear_agent() {
+  local pane="$1" keep_connections="${2:-0}" other key
+  record_closed "$pane"
+  note_closed "$pane"
+  for other in $(tmux list-panes -a -F '#{pane_id}'); do
+    [ "$keep_connections" = 1 ] || remove_word "$other" @peers "$pane"
+    [ "$(tmux show-options -pqv -t "$other" @parent)" != "$pane" ] || tmux set-option -pu -t "$other" @parent
+  done
+  for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored activity awaiting waiting_on attention_since codex_thread request_local_work request_local_done request_notify_digest request_progress_at request_pending_since; do
+    case "$key" in agent|peers|peer_names) [ "$keep_connections" != 1 ] || continue ;; esac
+    tmux set-option -pu -t "$pane" "@$key" 2>/dev/null || true
+  done
+  refresh_labels
+}
+
 # Mark the sub agent in pane $1 closed, if it has a record.
 record_closed() {
   local name

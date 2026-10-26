@@ -138,28 +138,13 @@ fi
 ensure_agent_ids
 export TMUX_AGENTS_DEPTH=0 TMUX_AGENTS_KIND="$kind" TMUX_AGENTS_PINNED=1
 agent_id="$(new_agent_id)"
-# Takeover and exit share state cleanup; only takeover retains connections.
-clear_agent() {
-  local keep_connections="${1:-0}" other key
-  record_closed "$pane"
-  note_closed "$pane"
-  for other in $(tmux list-panes -a -F '#{pane_id}'); do
-    [ "$keep_connections" = 1 ] || remove_word "$other" @peers "$pane"
-    [ "$(tmux show-options -pqv -t "$other" @parent)" != "$pane" ] || tmux set-option -pu -t "$other" @parent
-  done
-  for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored activity awaiting waiting_on attention_since codex_thread request_local_work request_local_done request_notify_digest request_progress_at request_pending_since; do
-    case "$key" in agent|peers|peer_names) [ "$keep_connections" != 1 ] || continue ;; esac
-    tmux set-option -pu -t "$pane" "@$key" 2>/dev/null || true
-  done
-  refresh_labels
-}
 # Only clean our identity: a replacement must never be erased by an old exit.
 # shellcheck disable=SC2329
 finish() {
   [ "$(pane_agent_id "$pane")" = "$agent_id" ] || return 0
-  clear_agent
+  clear_agent "$pane"
 }
-[ -z "$existing_name" ] || clear_agent 1
+[ -z "$existing_name" ] || clear_agent "$pane" 1
 trap finish EXIT
 ensure_agent_id "$pane" "$agent_id" >/dev/null
 if [ -n "$existing_name" ]; then

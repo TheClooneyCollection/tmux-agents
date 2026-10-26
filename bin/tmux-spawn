@@ -59,6 +59,8 @@ Settings (environment overrides option):
     default none; legacy tmux global environment is the final fallback
   name format: option @tmux_agents_name_format, env TMUX_AGENTS_NAME_FORMAT
     exact or prefixed (default prefixed); --exact wins for one call
+  split exit: option @tmux_agents_sub_exit, env TMUX_AGENTS_SUB_EXIT
+    shell (default) or keep; new visible splits only, hidden/resumed agents keep panes
   depth: option @tmux_agents_max_depth, env TMUX_AGENTS_MAX_DEPTH (default 2)
   sessions: option @tmux_agents_session_prefix, env TMUX_AGENTS_PREFIX (agents)
 Test hook: TMUX_SPAWN_BIN puts a directory first on the agent's PATH.
@@ -73,6 +75,28 @@ if [ "${1:-}" = "--run" ]; then
   # Preserve the caller's resolution across tmux's global-env inheritance.
   codex_homes="${TMUX_SPAWN_CODEX_HOMES-$codex_homes}"
   unset TMUX_SPAWN_CODEX_HOMES
+  # Only a new visible split supplies this mode and gate. Hidden/resumed
+  # launches cannot inherit shell behavior from the server environment.
+  split_exit="${TMUX_SPAWN_SUB_EXIT:-keep}"
+  unset TMUX_SPAWN_SUB_EXIT
+  if [ "$mode" = new ] && [ -n "${8:-}" ]; then
+    tmux wait-for "$8"
+  else
+    split_exit=keep
+  fi
+  if [ "$split_exit" = shell ]; then
+    pane="$TMUX_PANE" agent_id="${6:?split agent ID required}"
+    shell="$(tmux show-options -v -t "$pane" default-shell)"
+    # shellcheck disable=SC2329
+    finish_split() {
+      trap - EXIT
+      if [ "$(pane_agent_id "$pane")" = "$agent_id" ]; then
+        clear_agent "$pane"
+      fi
+      exec "$shell"
+    }
+    trap finish_split EXIT
+  fi
   prompt=""
   [ -z "$file" ] || { prompt="$(cat "$file")"; rm -f "$file"; }
   [ -z "${6:-}" ] || ensure_agent_id "$TMUX_PANE" "$6" >/dev/null
@@ -93,6 +117,12 @@ if [ "${1:-}" = "--run" ]; then
   if [ -n "${7:-}" ]; then request_state delivered "$7" || true; fi
   if [ "$mode" = resume ]; then request_state restore "$TMUX_PANE"; fi
   build_agent_command "$agent" spawn "$sid" "$mode"
+  if [ "$split_exit" = shell ]; then
+    status=0
+    if [ -n "$prompt" ]; then "${agent_command[@]}" "$prompt" || status=$?
+    else "${agent_command[@]}" || status=$?; fi
+    exit "$status"
+  fi
   if [ -n "$prompt" ]; then exec "${agent_command[@]}" "$prompt"; else exec "${agent_command[@]}"; fi
 fi
 
@@ -146,13 +176,21 @@ size_re='^([1-9]|[1-9][0-9])%$'
 [[ $split_size =~ $size_re ]] || die "--size must be a percentage from 1% to 99%"
 [ "$list_closed" -eq 1 ] || [ -n "$resume$resume_id" ] || [ -n "$task" ] || [ -t 0 ] || task="$(cat)"
 
+sub_exit=""
+settings_get sub_exit TMUX_AGENTS_SUB_EXIT @tmux_agents_sub_exit shell
+case "$sub_exit" in shell|keep) ;; *) die "sub_exit must be shell or keep (got '$sub_exit')" ;; esac
+
 require_tmux
 ensure_agent_ids
 
 # Show a sub agent's pane, connected to its parent ($2, may be empty), and
 # keep its transcript on screen after the agent exits.
 adopt() {
-  tmux set-option -p -t "$1" remain-on-exit on
+  if [ "${4:-hidden}" = split ] && [ "$sub_exit" = shell ]; then
+    tmux set-option -p -t "$1" remain-on-exit off
+  else
+    tmux set-option -p -t "$1" remain-on-exit on
+  fi
   [ "${4:-hidden}" = split ] || tmux set-option -w -t "$1" automatic-rename off
   # Set a local value even for helpers: never inherit a window/server marker.
   tmux set-option -p -t "$1" @member "$member"
@@ -170,7 +208,7 @@ adopt() {
 # Open a new window for a sub agent in session $1, directory $2, name $3,
 # running $4 with depth $5. Prints the pane id.
 open_window() {
-  local env_args=(-e "TMUX_AGENTS_DEPTH=$5" -e "TMUX_SPAWN_CODEX_HOMES=$codex_homes")
+  local env_args=(-e "TMUX_SPAWN_SUB_EXIT=keep" -e "TMUX_AGENTS_DEPTH=$5" -e "TMUX_SPAWN_CODEX_HOMES=$codex_homes")
   if [ -n "$agent" ] && ! full_agent_kind "$agent"; then env_args+=(-e "PATH=$PATH"); fi
   env_args+=(-e "TMUX_AGENTS_CHAIN_MAIN=${TMUX_AGENTS_CHAIN_MAIN:-}" -e "TMUX_AGENTS_CHAIN_SECONDARY=${TMUX_AGENTS_CHAIN_SECONDARY:-}" -e "TMUX_AGENTS_CHAIN_WORKER=${TMUX_AGENTS_CHAIN_WORKER:-}")
   [ -z "${TMUX_SPAWN_BIN:-}" ] || env_args+=(-e "TMUX_SPAWN_BIN=$TMUX_SPAWN_BIN")
@@ -186,7 +224,7 @@ open_window() {
 # Split a resolved pane, leaving focus and the shared window options alone.
 # Directory, command and environment match open_window.
 open_split() {
-  local direction=-h env_args=(-e "TMUX_AGENTS_DEPTH=$4" -e "TMUX_SPAWN_CODEX_HOMES=$codex_homes")
+  local direction=-h env_args=(-e "TMUX_SPAWN_SUB_EXIT=$sub_exit" -e "TMUX_AGENTS_DEPTH=$4" -e "TMUX_SPAWN_CODEX_HOMES=$codex_homes")
   if [ -n "$agent" ] && ! full_agent_kind "$agent"; then env_args+=(-e "PATH=$PATH"); fi
   env_args+=(-e "TMUX_AGENTS_CHAIN_MAIN=${TMUX_AGENTS_CHAIN_MAIN:-}" -e "TMUX_AGENTS_CHAIN_SECONDARY=${TMUX_AGENTS_CHAIN_SECONDARY:-}" -e "TMUX_AGENTS_CHAIN_WORKER=${TMUX_AGENTS_CHAIN_WORKER:-}")
   [ "$split_direction" != --below ] || direction=-v
@@ -398,11 +436,19 @@ if [ -n "$spawn_request_id" ]; then
   request_state create "$spawn_request_id" "$(pane_agent_id "$self")" "$agent_id" spawn
 fi
 
+split_gate=""
 if [ -n "$split_pane" ]; then
-  if ! pane="$(open_split "$split_pane" "$cwd" "'$here/tmux-spawn' --run '$agent' '$file' '$sid' new '$agent_id' '$spawn_request_id'" "$spawn_depth")"; then
+  if [ "$sub_exit" = shell ]; then
+    split_gate="tmux-agents-split-$$-$RANDOM-$RANDOM"
+  fi
+  if ! pane="$(open_split "$split_pane" "$cwd" "'$here/tmux-spawn' --run '$agent' '$file' '$sid' new '$agent_id' '$spawn_request_id' '$split_gate'" "$spawn_depth")"; then
     [ -z "$spawn_request_id" ] || request_state cancel "$spawn_request_id"
     rm -f "$file"
     exit 1
+  fi
+  # A failed initialization must not leave a split waiting forever.
+  if [ -n "$split_gate" ]; then
+    trap 'tmux kill-pane -t "$pane" 2>/dev/null || true' EXIT
   fi
   ensure_agent_id "$pane" "$agent_id" >/dev/null
   adopt "$pane" "$owner" "$name" split
@@ -430,6 +476,14 @@ fi
 
 if [ -n "$for_name" ]; then
   tmux set-option -p -t "$pane" @activity "waiting for its first task from $owner_name"
+fi
+# Complete every pane-state write before a fast child can exit and clear it.
+if [ -n "$split_gate" ]; then
+  tmux wait-for -S "$split_gate"
+  trap - EXIT
+fi
+
+if [ -n "$for_name" ]; then
   role="sub agent"
   [ "$member" -eq 0 ] || role="member"
   msg="I spawned $name ($agent) for you: it is your $role now, connected to you (not to me), and it has no task yet. Introduce yourself to it (who you are, your role, how you'll work together), then send it its first task: tmux-ask --from $owner_name $name. It replies to you; close it with tmux-dismiss --from $owner_name $name when you're done with it."
