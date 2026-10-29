@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.18.0 (2026-10-29)
+
+- **Request-based completion.** Each `tmux-ask` request now has its own identity and resolves when its reply arrives, whoever the requester is, so a member or helper answering a nonparent no longer stays working or turns `needs you`. Other pending requests, parent tasks, local work and background waits stay outstanding. An agent that ends a turn with unanswered requests and nothing else to wait on needs the user. Requests to panes that are gone no longer block their requester. Local work inferred from a user prompt ends with its turn; only explicit `--local` needs `--local-done`. Answered and cancelled request records are kept for seven days.
+- **Reply overdue.** A delivered request with no observable progress for 1800 seconds shows `reply overdue` on its receiver in the chip and list. This is separate from `needs you` and from queued `message waiting`. Set `@tmux_agents_reply_overdue_secs` / `TMUX_AGENTS_REPLY_OVERDUE_SECS` to change it; `0` disables it.
+- **Visible sub agents return to a shell.** When an agent in a new `tmux-spawn --split` pane exits, its worked time is saved, its record closes, its peers are disconnected and the pane returns to tmux's `default-shell`. The returned shell gets the pane's original environment back, without the agent's `CODEX_HOME`, identity pins, depth or launch `PATH`. Set `@tmux_agents_sub_exit keep` (or `TMUX_AGENTS_SUB_EXIT=keep`) to keep the dead pane as before. Hidden spawns and resumed agents are unchanged. This changes the default behaviour of visible splits. The outer shell of a `start chain` window also no longer inherits the agent's launch environment.
+- **Explicit `needs you`.** `tmux-agent-report --needs-you "reason"` lets any tracked agent, including a top-level main, ask for the user with a reason shown in the chip and list. It never answers or completes a pending request and survives turn end; the next turn start, progress report or new request clears it. Tracked top-level agents in this state now appear in the chip and the default list. Use `--waiting` instead when waiting for agents or background work.
+- Running agents keep the skill text they loaded; restart them, or start new ones, to pick up the updated `tmux-agents` and `agent-chain` skills. No rules or Claude settings changed, so `./install.sh` and re-sourcing the tmux configuration are not required for this release.
+
 ## v1.17.1 (2026-10-22)
 
 - **Preserve state on pasted notices.** Claude's pasted-content wrapper around rename notices no longer wakes idle helpers or clears background waits, preventing false `needs you` alerts. User text accompanying a wrapped notice still starts work.
