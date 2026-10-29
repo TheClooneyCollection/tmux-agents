@@ -109,6 +109,9 @@ tmux set -p -t "$owned" @parent "$child"
 for key in member perm_since msg_waiting_since attention_since awaiting waiting_on codex_thread request_local_work; do tmux set -p -t "$child" "@$key" stale; done
 tmux send-keys -t "$child" C-d
 check 'exit clears identity' wait_for cleared "$child"
+# Identity is cleared before the remaining options. The shell only accepts
+# commands after finish_split completes cleanup, so assert the final state then.
+check 'default shell accepts commands' shell_ready "$child"
 check 'visible pane survives' test "$(info "$child" pane_dead)" = 0
 check 'record closes' test -n "$(record_get "$id" closed)"
 check 'work saved before clearing' saved "$id"
@@ -119,7 +122,6 @@ done
 check 'reverse peers disconnected' test -z "$(info %0 @peers)"
 check 'direct child becomes unowned' test -z "$(info "$owned" @parent)"
 check 'parent learns closed identity' test "$(info %0 @closed)" = "$id"
-check 'default shell accepts commands' shell_ready "$child"
 tmux kill-pane -t "$child"
 TMUX_PANE=%0 "$B/tmux-spawn" --from main --resume-id "$id" </dev/null > "$tmp/resume"
 child="$(tmux list-panes -a -F '#{pane_id} #{@agent_id}' | awk -v id="$id" '$2 == id {print $1}')"
