@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Visible exit shells, retained hidden/dead panes, settings and identity cleanup.
-set -eu
+set -euE
 here="$(cd "$(dirname "$0")/.." && pwd)"
 B="$here/bin"
 sock="tmux-agents-sub-exit-$$"
@@ -21,6 +21,30 @@ export TMUX="$S,1,0"
 # shellcheck disable=SC2329
 cleanup() { cleanup_test_server || return; rm -rf "$tmp"; }
 trap cleanup EXIT
+# Unexpected set -e exits must identify the failing step before cleanup removes
+# the pane evidence. ERR inheritance includes failures inside spawn().
+step=setup
+# shellcheck disable=SC2329
+diagnostics() {
+  echo "step=$step child=${child:-unset}" >&2
+  tmux list-panes -a -F '#{pane_id} name=#{@agent} size=#{pane_width}x#{pane_height} dead=#{pane_dead} status=#{pane_dead_status} command=#{pane_current_command}' >&2 || true
+  if [ -n "${child:-}" ]; then
+    echo 'pane screen:' >&2
+    tmux capture-pane -p -t "$child" >&2 || true
+    echo 'pane joined history:' >&2
+    tmux capture-pane -p -J -S - -t "$child" >&2 || true
+  fi
+  if [ -f "$tmp/spawn" ]; then cat "$tmp/spawn" >&2; fi
+}
+# shellcheck disable=SC2329
+unexpected_failure() {
+  local status="$1" line="$2" command="$3"
+  trap - ERR
+  echo "FAIL  line $line (exit $status): $command" >&2
+  diagnostics
+  exit "$status"
+}
+trap 'unexpected_failure "$?" "$LINENO" "$BASH_COMMAND"' ERR
 tmux set -g default-shell /bin/sh
 . "$B/lib.sh"
 set_name %0 main
@@ -29,11 +53,11 @@ tmux set -g @tmux_agents_chip_fps 1
 sed -n '/^set-hook -g pane-died\[42\]/p' "$here/tmux/tmux-agents.conf" | sed "s|\$TMUX_AGENTS_BIN|$B|g" > "$tmp/hook.conf"
 tmux source-file "$tmp/hook.conf"
 fail=0
-check() { local label="$1"; shift; if "$@"; then echo "ok    $label"; else echo "FAIL  $label"; fail=1; fi; }
+check() { local label="$1"; shift; if "$@"; then echo "ok    $label"; else echo "FAIL  $label"; diagnostics; fail=1; fi; }
 info() { tmux display -p -t "$1" "#{$2}"; }
 wait_for() { local i; for ((i=0;i<200;i++)); do if "$@"; then return 0; fi; sleep .05; done; return 1; }
 # shellcheck disable=SC2329
-started() { tmux capture-pane -p -t "$1" | grep -q "FAKE $2"; }
+started() { tmux capture-pane -p -J -S - -t "$1" | grep -Fqx "FAKE $2"; }
 # shellcheck disable=SC2329
 cleared() { [ -z "$(info "$1" @agent_id)" ]; }
 # shellcheck disable=SC2329
@@ -50,10 +74,16 @@ shell_ready() {
 saved() { [ "$(record_get "$1" worked)" = 37 ]; }
 spawn() {
   local kind="$1" name="$2"; shift 2
+  step="spawn $name ($kind): launch"
   TMUX_PANE=%0 "$B/tmux-spawn" "$kind" --from main --exact --name "$name" "$@" </dev/null > "$tmp/spawn"
+  step="spawn $name ($kind): find pane"
   child="$(tmux list-panes -a -F '#{pane_id} #{@agent}' | awk -v n="$name" '$2 == n {print $1}')"
+  [ -n "$child" ]
+  step="spawn $name ($kind): wait for stub marker"
   wait_for started "$child" "$kind"
+  step="spawn $name ($kind): read identity"
   id="$(pane_agent_id "$child")"
+  step="exercise $name ($kind)"
 }
 seed_work() {
   # Completed deterministic work avoids dependence on wall-clock boundaries.
@@ -61,6 +91,15 @@ seed_work() {
   agent_set_state "$child" "done" 137
   record_set "$id" worked 0
 }
+# Readiness must survive both terminal wrapping and scrolling. The output is
+# deliberately wider and taller than this fixture, independently of CI layout.
+step='readiness capture regression'
+child="$(tmux new-session -d -s readiness -x 8 -y 4 -P -F '#{pane_id}' "printf 'FAKE claude\\n1\\n2\\n3\\nREADY\\n'; exec cat")"
+# The inner shell receives the pane as $1.
+# shellcheck disable=SC2016
+check 'readiness fixture finishes output' wait_for sh -c 'tmux capture-pane -p -t "$1" | grep -qx READY' sh "$child"
+check 'startup marker survives wrapping and scrollback' started "$child" claude
+tmux kill-session -t '=readiness'
 spawn claude shell-child --split main
 check 'default split does not enable remain-on-exit' test "$(tmux show-options -pqv -t "$child" remain-on-exit)" != on
 seed_work
