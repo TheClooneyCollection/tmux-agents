@@ -416,7 +416,7 @@ fi
 
 usage() {
   cat <<'EOF'
-usage: tmux-ask [--from ME] [--any] <name> [--reply | --notice] [message...]
+usage: tmux-ask [--from ME] [--any] <name> [--reply | --notice] [--message-file PATH | message...]
 
 Sends message (arguments, or stdin if none) to the connected pane name
 and submits it. Requests tell the receiver how to reply. Replies are
@@ -431,6 +431,7 @@ marked as needing no response, which stops endless back-and-forth.
 --retry [--to NAME]: retry undelivered messages by receiver name
 
 --request-id ID: resolve this exact request with --reply; required for ambiguous pairs
+--message-file PATH: read the literal message body from a regular file (max 1 MiB)
 --from ME: your own name (needed where $TMUX_PANE is wrong, e.g. Codex)
 --notice:  a message that needs no answer (tmux-connect sends one when
            it connects agents in different windows)
@@ -455,29 +456,39 @@ Settings (environment overrides option):
 EOF
 }
 
-target="" reply=0 notice=0 any=0 msg="" FROM_PANE="" request_id=""
+target="" reply=0 notice=0 any=0 msg="" FROM_PANE="" request_id="" message_file="" positional_message=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
     --request-id) [ "$#" -ge 2 ] || die "--request-id needs an ID"; request_id="$2"; shift 2 ;;
+    --message-file) [ "$#" -ge 2 ] || die "--message-file needs a path"; [ -z "$message_file" ] || die "--message-file may only be used once"; message_file="$2"; shift 2 ;;
     --reply) reply=1; shift ;;
     --notice) notice=1; shift ;;
     --from) FROM_PANE="${2:-}"; shift 2 ;;
     --any) any=1; shift ;;
-    --) shift; msg="$*"; break ;;
+    --) shift; [ "$#" -eq 0 ] || positional_message=1; msg="$*"; break ;;
     -*) usage >&2; exit 1 ;;
     *)
       if [ -z "$target" ]; then target="$1"; shift
-      else msg="$*"; break
+      else positional_message=1; msg="$*"; break
       fi
       ;;
   esac
 done
 
 [ -n "$target" ] || { usage >&2; exit 1; }
+if [ -n "$message_file" ]; then
+  [ "$positional_message" -eq 0 ] || die "--message-file conflicts with positional message text"
+  if [ ! -t 0 ]; then
+    stdin_bytes="$(head -c 1 | wc -c | tr -d ' ')"
+    [ "$stdin_bytes" = 0 ] || die "--message-file conflicts with nonempty stdin"
+  fi
+  read_message_file msg "$message_file"
+else
 if [ -z "$msg" ]; then
   [ -t 0 ] && die "no message (pass it as arguments or on stdin)"
   msg="$(cat)"
+fi
 fi
 [ -n "$msg" ] || die "empty message"
 
