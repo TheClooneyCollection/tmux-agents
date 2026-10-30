@@ -9,6 +9,7 @@ settings_get MAX_DEPTH TMUX_AGENTS_MAX_DEPTH @tmux_agents_max_depth 2
 usage() {
   cat <<'EOF'
 usage: tmux-spawn [AGENT] [--from ME] [--name NAME] [--exact] [task...]
+       tmux-spawn [AGENT] [--message-file PATH] [options...]
        tmux-spawn [AGENT] --for OWNER [--from ME] [--name NAME] [--exact] [brief...]
        tmux-spawn [AGENT] --split PANE [--right | --below] [--size N%] [task...]
        tmux-spawn --resume NAME | --resume-id ID [--from ME | --parent NAME]
@@ -25,6 +26,7 @@ Other executable command names on PATH are accepted without agent-specific
 flags or an initial task; send their first task with tmux-ask at their prompt.
 
   --from ME     your own name (needed where $TMUX_PANE is wrong, e.g. Codex)
+  --message-file PATH read the initial task/brief from a bounded text file (max 1 MiB)
   --name NAME   short task name, e.g. auth-review, becomes <agent>-<dir>-NAME;
                 an existing prefix is kept; clashes add -2, -3...
                 profiles use codex as <agent>, home uses ~ as <dir>
@@ -145,7 +147,8 @@ if [ "${1:-}" = "--run" ]; then
   if [ -n "$prompt" ]; then exec "${agent_command[@]}" "$prompt"; else exec "${agent_command[@]}"; fi
 fi
 
-agent="" name="" task="" FROM_PANE="" resume="" resume_id="" list_closed=0 parent_name="" for_name=""
+agent="" name="" task="" message_file="" FROM_PANE="" resume="" resume_id="" list_closed=0 parent_name="" for_name=""
+task_arg_given=0
 exact=0 name_given=0 member=0
 split_target="" split_pane="" split_direction="" split_size="50%" split_options=0
 case "${1:-}" in
@@ -165,6 +168,10 @@ while [ $# -gt 0 ]; do
       name="$2"; name_given=1; shift 2 ;;
     --exact) exact=1; shift ;;
     --member) member=1; shift ;;
+    --message-file)
+      [ -n "${2:-}" ] || die "--message-file needs a path"
+      [ -z "$message_file" ] || die "--message-file may be specified only once"
+      message_file="$2"; shift 2 ;;
     --from) FROM_PANE="${2:-}"; shift 2 ;;
     --resume) [ -n "${2:-}" ] || die "--resume needs a name"; resume="$2"; shift 2 ;;
     --resume-id) [ -n "${2:-}" ] || die "--resume-id needs an id"; resume_id="$2"; shift 2 ;;
@@ -180,11 +187,20 @@ while [ $# -gt 0 ]; do
     --size)
       [ -n "${2:-}" ] || die "--size needs a percentage (1% to 99%)"
       split_size="$2"; split_options=1; shift 2 ;;
-    --) shift; task="$*"; break ;;
+    --) shift; [ "$#" -eq 0 ] || task_arg_given=1; task="$*"; break ;;
     -*) usage >&2; exit 1 ;;
-    *) task="$*"; break ;;
+    *) task_arg_given=1; task="$*"; break ;;
   esac
 done
+[ -z "$message_file" ] || [ "$task_arg_given" -eq 0 ] || die "--message-file conflicts with positional task text"
+[ -z "$message_file" ] || { [ -z "$resume$resume_id" ] && [ "$list_closed" -eq 0 ]; } || die "--message-file is only for a new sub agent"
+if [ -n "$message_file" ]; then
+  if [ ! -t 0 ]; then
+    stdin_bytes="$(head -c 1 | wc -c | tr -d '[:space:]')"
+    [ "$stdin_bytes" = 0 ] || die "--message-file conflicts with nonempty stdin"
+  fi
+  read_message_file task "$message_file"
+fi
 [ -z "$resume$resume_id" ] || [ "$member" -eq 0 ] || die "--resume restores membership from its record; --member is only for new agents"
 [ -z "$resume" ] || [ -z "$resume_id" ] || die "choose --resume or --resume-id"
 [ -z "$resume$resume_id" ] || { [ "$name_given" -eq 0 ] && [ "$exact" -eq 0 ]; } || die "--resume keeps its recorded name; --name and --exact are only for new sub agents"
@@ -193,7 +209,7 @@ done
 [ -z "$resume$resume_id" ] || [ -z "$split_target" ] || die "--resume reopens hidden; --split is only for new sub agents"
 size_re='^([1-9]|[1-9][0-9])%$'
 [[ $split_size =~ $size_re ]] || die "--size must be a percentage from 1% to 99%"
-[ "$list_closed" -eq 1 ] || [ -n "$resume$resume_id" ] || [ -n "$task" ] || [ -t 0 ] || task="$(cat)"
+[ -n "$message_file" ] || { [ "$list_closed" -eq 1 ] || [ -n "$resume$resume_id" ] || [ -n "$task" ] || [ -t 0 ] || task="$(cat)"; }
 
 sub_exit=""
 settings_get sub_exit TMUX_AGENTS_SUB_EXIT @tmux_agents_sub_exit shell
