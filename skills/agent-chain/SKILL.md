@@ -56,22 +56,19 @@ The main keeps its agent's permission defaults. Spawned Claude/Codex members def
 
 `<me>` is your current name (`tmux-peers` shows it). The skill-loading briefs below are for Claude/Codex. For other executables, follow the manual task delivery rules above: no supplied spawn brief is sent to the new agent, and an unknown recipient must not be told to load this skill.
 
+The spawn commands below use `--message-file` to keep each role brief in a file. The file must be one readable regular file, not a symlink, and at most 1 MiB; its literal text is sent. Empty content follows normal no-task behavior. This option conflicts with positional task text and nonempty stdin, allows empty stdin, and cannot be combined with `--resume` or `--list-closed`.
+
 1. `tmux-rename --from <me> <me> main` renames you to `<kind>-<project>-main`. Use the new name as `<me>` from then on.
 2. Spawn the resolved secondary to your right; use its printed full name as `<secondary>`:
 
    ```sh
-   tmux-spawn <secondary agent> --from <me> --member --split <me> --right --name secondary <<'MSG'
-   You are the secondary in the agent chain (agent-chain skill). Main: <me>.
-   Current goal: <goal>
-   MSG
+   tmux-spawn <secondary agent> --from <me> --member --split <me> --right --name secondary --message-file ./secondary-brief.txt
    ```
 
 3. Spawn the worker for the secondary, below it:
 
    ```sh
-   tmux-spawn <worker agent> --from <me> --member --for <secondary> --split <secondary> --below --name worker <<'MSG'
-   <Brief for the secondary: the worker's role and its first goal.>
-   MSG
+   tmux-spawn <worker agent> --from <me> --member --for <secondary> --split <secondary> --below --name worker --message-file ./worker-brief.txt
    ```
 
    The worker becomes the secondary's long-lived member, connected to the secondary only (not to you), and starts without a task. The secondary gets the brief, introduces itself to the worker (including that it is the worker in the agent chain and splits independent parts across sub agents by default) and sends the first task.

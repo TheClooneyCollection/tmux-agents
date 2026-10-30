@@ -95,6 +95,14 @@ Borders show `name ⇄ peers`. Links are one-to-one: A↔B and B↔C do not link
 
 Use `tmux-ask --from ME PEER "task"` for requests, `--reply` for answers and `--notice` for information needing no work or reply. Requests include reply instructions; the sender ends its turn and receives the answer later. A request saying “no reply needed” still starts work and makes the sender await a reply. Replies do not invite another reply.
 
+For a message already saved in a file, use `--message-file`:
+
+```sh
+tmux-ask --from ME PEER --message-file ./review-request.txt
+```
+
+The file must be one readable regular file, not a symlink, and at most 1 MiB. Its literal text is sent unchanged; empty files use the usual empty-message validation. The option conflicts with positional message text and nonempty stdin, while empty stdin (such as `</dev/null`) is allowed.
+
 Each request has its own ID. Use the supplied reply command, including `--request-id RID`: `tmux-ask --from ME --reply --request-id RID PEER "answer"`. This completes that request even when PEER is not your parent. With the older `--reply PEER` form, a single pending request between the pair is matched automatically; several pending requests are refused with their IDs so you can select the one answered. Legacy messages without tracking remain compatible but cannot complete unrelated tracked requests. Queuing, retry, reopening and renaming preserve request association.
 
 Typing or scrolling delays delivery. `queued` means sent: do not resend. Leaving copy mode or becoming idle allows delivery in order; [configuration](configuration.md) controls idle, copy-mode and attention thresholds. Long waits show `✉`. If the receiver disappears, the message stays saved and the sender is notified; reopening a resumable receiver retries its messages.
@@ -110,6 +118,14 @@ Agents use `tmux-spawn` instead of built-in sub agents so each helper has a real
 ```sh
 tmux-spawn --from ME --name auth-review "Review src/auth.ts"
 ```
+
+For a task already saved in a file, use `--message-file`:
+
+```sh
+tmux-spawn --from ME --name auth-review --message-file ./auth-review.txt
+```
+
+`--message-file` accepts one readable regular file (not a symlink), up to 1 MiB, and sends its literal text. Empty content follows normal no-task behavior. It conflicts with positional task text and nonempty stdin, permits empty stdin, and cannot be combined with `--resume` or `--list-closed`.
 
 ### Start a helper
 
@@ -215,18 +231,32 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 | `tmux-rename --from ME PEER NAME [--exact]` | Rename yourself or a descendant. |
 | `tmux-disconnect [name]` | User unlinks one peer or all. |
 | `tmux-peers --from ME [--ids]` | Show identity and connections. |
-| `tmux-ask --from ME [--any] [--reply\|--notice] [--request-id RID] PEER [msg]` | Send request, answer or notice; accepts stdin. `--any` permits unlinked targets. |
+| `tmux-ask --from ME [--any] [--reply\|--notice] [--request-id RID] PEER [msg...]` or `--message-file FILE` | Send request, answer or notice; accepts stdin or a message file. `--any` permits unlinked targets. |
 | `tmux-ask --pending` | Inspect queued/undelivered messages. |
 | `tmux-ask --retry [--to PEER]` | Retry saved messages. |
 | `tmux-peek --from ME PEER [lines]` | Read peer output; default 40 lines. |
 | `tmux-shell [--from AGENT] [--client CLIENT] [--pane OPENER]` | Open an independent or explicitly owned shell popup. |
-| `tmux-spawn [AGENT] --from ME [--member] [task]` | Spawn; accepts stdin, `--name`, `--split` and `--for`. |
+| `tmux-spawn [AGENT] --from ME [--member] [task]` or `--message-file FILE` | Spawn; accepts stdin or a task file, `--name`, `--split` and `--for`. |
 | `tmux-spawn --list-closed` | List saved conversations. |
 | `tmux-spawn --from ME --resume PEER` / `--resume-id ID` | Reopen a conversation. |
 | `tmux-agent-report --from ME [--waiting\|--local\|--needs-you] "text"` | Report progress, a work wait, multi-turn local work or user attention. |
 | `tmux-agent-report --from ME --local-done` | Complete `--local` work only; takes no trailing text. |
 | `tmux-agents` | Open the agent list. |
 | `tmux-dismiss --from ME PEER` | Close a descendant and its subtree. |
+
+### Standard input by command
+
+| Command | What it reads | Agent message file? |
+| --- | --- | --- |
+| `tmux-ask` | User-authored message body when no positional text is supplied. | Yes. Use `--message-file` for saved text. |
+| `tmux-spawn` | User-authored task/brief when no positional task is supplied. | Yes. Use `--message-file` for saved text; other executables still need manual `tmux-ask` delivery. |
+| `tmux-agent-report` | Hook payloads, including Claude hook JSON and progress/notification protocol data. | No. This is protocol input, not a user message. |
+| `tmux-connect` | Interactive numeric selection and key input. Other reads are generated row pipelines. | No. This is interaction, not a message body. |
+| `tmux-dismiss` | Confirmation is read from `/dev/tty`, not caller stdin. | No. |
+| `tmux-agents` | `fzf` selection input comes from generated rows; keypresses use the terminal. | No. |
+| `tmux-shell` | Popup metadata comes from an internal here-string. | No. |
+| `tmux-shell-history` | Internal history files and shell-history subprocess output; interactive confirmation is terminal input. | No. |
+| `tmux-shell-run` | Interactive keypresses from the terminal. | No. |
 
 ## Slow popup startup
 

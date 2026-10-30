@@ -17,7 +17,7 @@ usage: tmux-spawn [AGENT] [--from ME] [--name NAME] [--exact] [task...]
 
 By default, starts a sub agent in its own window of the project's hidden session
 (agents-<project>), names it, connects it to this pane, and hands it
-the task (arguments, or stdin if none) as a tmux-ask request. It
+the task (arguments, stdin if none, or --message-file) as a tmux-ask request. It
 replies with tmux-ask --reply when done. The agent defaults to the
 same kind as the caller, in auto mode (Claude --permission-mode auto,
 Codex approvals_reviewer=auto_review). Set @tmux_agents_sub_auto or
@@ -26,7 +26,9 @@ Other executable command names on PATH are accepted without agent-specific
 flags or an initial task; send their first task with tmux-ask at their prompt.
 
   --from ME     your own name (needed where $TMUX_PANE is wrong, e.g. Codex)
-  --message-file PATH read the initial task/brief from a bounded text file (max 1 MiB)
+  --message-file PATH read literal text from one regular file (max 1 MiB; no symlinks);
+                       conflicts with positional task text and nonempty stdin;
+                       only for new agents, not --resume or --list-closed
   --name NAME   short task name, e.g. auth-review, becomes <agent>-<dir>-NAME;
                 an existing prefix is kept; clashes add -2, -3...
                 profiles use codex as <agent>, home uses ~ as <dir>
