@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Done agents retain their last report as `done · <text>` in list activity and the status chip. Empty reports keep the existing fallback, and stored activity is unchanged.
+
 ## v1.18.0 (2026-10-29)
 
 - **Request-based completion.** Each `tmux-ask` request now has its own identity and resolves when its reply arrives, whoever the requester is, so a member or helper answering a nonparent no longer stays working or turns `needs you`. Other pending requests, parent tasks, local work and background waits stay outstanding. An agent that ends a turn with unanswered requests and nothing else to wait on needs the user. Requests to panes that are gone no longer block their requester. Local work inferred from a user prompt ends with its turn; only explicit `--local` needs `--local-done`. Answered and cancelled request records are kept for seven days.

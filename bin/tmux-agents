@@ -278,6 +278,7 @@ chip() {
       state=idle act="idle"
     elif [ "$st" = "done" ]; then
       state="done" act="done"
+      [ "$activity" = - ] || [ -z "$activity" ] || act="done · $activity"
     elif [ "$st" = needs_you ]; then
       state=needs act="NEEDS YOU" since="$attention"
       [ "$since" != - ] || since="$now"

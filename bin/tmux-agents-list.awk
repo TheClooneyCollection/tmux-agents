@@ -222,6 +222,7 @@ END {
         section=index(session[p],prefix)==1 ? substr(session[p],length(prefix)+1) : project[path[p]]
         rowproject=section
         report=(command_id[p]!="" && command_id[p]!="-" ? command_text[p] : activity[p])
+        if (status=="✓ done" && report!="" && report!="-") report="done · " report
         if (dead[p]!=1 && (waiting[p]!="-" || (parent[p]!="-" && perm[p]!="-") || (tracked[p] && state[p]=="needs_you"))) {
             since=perm[p]!="-" ? perm[p] : (waiting[p]!="-" ? waiting[p] : attention[p])
             if (since !~ /^[0-9]+$/) since=now
