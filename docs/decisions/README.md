@@ -6,6 +6,7 @@ Each file: the context, the decision, why, and what was rejected. Name new ones 
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-30 | [Resumed Codex thread identity](2026-10-30-resumed-codex-thread.md) |
 | 2026-10-30 | [Done keeps the last report visible](2026-10-30-done-last-report.md) |
 | 2026-10-26 | [Explicit user attention](2026-10-26-explicit-needs-you.md) |
 | 2026-10-26 | [Visible sub agents return to a shell](2026-10-26-sub-agent-exit-shell.md) |

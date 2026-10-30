@@ -432,5 +432,14 @@ tmux kill-pane -t %1
 notify main-thread "late completion" "$(request_body boss 'old header' kid)"
 [ -z "$(st "$new_pane" @codex_thread)" ] || { echo 'FAIL late notify bound to reused label'; fail=1; }
 
+# A verified current identity may resume the closed thread; its unfinished
+# work still needs attention when the accepted completion arrives.
+record_set "$kid_id" closed 123
+tmux set -p -t "$new_pane" @parent %0
+"$B/tmux-agent-report" --from kid 'resumed work' >/dev/null
+"$B/tmux-agent-report" --agent-id "$(pane_agent_id "$new_pane")" --codex-notify '{"type":"agent-turn-complete","thread-id":"main-thread","input-messages":["continue work"],"last-assistant-message":"need input"}'
+check 'resumed closed thread binds current identity' test "$(st "$new_pane" @codex_thread)" = main-thread
+check 'resumed unfinished helper needs user' test "$(st "$new_pane" @state)" = needs_you
+
 [ "$fail" -eq 0 ] && echo "all passed" || echo "some failed"
 exit "$fail"

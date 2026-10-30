@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Done agents retain their last report as `done · <text>` in list activity and the status chip. Empty reports keep the existing fallback, and stored activity is unchanged.
+- **Resumed Codex tracking.** A Codex conversation resumed through `tmux-agents start codex -- resume` can bind to its new live agent identity even when a closed historical record owns the thread. Completion notifications now update state and worked time; late callbacks and conflicting live owners remain rejected.
 
 ## v1.18.0 (2026-10-29)
 

@@ -170,8 +170,18 @@ EOF
       if [ ! -f "$rec" ] || ! valid_agent_id "${rec##*/}"; then continue; fi
       [ "$(record_get "${rec##*/}" id)" = "$thread" ] || continue
       pane="$(find_pane_by_id "${rec##*/}")"
+      if [ -n "$notify_target" ]; then
+        # A fresh launcher identity may resume a closed conversation. Its
+        # verified live ID outranks closed records with no live pane,
+        # but every live record owner must still agree with that identity.
+        if [ -z "$pane" ]; then
+          [ -n "$(record_get "${rec##*/}" closed)" ] || exit 0
+        else
+          [ "$pane" = "$notify_target" ] || exit 0
+        fi
+        continue
+      fi
       [ -n "$pane" ] || exit 0
-      [ -z "$notify_target" ] || [ "$pane" = "$notify_target" ] || exit 0
       tmux set-option -p -t "$pane" @codex_thread "$thread"
       break
     done
