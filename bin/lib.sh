@@ -11,11 +11,67 @@ die() {
 }
 
 require_tmux() {
+  local error
   command -v tmux >/dev/null 2>&1 || die "tmux not found"
-  if ! tmux list-sessions >/dev/null 2>&1; then
-    [ -n "${TMUX:-}" ] && die "can't reach the tmux server. In Codex this means the command ran in the sandbox: run tmux-* commands on their own (not chained with other commands) so the allow rule applies, or ask for escalated permissions."
-    die "no tmux server running"
+  if error="$(tmux list-sessions 2>&1)"; then return 0; fi
+  if [ -n "${TMUX:-}" ]; then
+    case "$error" in
+      *"Operation not permitted"*|*"Permission denied"*)
+        die "permission denied connecting to the tmux server; retry with plain argv or --message-file, or use narrow escalation if the sandbox requires it" ;;
+      *"No such file or directory"*|*"Connection refused"*|*"no server running"*)
+        die "the tmux server socket is missing or inactive; check TMUX and start or reconnect to the intended server" ;;
+      *) die "could not reach the tmux server: ${error:-tmux list-sessions failed}; check TMUX and socket access" ;;
+    esac
   fi
+  case "$error" in
+    *"Operation not permitted"*|*"Permission denied"*)
+      die "permission denied connecting to the tmux server; retry with plain argv or --message-file, or use narrow escalation if the sandbox requires it" ;;
+  esac
+  die "no tmux server running"
+}
+
+# Read one bounded UTF-8/text message without interpreting it as shell input.
+# Set destination by name because this library supports Bash 3.2.
+read_message_file() {
+  local destination="$1" path="$2" bytes
+  case "$path" in '') die "--message-file needs a path" ;; esac
+  [ ! -L "$path" ] || die "--message-file must not be a symlink"
+  [ -f "$path" ] || die "--message-file must name an existing regular file"
+  [ -r "$path" ] || die "--message-file is not readable"
+  # Read and validate one opened inode, so a concurrent path replacement
+  # cannot bypass the size or symlink checks. The suffix preserves trailing
+  # newlines through command substitution; Bash variables cannot hold NUL.
+  local contents marker='__TMUX_MESSAGE_FILE_END_7d2f4b1a__' status
+  if contents="$(perl -MFcntl=:DEFAULT -e '
+    use Fcntl qw(:mode);
+    my ($path, $maximum) = @ARGV;
+    sysopen(my $fh, $path, O_RDONLY | O_NOFOLLOW)
+      or die "--message-file is not readable\n";
+    my @stat = stat($fh);
+    S_ISREG($stat[2]) or die "--message-file must name a regular file\n";
+    $stat[7] <= $maximum or die "--message-file exceeds the ${maximum}-byte limit\n";
+    my $data = "";
+    while (length($data) <= $maximum) {
+      my $read = sysread($fh, my $part, 65536);
+      defined($read) or die "--message-file could not be read\n";
+      last if $read == 0;
+      $data .= $part;
+    }
+    length($data) <= $maximum or die "--message-file exceeds the ${maximum}-byte limit\n";
+    index($data, "\0") < 0 or die "--message-file must contain text without NUL bytes\n";
+    print $data, "__TMUX_MESSAGE_FILE_END_7d2f4b1a__";
+  ' "$path" 1048576)"; then
+    :
+  else
+    status=$?
+    [ "$status" -ne 0 ] || die "could not read --message-file"
+    return "$status"
+  fi
+  case "$contents" in
+    *"$marker") contents="${contents%"$marker"}" ;;
+    *) die "could not read --message-file" ;;
+  esac
+  printf -v "$destination" '%s' "$contents"
 }
 
 # display-message -t exits 0 with empty output for a closed pane id, so check the list.
