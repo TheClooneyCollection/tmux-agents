@@ -423,14 +423,20 @@ and submits it. Requests tell the receiver how to reply. Replies are
 marked as needing no response, which stops endless back-and-forth.
 
   tmux-ask codex "review the diff in src/auth"
-  tmux-ask --reply claude --message-file ./reply.txt
+  message_dir="${TMPDIR:-/tmp}/tmux-agents/$ME"
+  mkdir -p "$message_dir"
+  reply_file="$(mktemp "$message_dir/reply.XXXXXX")"
+  # write the reply to "$reply_file"; remove it after a successful send
+  tmux-ask --reply claude --message-file "$reply_file"
 
 --pending: list queued and undelivered messages, including legacy files
 --retry [--to NAME]: retry undelivered messages by receiver name
 
 --request-id ID: resolve this exact request with --reply; required for ambiguous pairs
 --message-file PATH: read the literal message body from a regular file (max 1 MiB)
-              rejects symlinks; conflicts with positional text or nonempty stdin
+              rejects symlinks; conflicts with positional text; stdin is ignored
+              Use a unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/$ME/;
+              remove it after a successful send or keep it for a retry.
 --from ME: your own name (needed where $TMUX_PANE is wrong, e.g. Codex)
 --notice:  a message that needs no answer (tmux-connect sends one when
            it connects agents in different windows)
@@ -478,10 +484,6 @@ done
 [ -n "$target" ] || { usage >&2; exit 1; }
 if [ "$message_file_given" -eq 1 ]; then
   [ "$positional_message" -eq 0 ] || die "--message-file conflicts with positional message text"
-  if [ ! -t 0 ]; then
-    stdin_bytes="$(head -c 1 | wc -c | tr -d ' ')"
-    [ "$stdin_bytes" = 0 ] || die "--message-file conflicts with nonempty stdin"
-  fi
   read_message_file msg "$message_file"
 else
   if [ -z "$msg" ]; then

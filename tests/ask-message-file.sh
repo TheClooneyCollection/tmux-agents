@@ -28,10 +28,14 @@ tmux copy-mode -t %1
 latest() { find "$Q" -name '*.msg' -type f | sort | tail -n 1; }
 assert_body() { f="$(latest)"; grep -Fq -- "$1" "$f" || fail "body missing $1"; }
 assert_kind() { f="$(latest)"; grep -q "kind=$1" "${f%.msg}.meta" || fail "kind $1"; }
-send --message-file "$file" receiver; assert_kind request
+printf 'ignored stdin payload' | send --message-file "$file" receiver; assert_kind request
 # shellcheck disable=SC2016
 assert_body 'literal $HOME'
-assert_body '--message-file /path/to/reply.txt'
+# shellcheck disable=SC2016
+assert_body 'unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/<ME>/'
+assert_body 'a short reply can use: tmux-ask --from receiver --request-id '
+assert_body ' --reply sender "answer"'
+if grep -Fq 'ignored stdin payload' "$(latest)"; then fail 'stdin is ignored when a message file is supplied'; fi
 if grep -Fq "<<'MSG'" "$(latest)"; then fail 'request reply command avoids heredoc'; fi
 # Use the generated request id to exercise reply handling.
 rid="$(sed -n 's/^request_id=//p' "$(latest | sed 's/\.msg$/.meta/')")"
@@ -44,10 +48,36 @@ if send --message-file "$file" receiver extra >"$tmp/error" 2>&1; then fail posi
 grep -q 'conflicts with positional message text' "$tmp/error" || fail positional-conflict-error
 if send --message-file "$file" receiver '' >"$tmp/error" 2>&1; then fail empty-positional-conflict; fi
 grep -q 'conflicts with positional message text' "$tmp/error" || fail empty-positional-conflict-error
-if printf x | send --message-file "$file" receiver >"$tmp/error" 2>&1; then fail stdin-conflict; fi
-grep -q 'conflicts with nonempty stdin' "$tmp/error" || fail stdin-conflict-error
-if printf '\0' | send --message-file "$file" receiver >"$tmp/error" 2>&1; then fail nul-stdin-conflict; fi
-grep -q 'conflicts with nonempty stdin' "$tmp/error" || fail nul-stdin-conflict-error
+# A pipe with a writer still open and no data must not block the file path.
+mkfifo "$tmp/idle-stdin"
+exec 9<>"$tmp/idle-stdin"
+(
+  TMUX_PANE=%0 "$B/tmux-ask" --from sender --message-file "$file" receiver <"$tmp/idle-stdin" >"$tmp/idle.out" 2>"$tmp/idle.err" &
+  command_pid=$!
+  (
+    sleep 5 & timer_pid=$!
+    trap 'kill "$timer_pid" 2>/dev/null || :' EXIT
+    wait "$timer_pid"
+    kill "$command_pid" 2>/dev/null || :
+  ) &
+  watchdog_pid=$!
+  status=0
+  wait "$command_pid" || status=$?
+  kill "$watchdog_pid" 2>/dev/null || :
+  wait "$watchdog_pid" 2>/dev/null || :
+  printf '%s\n' "$status" >"$tmp/idle.status"
+) &
+idle_pid=$!
+for ((i = 0; i < 120; i++)); do [ -f "$tmp/idle.status" ] && break; sleep 0.05; done
+if [ ! -f "$tmp/idle.status" ]; then
+  kill "$idle_pid" 2>/dev/null || :
+  wait "$idle_pid" 2>/dev/null || :
+  exec 9>&-
+  fail 'message-file does not read an inherited idle stdin pipe'
+fi
+wait "$idle_pid" || fail 'idle-pipe message process exits cleanly'
+[ "$(cat "$tmp/idle.status")" = 0 ] || { cat "$tmp/idle.err" >&2; fail 'idle-pipe message succeeds'; }
+exec 9>&-
 if send --message-file >"$tmp/error" 2>&1; then fail missing-path; fi
 grep -q -- '--message-file needs a path' "$tmp/error" || fail missing-path-error
 if send --message-file '' receiver >"$tmp/error" 2>&1; then fail empty-path; fi

@@ -35,7 +35,7 @@ TMUX_PANE=%0 "$B/tmux-spawn" codex --name owner </dev/null >/dev/null
 owner="$(tmux list-panes -a -F '#{pane_id} #{@agent}' | awk '$2 ~ /-owner$/ {print $1; exit}')"
 [ -n "$owner" ] || fail 'owner agent exists'
 owner_name="$(tmux display-message -p -t "$owner" '#{@agent}')"
-TMUX_PANE=%0 "$B/tmux-spawn" codex --member --for "$owner_name" --split "$owner" --right --size 35% --name message-file --message-file "$file" </dev/null >/dev/null
+printf 'ignored task stdin payload' | TMUX_PANE=%0 "$B/tmux-spawn" codex --member --for "$owner_name" --split "$owner" --right --size 35% --name message-file --message-file "$file" >/dev/null
 pane="$(tmux list-panes -a -F '#{pane_id} #{@agent}' | awk '$2 ~ /-message-file$/ {print $1; exit}')"
 [ -n "$pane" ] || fail 'spawned split exists'
 case "$(tmux display-message -p -t "$pane" '#{@agent}')" in *-message-file) ;; *) fail 'name option reaches split' ;; esac
@@ -53,6 +53,7 @@ for ((i = 0; i < 80; i++)); do
   sleep 0.05
 done
 [ "$ready" = 1 ] || { cat "$tmp/screen" >&2; fail 'literal multiline file task reaches spawned agent'; }
+if grep -Fq 'ignored task stdin payload' "$tmp/screen"; then fail 'stdin is ignored when a task file is supplied'; fi
 
 reject() {
   if TMUX_PANE=%0 "$B/tmux-spawn" codex "$@" </dev/null >"$tmp/error" 2>&1; then return 1; fi
@@ -61,10 +62,6 @@ reject --message-file "$file" --name positional task || fail 'positional task co
 grep -q 'conflicts with positional task text' "$tmp/error" || fail 'positional conflict error is clear'
 reject --message-file "$file" --name empty-arg '' || fail 'empty positional task conflicts'
 grep -q 'conflicts with positional task text' "$tmp/error" || fail 'empty positional conflict error is clear'
-if printf x | TMUX_PANE=%0 "$B/tmux-spawn" codex --message-file "$file" --name stdin-conflict >"$tmp/error" 2>&1; then fail 'nonempty stdin conflicts'; fi
-grep -q 'conflicts with nonempty stdin' "$tmp/error" || fail 'stdin conflict error is clear'
-if printf '\0' | TMUX_PANE=%0 "$B/tmux-spawn" codex --message-file "$file" --name nul-conflict >"$tmp/error" 2>&1; then fail 'NUL-only stdin conflicts'; fi
-grep -q 'conflicts with nonempty stdin' "$tmp/error" || fail 'NUL-only conflict error is clear'
 reject --message-file "$file" --message-file "$file" --name duplicate || fail 'duplicate file option rejected'
 reject --message-file "$tmp/missing" --name missing || fail 'missing file rejected'
 mkdir "$tmp/directory"

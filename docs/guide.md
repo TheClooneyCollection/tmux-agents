@@ -98,10 +98,14 @@ Use `tmux-ask --from ME PEER "task"` for requests, `--reply` for answers and `--
 For a message already saved in a file, use `--message-file`:
 
 ```sh
-tmux-ask --from ME PEER --message-file ./review-request.txt
+message_dir="${TMPDIR:-/tmp}/tmux-agents/$ME"
+mkdir -p "$message_dir"
+message_file="$(mktemp "$message_dir/message.XXXXXX")"
+# write the request to "$message_file"; remove after a successful send
+tmux-ask --from ME PEER --message-file "$message_file"
 ```
 
-The file must be one readable regular file, not a symlink, and at most 1 MiB. Its literal text is sent unchanged; empty files use the usual empty-message validation. The option conflicts with positional message text and nonempty stdin, while empty stdin (such as `</dev/null`) is allowed.
+The file must be one readable regular file, not a symlink, and at most 1 MiB. Its literal text is sent unchanged; empty files use the usual empty-message validation. The option conflicts with positional message text and ignores stdin without reading it.
 
 Each request has its own ID. Use the supplied reply command, including `--request-id RID`: `tmux-ask --from ME --reply --request-id RID PEER "answer"`. This completes that request even when PEER is not your parent. With the older `--reply PEER` form, a single pending request between the pair is matched automatically; several pending requests are refused with their IDs so you can select the one answered. Legacy messages without tracking remain compatible but cannot complete unrelated tracked requests. Queuing, retry, reopening and renaming preserve request association.
 
@@ -122,10 +126,12 @@ tmux-spawn --from ME --name auth-review "Review src/auth.ts"
 For a task already saved in a file, use `--message-file`:
 
 ```sh
-tmux-spawn --from ME --name auth-review --message-file ./auth-review.txt
+task_file="$(mktemp "$message_dir/task.XXXXXX")"
+# write the task to "$task_file"; remove after successful delivery
+tmux-spawn --from ME --name auth-review --message-file "$task_file"
 ```
 
-`--message-file` accepts one readable regular file (not a symlink), up to 1 MiB, and sends its literal text. Empty content follows normal no-task behavior. It conflicts with positional task text and nonempty stdin, permits empty stdin, and cannot be combined with `--resume` or `--list-closed`.
+`--message-file` accepts one readable regular file (not a symlink), up to 1 MiB, and sends its literal text. Empty content follows normal no-task behavior. It conflicts with positional task text and ignores stdin without reading it; it cannot be combined with `--resume` or `--list-closed`. Use a unique `mktemp` file under `${TMPDIR:-/tmp}/tmux-agents/$ME/` for each message so agents sharing a working directory cannot overwrite one another or dirty the project. Remove the file after a successful send, or keep its unique path for a retry.
 
 ### Start a helper
 
@@ -231,12 +237,12 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 | `tmux-rename --from ME PEER NAME [--exact]` | Rename yourself or a descendant. |
 | `tmux-disconnect [name]` | User unlinks one peer or all. |
 | `tmux-peers --from ME [--ids]` | Show identity and connections. |
-| `tmux-ask --from ME [--any] [--reply\|--notice] [--request-id RID] PEER [msg...]` or `--message-file FILE` | Send request, answer or notice; accepts stdin or a message file. `--any` permits unlinked targets. |
+| `tmux-ask --from ME [--any] [--reply\|--notice] [--request-id RID] PEER [msg...]` or `--message-file FILE` | Send request, answer or notice; accepts stdin when no message file is supplied. `--any` permits unlinked targets. |
 | `tmux-ask --pending` | Inspect queued/undelivered messages. |
 | `tmux-ask --retry [--to PEER]` | Retry saved messages. |
 | `tmux-peek --from ME PEER [lines]` | Read peer output; default 40 lines. |
 | `tmux-shell [--from AGENT] [--client CLIENT] [--pane OPENER]` | Open an independent or explicitly owned shell popup. |
-| `tmux-spawn [AGENT] --from ME [--member] [task]` or `--message-file FILE` | Spawn; accepts stdin or a task file, `--name`, `--split` and `--for`. |
+| `tmux-spawn [AGENT] --from ME [--member] [task]` or `--message-file FILE` | Spawn; accepts stdin when no task file is supplied, `--name`, `--split` and `--for`. |
 | `tmux-spawn --list-closed` | List saved conversations. |
 | `tmux-spawn --from ME --resume PEER` / `--resume-id ID` | Reopen a conversation. |
 | `tmux-agent-report --from ME [--waiting\|--local\|--needs-you] "text"` | Report progress, a work wait, multi-turn local work or user attention. |

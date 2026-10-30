@@ -47,9 +47,13 @@ A supplied spawn task is **not sent**. Read the printed result, retain the actua
 - `tmux-peers --from ME`: your name and the agents you can reach. Names come from here. Add `--ids` to see stable agent IDs when identifying an agent across renames or reopenings.
 - `tmux-ask --from ME <name> "message"`: send a request. For saved or multi-line text, use `--message-file`:
   ```sh
-  tmux-ask --from my-name codex --message-file ./auth-review.txt
+  message_dir="${TMPDIR:-/tmp}/tmux-agents/$ME"
+  mkdir -p "$message_dir"
+  message_file="$(mktemp "$message_dir/message.XXXXXX")"
+  # write the message to "$message_file"; remove after a successful send
+  tmux-ask --from my-name codex --message-file "$message_file"
   ```
-- `tmux-ask --from ME PEER --message-file PATH`: read one readable regular file (no symlinks), up to 1 MiB, literally. Empty content gets the usual empty-message error. The option conflicts with positional text and nonempty stdin; empty stdin such as `</dev/null` is allowed.
+- `tmux-ask --from ME PEER --message-file PATH`: read one readable regular file (no symlinks), up to 1 MiB, literally. Empty content gets the usual empty-message error. The option conflicts with positional text; stdin is ignored. Create each file with `mktemp` under `${TMPDIR:-/tmp}/tmux-agents/$ME/` so agents sharing a working directory cannot overwrite one another or dirty the project. Remove it after a successful send or keep the unique file for a retry.
 - `tmux-ask --from ME --reply --request-id RID <name> --message-file PATH`: answer the request using the ID in its supplied reply command.
 - `tmux-ask --from ME --notice <name> --message-file PATH`: tell an agent something that needs no answer and no work (a rule change, a heads-up, "carry on"). Use this, not a request, whenever you don't expect a reply.
 - `tmux-ask --from ME --any <name> ...`: message a named agent you aren't connected to. Only when the user asks you to; the reply instructions include `--any`, so follow them as given.
@@ -88,10 +92,14 @@ Commands are not agent tasks or conversations: no task delivery, delegation, per
 Whenever you would start a sub agent (your built-in Agent/Task tool, spawned or delegated agents, parallel workers), use `tmux-spawn` instead. The user wants every sub agent in its own tmux pane so they can read its full history and approve its permissions.
 
 ```sh
-tmux-spawn --from my-name --name auth-review --message-file ./auth-review.txt
+message_dir="${TMPDIR:-/tmp}/tmux-agents/$ME"
+mkdir -p "$message_dir"
+message_file="$(mktemp "$message_dir/message.XXXXXX")"
+# write the task to "$message_file"; remove after a successful send
+tmux-spawn --from my-name --name auth-review --message-file "$message_file"
 ```
 
-The file must be a readable regular file, not a symlink, and at most 1 MiB; its literal text is sent. Empty content follows normal no-task behavior. The flag conflicts with positional task text and nonempty stdin, allows empty stdin, and is unavailable with `--resume` or `--list-closed`.
+The file must be a readable regular file, not a symlink, and at most 1 MiB; its literal text is sent. Empty content follows normal no-task behavior. The flag conflicts with positional task text and ignores stdin without reading it; it is unavailable with `--resume` or `--list-closed`.
 
 - It opens a hidden window in the project's session (`agents-<project>`), starts the same kind of agent as you, connects it to your pane, and sends the task as a request for Claude/Codex. Pass `claude`, `codex`, a Codex profile from `TMUX_AGENTS_CODEX_HOMES` or `@tmux_agents_codex_homes`, or an executable basename on PATH first only when the user asks for a different agent. Claude/Codex sub agents default to auto mode (Claude `--permission-mode auto`, Codex auto review). `@tmux_agents_sub_auto off` or `TMUX_AGENTS_SUB_AUTO=off` uses agent defaults for new and resumed agents, including members; it does not affect `tmux-agents start`.
 - **Long-lived members.** Add `--member` for a standing team member, including with `--split` or `--for`. Only a top-level caller (no `@parent` and no `@member`) can spawn members; the restriction checks you, not the `--for` owner. It keeps its owner and explicit dismissal still closes its subtree. Members stay out of the default sub-agent list, ordinary chip counts and `--done` cleanup; `ctrl-a` shows them as `member of <owner>`. Permission, needs-you and message-waiting attention still pins them in the list and chip. Closed members share the closed section, and resume preserves membership. Ordinary helpers spawned by members do not inherit membership. There is no conversion command for an existing agent.
@@ -112,7 +120,7 @@ The file must be a readable regular file, not a symlink, and at most 1 MiB; its 
 - **Reopening.** When the user asks to bring back a closed sub agent ("reopen auth-review", "把 xxx 再开回来"), run `tmux-spawn --resume <name> --from ME`. If the name is ambiguous, inspect the listed closed time, parent and project, then use `--resume-id <id>`; ask which conversation if the request does not distinguish them. It keeps its ID and conversation, opens hidden, reconnects to its recorded parent if still live (otherwise to the caller), and restores outstanding requests, local work and background waits. An already delivered but unanswered request remains open even without saved messages to replay; with no outstanding context it starts `done`. If another live agent holds its label, the reopened agent gets `-2`, `-3`... Use the printed name for subsequent `tmux-ask`. The list retains closed agents for 7 days by default; a Codex one needs to have finished at least one turn to have a resumable conversation ID.
 - Depth is limited to two levels. Every new sub agent or member adds one to the caller's depth, including with `--for`; the normal depth limit applies to both. A top-level main spawns both chain members at depth 1, and the worker's helpers are depth 2. If `tmux-spawn` says the depth limit is reached, do the work yourself.
 - **Visible splits, only when the user asks for a layout.** Use `--split <agent-name-or-pane-id> [--right | --below] [--size N%]` to place a sub agent visibly. Right and 50% are the defaults; hidden windows remain the default without `--split`. For an agent chain, spawn the secondary with `--member --split <main> --right`, then its worker with `--member --for <secondary> --split <secondary> --below`, using the actual assigned names. Visible placement does not change ownership or the member depth rules. `--resume` always reopens hidden, even for a former split; it cannot be combined with `--split`.
-- **Spawning for another agent.** To give an agent you're connected to a sub agent of its own (or add `--member` for a long-lived member), run `tmux-spawn [AGENT] --from ME --for <owner> --name <name> --message-file ./brief.txt`. It becomes `<owner>`'s sub agent (or member with `--member`), connected to `<owner>` only, and starts without a task; `<owner>` gets your brief in a request. Let `<owner>` assign its tasks and handle routine cleanup. An ancestor can still close it or its whole subtree.
+- **Spawning for another agent.** To give an agent you're connected to a sub agent of its own (or add `--member` for a long-lived member), create a unique brief with `mktemp` under `${TMPDIR:-/tmp}/tmux-agents/$ME/` and run `tmux-spawn [AGENT] --from ME --for <owner> --name <name> --message-file "$brief_file"`. It becomes `<owner>`'s sub agent (or member with `--member`), connected to `<owner>` only, and starts without a task; `<owner>` gets your brief in a request. Remove the file after successful delivery or keep the unique file for a retry. Let `<owner>` assign its tasks and handle routine cleanup. An ancestor can still close it or its whole subtree.
 - **When someone spawns a sub agent or member for you** ("I spawned X for you"): it's your sub agent or member now. Introduce yourself to it (who you are, your role, how you'll work together) and send it its first task in one `tmux-ask` (for other executables, first verify they are at their input prompt), then reply to whoever spawned it that you did. Treat it like any sub agent of yours from then on.
 - The user browses sub agents with `prefix + a` (`tmux-agents`).
 

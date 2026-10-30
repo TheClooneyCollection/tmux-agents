@@ -122,7 +122,7 @@ An earlier version matched names globally first and command substrings for any t
 [request from claude to codex via tmux-ask]
 <message>
 
-(You are codex. When done, save your answer in a readable file and send it with: tmux-ask --from codex --reply --request-id r0123456789ab claude --message-file /path/to/reply.txt)
+(You are codex. When done, a short reply can use: tmux-ask --from codex --reply --request-id r0123456789ab claude "answer"; for a longer reply, create a unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/codex/ and use --message-file.)
 [end of request from claude to codex]
 ```
 
