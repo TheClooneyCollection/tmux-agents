@@ -39,13 +39,10 @@ tmux-spawn my-agent --from ME --name review
 Inspect its pane or preview to confirm the input prompt is ready. Then send the work:
 
 ```sh
-tmux-ask --from ME PEER <<'MSG'
-Review src/auth.ts for race conditions. Do not edit files.
-Reply with findings and file:line using the tmux-ask reply command in this message.
-MSG
+tmux-ask --from ME PEER --message-file ./review-brief.txt
 ```
 
-Include the concrete goal, paths and constraints. Do not assume that the agent can load the tmux-agents or agent-chain skill. The message envelope supplies the sender, receiver and reply command; the agent still needs shell access and permission to execute that command. Use explicit `--from` for its replies and later commands because generic identity pinning is not guaranteed.
+Put the concrete goal, paths and constraints in the file. `--message-file` reads a literal message from one readable regular file up to 1 MiB; symlinks are rejected, and positional text or nonempty stdin cannot be combined with it. Do not assume that the agent can load the tmux-agents or agent-chain skill. The message envelope supplies the sender, receiver and reply command; the agent still needs shell access and permission to execute that command. Use explicit `--from` for its replies and later commands because generic identity pinning is not guaranteed.
 
 Normal queue rules still apply after you send: `queued` means the message is retained, so do not send it again. That differs from a spawn task reported as not sent. Use `tmux-ask --pending` to inspect undelivered messages. Closing an unsupported conversation does not make it resumable; a new launch is a new conversation.
 
