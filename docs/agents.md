@@ -39,10 +39,14 @@ tmux-spawn my-agent --from ME --name review
 Inspect its pane or preview to confirm the input prompt is ready. Then send the work:
 
 ```sh
-tmux-ask --from ME PEER --message-file ./review-brief.txt
+message_dir="${TMPDIR:-/tmp}/tmux-agents/$ME"
+mkdir -p "$message_dir"
+brief_file="$(mktemp "$message_dir/brief.XXXXXX")"
+# write the review brief to "$brief_file"; remove after a successful send
+tmux-ask --from ME PEER --message-file "$brief_file"
 ```
 
-Put the concrete goal, paths and constraints in the file. `--message-file` reads a literal message from one readable regular file up to 1 MiB; symlinks are rejected, and positional text or nonempty stdin cannot be combined with it. Do not assume that the agent can load the tmux-agents or agent-chain skill. The message envelope supplies the sender, receiver and reply command; the agent still needs shell access and permission to execute that command. Use explicit `--from` for its replies and later commands because generic identity pinning is not guaranteed.
+Put the concrete goal, paths and constraints in the file. `--message-file` reads a literal message from one readable regular file up to 1 MiB; symlinks are rejected, positional text cannot be combined with it, and stdin is ignored. Create each message file with `mktemp` under `${TMPDIR:-/tmp}/tmux-agents/$ME/` so agents sharing a working directory cannot overwrite one another or dirty the project; remove it after a successful send or keep the unique file for a retry. Do not assume that the agent can load the tmux-agents or agent-chain skill. The message envelope supplies the sender, receiver and reply command; the agent still needs shell access and permission to execute that command. Use explicit `--from` for its replies and later commands because generic identity pinning is not guaranteed.
 
 Normal queue rules still apply after you send: `queued` means the message is retained, so do not send it again. That differs from a spawn task reported as not sent. Use `tmux-ask --pending` to inspect undelivered messages. Closing an unsupported conversation does not make it resumable; a new launch is a new conversation.
 

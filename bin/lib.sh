@@ -335,7 +335,8 @@ request_finish() { request_state finish "$1"; }
 # Both end with an [end of ...] line: text outside the markers in the same
 # prompt was typed by the user (a draft can get submitted along with it).
 request_body() {
-  printf '[request from %s to %s via tmux-ask]\n%s\n\n(You are %s. When done, save your answer in a readable file and send it with: tmux-ask --from %s%s --reply %s --message-file /path/to/reply.txt)\n[end of request from %s to %s]' "$1" "$3" "$2" "$3" "$3" "${4:+ $4}" "$1" "$1" "$3"
+  # shellcheck disable=SC2016
+  printf '[request from %s to %s via tmux-ask]\n%s\n\n(You are %s. When done, a short reply can use: tmux-ask --from %s%s --reply %s "answer"; for a longer reply, use --message-file with a unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/<ME>/, then remove it after sending or keep it for retry.)\n[end of request from %s to %s]' "$1" "$3" "$2" "$3" "$3" "${4:+ $4}" "$1" "$1" "$3"
 }
 
 reply_body() {
