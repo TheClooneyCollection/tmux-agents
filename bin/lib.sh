@@ -33,7 +33,7 @@ require_tmux() {
 # Read one bounded UTF-8/text message without interpreting it as shell input.
 # Set destination by name because this library supports Bash 3.2.
 read_message_file() {
-  local destination="$1" path="$2" bytes
+  local destination="$1" path="$2"
   case "$path" in '') die "--message-file needs a path" ;; esac
   [ ! -L "$path" ] || die "--message-file must not be a symlink"
   [ -f "$path" ] || die "--message-file must name an existing regular file"

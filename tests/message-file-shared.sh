@@ -6,6 +6,7 @@ B="$here/bin"
 sock="tmux-message-file-shared-$$"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/tmux-message-file-shared.XXXXXX")"
 . "$here/tests/helpers/cleanup.sh"
+# shellcheck disable=SC2329
 cleanup() { cleanup_test_server || return; rm -rf "$tmp"; }
 trap cleanup EXIT
 unset TMUX TMUX_PANE
@@ -26,7 +27,8 @@ esac
 exec "$TEST_REAL_TMUX" "$@"
 STUB
 chmod +x "$tmp/bin/tmux"
-export TEST_REAL_TMUX="$(command -v tmux)"
+TEST_REAL_TMUX="$(command -v tmux)"
+export TEST_REAL_TMUX
 fail=0
 check() { local label="$1"; shift; if "$@"; then echo "ok    $label"; else echo "FAIL  $label"; fail=1; fi; }
 read_value() { /bin/bash -c '. "$1/lib.sh"; read_message_file value "$2"; printf "<%s>" "$value"' test "$B" "$1"; }
@@ -59,7 +61,7 @@ run_connection denied >"$tmp/denied" 2>&1 && { echo 'FAIL denied socket rejected
 check 'permission error explains file argv and escalation' grep -q 'permission denied.*--message-file.*narrow escalation' "$tmp/denied"
 run_connection missing >"$tmp/missing" 2>&1 && { echo 'FAIL missing socket rejected'; fail=1; }
 check 'dead socket error suggests reconnect' grep -q 'socket is missing or inactive.*TMUX' "$tmp/missing"
-PATH="$tmp/bin:$PATH" TEST_TMUX_ERROR=noserver TMUX= /bin/bash -c '. "$1/lib.sh"; require_tmux' test "$B" >"$tmp/no-server" 2>&1 && { echo 'FAIL absent server accepted'; fail=1; }
+PATH="$tmp/bin:$PATH" TEST_TMUX_ERROR=noserver TMUX='' /bin/bash -c '. "$1/lib.sh"; require_tmux' test "$B" >"$tmp/no-server" 2>&1 && { echo 'FAIL absent server accepted'; fail=1; }
 check 'no TMUX server retains clear message' grep -q 'no tmux server running' "$tmp/no-server"
 [ "$fail" -eq 0 ] && echo 'all passed' || echo 'some failed'
 exit "$fail"
