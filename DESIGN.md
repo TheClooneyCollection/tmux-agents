@@ -40,6 +40,7 @@ Sub agents are ordinary agents started by `tmux-spawn`, in hidden windows of an 
 
 - [State and protocol](docs/design/state-and-protocol.md): pane options, links, naming, connecting, message format and delivery, long messages.
 - [Sub agents](docs/design/sub-agents.md): spawning, the switcher, done state and cleanup, closing, the status chip, alerts.
+- [Codex turn-start observability](docs/design/codex-turn-start-proposal.md): proposal for distinguishing model execution from task obligations.
 - [Environment](docs/design/environment.md): macOS bash 3.2, Codex's sandbox and shared daemon, permissions, install layout.
 - [Pitfalls and testing](docs/design/pitfalls-and-testing.md): traps found while building, how to test without touching the user's server, known limitations.
 - [Performance](docs/performance.md): what made it slow, the measurements, and how shell startup affects popups and spawns.
