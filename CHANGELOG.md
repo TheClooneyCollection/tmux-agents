@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Agent-aware reply guidance.** Requests supply Claude with a quoted heredoc reply, Codex and configured profiles with quoted short arguments or a unique `mktemp` / `--message-file` form, and unknown executables with quoted plain argv for portability. Request ID handling is unchanged. Codex code-mode guidance treats `exec_command` as a shell tool, keeps tmux commands in separate calls and uses narrow escalation if socket permission denial persists.
+
 - **Message files for requests and tasks.** `tmux-ask` and `tmux-spawn` accept `--message-file PATH` for literal message text from a readable regular file up to 1 MiB. Symlinks are rejected; positional text cannot be combined with the option, and stdin is ignored without being read. `tmux-spawn` does not allow it with resume or list-closed operations.
 - Done agents retain their last report as `done · <text>` in list activity and the status chip. Empty reports keep the existing fallback, and stored activity is unchanged.
 - **Resumed Codex tracking.** A Codex conversation resumed through `tmux-agents start codex -- resume` can bind to its new live agent identity even when a closed historical record owns the thread. Completion notifications now update state and worked time; late callbacks and conflicting live owners remain rejected.
