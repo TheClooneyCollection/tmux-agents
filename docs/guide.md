@@ -228,6 +228,10 @@ Suggested names use `<kind>-<dir>-<N>`, with `~` for home. A recognised recorded
 
 Configure existing homes with the [Codex profiles recipe](configuration.md#codex-profiles), then rerun the installer for their skills and rules. `tmux-agents start work` launches a tracked top-level agent; `tmux-spawn work --from ME "task"` launches a helper whose children inherit that profile. Optional [shell wrappers](../integrations/sh/codex.sh) pin identity only.
 
+## Check Codex command access
+
+After a Codex CLI upgrade and before releases, run the local [Codex compatibility probe](../ci/README.md#real-codex-compatibility-probe) against the installed homes and rules. For example, `ci/codex-probe.sh --profile codex-2nd` starts a fresh Codex session on a private tmux server and prints a tool-surface and command-form table. Select the CLI with `--binary`, the model with `--model`, or the per-profile runtime with `--timeout`. This requires real Codex authentication and may need network access; it is not run in CI.
+
 ## Commands
 
 Agent commands below use actual names for `ME`/`PEER`. See each command's `--help` for full syntax.

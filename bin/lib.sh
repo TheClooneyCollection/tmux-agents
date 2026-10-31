@@ -359,13 +359,13 @@ request_body() {
       ;;
     codex)
       # shellcheck disable=SC2016
-      reply_command="$(printf 'send a short reply with: tmux-ask --from %s%s --reply %s "answer"; for a longer reply, use --message-file with a unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/<ME>/, then remove it after sending or keep it for retry' "$3" "${4:+ $4}" "$1")"
+      reply_command="$(printf 'send a short reply with: tmux-ask --from %s%s --reply %s "answer"; for a longer reply, use --message-file with a unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/<ME>/, then remove it after sending or keep it for retry.' "$3" "${4:+ $4}" "$1")"
       ;;
     *)
-      reply_command="$(printf 'send a short reply as a quoted argument: tmux-ask --from %s%s --reply %s "answer"' "$3" "${4:+ $4}" "$1")"
+      reply_command="$(printf 'send a short reply as a quoted argument: tmux-ask --from %s%s --reply %s "answer".' "$3" "${4:+ $4}" "$1")"
       ;;
   esac
-  printf '[request from %s to %s via tmux-ask]\n%s\n\n(You are %s. When done, %s.)\n[end of request from %s to %s]' "$1" "$3" "$2" "$3" "$reply_command" "$1" "$3"
+  printf '[request from %s to %s via tmux-ask]\n%s\n\n(You are %s. When done, %s)\n[end of request from %s to %s]' "$1" "$3" "$2" "$3" "$reply_command" "$1" "$3"
 }
 
 reply_body() {
