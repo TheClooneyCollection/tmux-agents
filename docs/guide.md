@@ -230,7 +230,9 @@ Configure existing homes with the [Codex profiles recipe](configuration.md#codex
 
 ## Check Codex command access
 
-After a Codex CLI upgrade and before releases, run the local [Codex compatibility probe](../ci/README.md#real-codex-compatibility-probe) against the installed homes and rules. For example, `ci/codex-probe.sh --profile codex-2nd` starts a fresh Codex session on a private tmux server and prints a tool-surface and command-form table. Select the CLI with `--binary`, the model with `--model`, or the per-profile runtime with `--timeout`. This requires real Codex authentication and may need network access; it is not run in CI.
+After a Codex CLI upgrade and before releases, run the local [Codex compatibility probe](../ci/README.md#real-codex-compatibility-probe) against the configured homes and rules. By default, `ci/codex-probe.sh --profile codex-2nd` tests this checkout's `bin/`; use `--installed` after updating the installed copy. It starts a fresh `codex exec` session on a private tmux server and prints model results alongside independently checked command effects. Select the CLI with `--binary`, the model with `--model`, or the per-profile runtime with `--timeout`. This requires real Codex authentication and may need network access; it is not run in CI.
+
+The probe uses `codex exec` (originator `codex_exec`). Agents launched by `tmux-spawn` use the interactive Codex TUI, whose available tool surface can differ; the probe does not cover TUI-specific behavior.
 
 ## Commands
 
