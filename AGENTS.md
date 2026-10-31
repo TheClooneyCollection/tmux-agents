@@ -64,6 +64,7 @@ Notes for AI agents working on tmux-agents.
   - The GitHub repo allows only rebase merging, and rulesets on main require linear history and the 7 CI jobs (admins may bypass). Never use `gh pr merge --admin` to skip red or pending CI unless the user says so.
   - After merging, confirm with `git log --oneline --graph -5 origin/main` that the graph is still a single line.
 - Release: turn CHANGELOG.md's "Unreleased" into the version (semver: minor for new options or changed behaviour, patch for fixes and docs), run every suite, commit and push, then `gh release create vX.Y.Z --target main` as a separate step. Before tagging, check new messages, HEAD and existing tags; a hold on the release must be lifted explicitly.
+- After a Codex CLI upgrade and before each release, run `ci/codex-probe.sh` against the installed Codex homes and rules; it needs real Codex authentication and is intentionally outside CI.
 - Reply as soon as the release is out; send follow-ups (syncs, announcements) as notices.
 - Never move or delete a published tag. If something missed a release, ship a follow-up patch.
 - After releasing, update your installed copy as your local setup describes (maintainers: see your dotfiles' instructions). Develop only in this repo, never in an installed copy. When a task says not to release or update, don't, and say in your reply what's left.

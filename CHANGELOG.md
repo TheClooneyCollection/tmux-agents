@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Codex compatibility probe.** Add a local, bounded probe for command access after Codex upgrades and before releases; it uses a private tmux server and is not part of CI.
 - **Agent-aware reply guidance.** Requests supply Claude with a quoted heredoc reply, Codex and configured profiles with quoted short arguments or a unique `mktemp` / `--message-file` form, and unknown executables with quoted plain argv for portability. Request ID handling is unchanged. Codex code-mode guidance treats `exec_command` as a shell tool, keeps tmux commands in separate calls and uses narrow escalation if socket permission denial persists.
 
 - **Message files for requests and tasks.** `tmux-ask` and `tmux-spawn` accept `--message-file PATH` for literal message text from a readable regular file up to 1 MiB. Symlinks are rejected; positional text cannot be combined with the option, and stdin is ignored without being read. `tmux-spawn` does not allow it with resume or list-closed operations.
