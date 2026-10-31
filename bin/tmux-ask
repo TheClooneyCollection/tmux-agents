@@ -547,7 +547,7 @@ if [ "$notice" -eq 1 ]; then
 elif [ "$reply" -eq 1 ]; then
   body="$(reply_body "$me" "$msg" "$(pane_name "$peer")")"
 else
-  body="$(request_body "$me" "$msg" "$(pane_name "$peer")" "$([ "$any" -eq 1 ] && printf '%s' '--any ')--request-id $request_id")"
+  body="$(request_body "$me" "$msg" "$(pane_name "$peer")" "$([ "$any" -eq 1 ] && printf '%s' '--any ')--request-id $request_id" "$to_id")"
 fi
 
 # Persist even immediate sends, so a failed paste cannot lose the body.

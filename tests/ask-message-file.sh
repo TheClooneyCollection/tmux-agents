@@ -31,9 +31,7 @@ assert_kind() { f="$(latest)"; grep -q "kind=$1" "${f%.msg}.meta" || fail "kind 
 printf 'ignored stdin payload' | send --message-file "$file" receiver; assert_kind request
 # shellcheck disable=SC2016
 assert_body 'literal $HOME'
-# shellcheck disable=SC2016
-assert_body 'unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/<ME>/'
-assert_body 'a short reply can use: tmux-ask --from receiver --request-id '
+assert_body 'short reply as a quoted argument: tmux-ask --from receiver --request-id '
 assert_body ' --reply sender "answer"'
 if grep -Fq 'ignored stdin payload' "$(latest)"; then fail 'stdin is ignored when a message file is supplied'; fi
 if grep -Fq "<<'MSG'" "$(latest)"; then fail 'request reply command avoids heredoc'; fi

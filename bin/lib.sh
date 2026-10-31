@@ -327,16 +327,45 @@ claude_background() {
 
 request_finish() { request_state finish "$1"; }
 
+# Return claude, codex (including a configured profile), or unknown for a
+# tracked receiver. Never infer an agent adapter from its pane command.
+request_receiver_kind() {
+  local id="$1" kind="" homes codex_homes
+  if valid_agent_id "$id"; then kind="$(record_get "$id" kind)"; fi
+  case "$kind" in
+    claude|codex) printf '%s\n' "$kind" ;;
+    *)
+      resolve_codex_homes homes
+      codex_homes="$homes"
+      if codex_home_for "$kind" >/dev/null 2>&1; then printf '%s\n' codex
+      else printf '%s\n' unknown; fi
+      ;;
+  esac
+}
+
 # Message bodies for tmux-ask. Requests carry their own reply instructions,
 # so a receiver that never loaded the skill can still answer.
-# Args: sender, message, receiver[, extra reply flags]. The receiver's name
-# goes into the reply command as --from, so it works even where TMUX_PANE
-# is wrong; $4 adds flags such as --any when the two aren't connected.
+# Args: sender, message, receiver[, extra reply flags[, receiver ID]]. The
+# receiver's name goes into the reply command as --from, so it works even where
+# TMUX_PANE is wrong; $4 adds flags such as --any when the two aren't connected.
 # Both end with an [end of ...] line: text outside the markers in the same
 # prompt was typed by the user (a draft can get submitted along with it).
 request_body() {
-  # shellcheck disable=SC2016
-  printf '[request from %s to %s via tmux-ask]\n%s\n\n(You are %s. When done, a short reply can use: tmux-ask --from %s%s --reply %s "answer"; for a longer reply, use --message-file with a unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/<ME>/, then remove it after sending or keep it for retry.)\n[end of request from %s to %s]' "$1" "$3" "$2" "$3" "$3" "${4:+ $4}" "$1" "$1" "$3"
+  local reply_command receiver_kind
+  receiver_kind="$(request_receiver_kind "${5:-}")"
+  case "$receiver_kind" in
+    claude)
+      reply_command="$(printf 'reply with:\ntmux-ask --from %s%s --reply %s <<'\''MSG'\''\n<your reply>\nMSG' "$3" "${4:+ $4}" "$1")"
+      ;;
+    codex)
+      # shellcheck disable=SC2016
+      reply_command="$(printf 'send a short reply with: tmux-ask --from %s%s --reply %s "answer"; for a longer reply, use --message-file with a unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/<ME>/, then remove it after sending or keep it for retry' "$3" "${4:+ $4}" "$1")"
+      ;;
+    *)
+      reply_command="$(printf 'send a short reply as a quoted argument: tmux-ask --from %s%s --reply %s "answer"' "$3" "${4:+ $4}" "$1")"
+      ;;
+  esac
+  printf '[request from %s to %s via tmux-ask]\n%s\n\n(You are %s. When done, %s.)\n[end of request from %s to %s]' "$1" "$3" "$2" "$3" "$reply_command" "$1" "$3"
 }
 
 reply_body() {
