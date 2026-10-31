@@ -50,22 +50,30 @@ for i in "${!targets[@]}"; do
   for j in "${!flags[@]}"; do
     mode="${expected[$i]}"
     body="$(request_body sender sample "${targets[$i]}" "${flags[$j]}" "$aid")"
+    last_lines="$(printf '%s\n' "$body" | tail -n 2)"
     check "${targets[$i]} resolves as $mode" test "$(kind_for "$aid")" = "$mode"
     command="tmux-ask --from ${targets[$i]}${flags[$j]:+ ${flags[$j]}} --reply sender"
     check "${targets[$i]} reply options ${flags[$j]:-none}" contains "$body" "$command"
     case "$mode" in
       claude)
+        expected_last_lines="$(printf 'MSG)\n[end of request from sender to claude]')"
+        check 'Claude trailer ends exactly at the heredoc wrapper' test "$last_lines" = "$expected_last_lines"
         check 'Claude gets quoted heredoc reply form' contains "$body" "${command} <<'MSG'"
         check 'Claude trailer includes reply placeholder' contains "$body" '<your reply>'
         if contains "$body" '--message-file'; then fail 'Claude trailer does not switch to message-file'; fi
         ;;
       codex)
+        # shellcheck disable=SC2016
+        expected_last_lines="$(printf '(You are %s. When done, send a short reply with: %s "answer"; for a longer reply, use --message-file with a unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/<ME>/, then remove it after sending or keep it for retry.)\n[end of request from sender to %s]' "${targets[$i]}" "$command" "${targets[$i]}")"
+        check 'Codex trailer last lines include final period before wrapper' test "$last_lines" = "$expected_last_lines"
         check 'Codex gets quoted-argument option' contains "$body" 'a short reply'
         # shellcheck disable=SC2016
         check 'Codex gets unique message-file guidance' contains "$body" 'unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/<ME>/'
         if contains "$body" "<<'MSG'"; then fail 'Codex trailer avoids heredoc'; fi
         ;;
       *)
+        expected_last_lines="$(printf '(You are %s. When done, send a short reply as a quoted argument: %s "answer".)\n[end of request from sender to %s]' "${targets[$i]}" "$command" "${targets[$i]}")"
+        check 'unknown trailer last lines include final period before wrapper' test "$last_lines" = "$expected_last_lines"
         check 'unknown executable gets quoted argv fallback' contains "$body" 'short reply as a quoted argument'
         if contains "$body" '--message-file' || contains "$body" "<<'MSG'"; then fail 'unknown trailer stays portable'; fi
         ;;
