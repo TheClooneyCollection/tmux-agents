@@ -121,10 +121,25 @@ model_status() {
   awk -F '|' -v c="$1" -v f="$2" '$1=="RESULT" && $2==c && $3==f { value=$4 } END { if (value) print value; else print "MISSING" }' "$3"
 }
 
+model_detail() {
+  awk -F '|' -v c="$1" -v f="$2" '
+    $1=="RESULT" && $2==c && $3==f {
+      value=$5
+      gsub(/[\t\r]/, " ", value)
+      if (length(value) > 180) value=substr(value, 1, 177) "..."
+    }
+    END {
+      if (value != "" && value != "-") print value
+      else if (value == "-") print "-"
+      else print "no RESULT detail emitted"
+    }
+  ' "$3"
+}
+
 wait_for_marker() {
   local file="$1" marker="$2" limit=$((SECONDS + 10))
   while [ $SECONDS -lt "$limit" ]; do
-    grep -Fq -- "$marker" "$file" 2>/dev/null && return 0
+    grep -Fqx -- "$marker" "$file" 2>/dev/null && return 0
     sleep 0.1
   done
   return 1
@@ -133,29 +148,42 @@ wait_for_marker() {
 spawn_effect() {
   local pane="$1" marker="$2" pane_id
   pane_id="$(tmux -L "$socket" list-panes -a -F '#{pane_id}|#{@agent}' | awk -F '|' -v n="$pane" '$2==n { print $1; exit }')"
-  [ -n "$pane_id" ] || return 1
-  grep -Fq -- "$marker" "$tmp/spawn.log" 2>/dev/null
+  if [ -z "$pane_id" ]; then
+    effect_detail="no pane named $pane"
+    return 1
+  fi
+  if grep -Fq -- "$marker" "$tmp/spawn.log" 2>/dev/null; then
+    effect_detail="pane $pane_id exists; task marker found"
+    return 0
+  fi
+  effect_detail="pane $pane_id exists; task marker missing"
+  return 1
 }
 
 report_effect() {
   local expected="$1"
-  awk -F '\t' -v e="$expected" '$1=="0" && index($2,e)>0 && $3==e { found=1 } END { exit !found }' "$tmp/report-effects.log" 2>/dev/null
+  if awk -F '\t' -v e="$expected" '$1=="0" && index($2,e)>0 && $3==e { found=1 } END { exit !found }' "$tmp/report-effects.log" 2>/dev/null; then
+    effect_detail="sender @activity matches expected text"
+    return 0
+  fi
+  effect_detail="sender @activity does not match expected text"
+  return 1
 }
 
 check_row() {
-  local command="$1" form="$2" model="$3" effect="$4" recommended="$5" outcome
+  local command="$1" form="$2" model="$3" effect="$4" recommended="$5" model_error="$6" effect_check="$7" outcome
   if [ "$model" = N/A ] && [ "$effect" = N/A ]; then
     outcome=N/A
   elif [ "$model" = OK ] && [ "$effect" = YES ]; then
     outcome=OK
   elif { [ "$model" = OK ] && [ "$effect" != YES ]; } || { [ "$model" = FAIL ] && [ "$effect" = YES ]; }; then
     outcome=MISMATCH
-    printf 'MISMATCH: %s/%s model=%s side-effect=%s\n' "$command" "$form" "$model" "$effect" >&2
+    printf 'MISMATCH: %s/%s model=%s side-effect=%s (model: %s; effect: %s)\n' "$command" "$form" "$model" "$effect" "$model_error" "$effect_check" >&2
     failed=1
   else
     outcome=FAIL
   fi
-  printf '%-20s %-20s %-8s %-12s %-10s\n' "$command" "$form" "$model" "$effect" "$outcome"
+  printf '%-20s %-20s %-8s %-8s %-10s model-error=%s; effect-check=%s\n' "$command" "$form" "$model" "$effect" "$outcome" "$model_error" "$effect_check"
   if [ "$recommended" = 1 ] && [ "$outcome" != OK ]; then failed=1; fi
   [ "$model" != MISSING ] || failed=1
 }
@@ -252,8 +280,8 @@ LAUNCH
     return 1
   fi
   awk '/^SURFACE\|/ { print "Tool surface: " substr($0, 9) }' "$result"
-  printf '%-20s %-20s %-8s %-12s %-10s\n' COMMAND FORM MODEL EFFECT RESULT
-  local failed=0 expected model form recommended pane_name effect
+  printf '%-20s %-20s %-8s %-8s %-10s %s\n' COMMAND FORM MODEL EFFECT RESULT 'MODEL ERROR / EFFECT CHECK'
+  local failed=0 expected model model_error form recommended pane_name effect
   for form in argv heredoc message-file escalated-heredoc; do
     case "$form" in
       argv) expected="$ask_argv" ;;
@@ -262,11 +290,17 @@ LAUNCH
       escalated-heredoc) expected="$ask_escalated" ;;
     esac
     model="$(model_status tmux-ask "$form" "$result")"
+    model_error="$(model_detail tmux-ask "$form" "$result")"
     effect=NO
-    wait_for_marker "$tmp/peer.log" "$expected" && effect=YES || true
+    if wait_for_marker "$tmp/peer.log" "$expected"; then
+      effect=YES
+      effect_detail='peer log contains the exact message text'
+    else
+      effect_detail='expected exact message text absent from peer log'
+    fi
     recommended=0
     case "$form" in argv|message-file|escalated-heredoc) recommended=1 ;; esac
-    check_row tmux-ask "$form" "$model" "$effect" "$recommended"
+    check_row tmux-ask "$form" "$model" "$effect" "$recommended" "$model_error" "$effect_detail"
   done
   for form in argv heredoc message-file escalated-heredoc; do
     case "$form" in
@@ -276,11 +310,12 @@ LAUNCH
       escalated-heredoc) expected="$spawn_escalated"; pane_name=probe-escalated ;;
     esac
     model="$(model_status tmux-spawn "$form" "$result")"
+    model_error="$(model_detail tmux-spawn "$form" "$result")"
     effect=NO
     if spawn_effect "$pane_name" "$expected"; then effect=YES; fi
     recommended=0
     case "$form" in argv|message-file|escalated-heredoc) recommended=1 ;; esac
-    check_row tmux-spawn "$form" "$model" "$effect" "$recommended"
+    check_row tmux-spawn "$form" "$model" "$effect" "$recommended" "$model_error" "$effect_detail"
   done
   for form in argv heredoc escalated-heredoc; do
     case "$form" in
@@ -289,14 +324,16 @@ LAUNCH
       escalated-heredoc) expected="probe-report-escalated-$p" ;;
     esac
     model="$(model_status tmux-agent-report "$form" "$result")"
+    model_error="$(model_detail tmux-agent-report "$form" "$result")"
     effect=NO
-    report_effect "$expected" && effect=YES || true
+    if report_effect "$expected"; then effect=YES; fi
     recommended=0
     case "$form" in argv|escalated-heredoc) recommended=1 ;; esac
-    check_row tmux-agent-report "$form" "$model" "$effect" "$recommended"
+    check_row tmux-agent-report "$form" "$model" "$effect" "$recommended" "$model_error" "$effect_detail"
   done
   model="$(model_status tmux-agent-report message-file "$result")"
-  check_row tmux-agent-report message-file "$model" N/A 0
+  model_error="$(model_detail tmux-agent-report message-file "$result")"
+  check_row tmux-agent-report message-file "$model" N/A 0 "$model_error" 'unsupported by command'
   [ "$status" = 0 ] || { printf 'Codex exec exited with status %s\n' "$status" >&2; failed=1; }
   grep -q '^SURFACE|' "$result" || { echo 'FAILED: missing tool surface'; failed=1; }
   return "$failed"
