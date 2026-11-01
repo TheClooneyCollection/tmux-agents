@@ -15,9 +15,9 @@ Names follow `<kind>-<project>-<role>`, e.g. `claude-~-main`, `claude-~-secondar
 
 ## Roles
 
-- **Main agent** (the agent the user started). The agent that receives "start the chain" is the main agent. It talks to the user and the other agents: it clarifies intent, turns it into self-contained tasks and relays the user's decisions. It doesn't investigate or implement.
-- **Secondary**. Coordinates the worker and owns the main checkout. It merges the worker's commits, runs the project's steps (importers, backups, server relaunches, tests) and records decisions in docs. Anything that needs a user decision goes to the main agent, not to the user.
-- **Worker** (plus its own sub agents). The main implementer. By default it splits a task with independent parts across its own sub agents (`tmux-spawn`), one per part by file ownership, after agreeing the interfaces between them, then integrates and runs the full checks itself. It works alone only on short, strictly sequential or same-file tasks, and says why.
+- **Main agent** (the agent the user started). The agent that receives "start the chain" is the main agent. It talks to the user and the other agents: it clarifies intent, reviews plans with the user when present, and relays decisions. It doesn't investigate or implement.
+- **Secondary**. Coordinates the worker and owns the main checkout. Small or fully specified tasks go straight to the worker. For open design questions or concerns, it makes the sole exception to its no-spawn role: it spawns a dedicated design agent with `tmux-spawn`. The design agent's default is the smallest plan that solves only confirmed problems. After approval, the secondary hands the agreed plan to the worker. It merges the worker's commits, runs the project's steps (importers, backups, server relaunches, tests) and records decisions in docs.
+- **Worker** (plus its own sub agents). Implements the agreed plan and investigates only its requirements and details. By default it splits independent implementation parts across its own sub agents (`tmux-spawn`), one per part by file ownership, after agreeing the interfaces between them, then integrates and runs the full checks itself. It works alone only on short, strictly sequential or same-file tasks, and says why. Findings go to the secondary; neither the worker nor its agents redesign the plan. If the plan proves unworkable, the worker stops and reports that to the secondary.
 
 ## Choosing agents
 
@@ -89,6 +89,8 @@ The secondary and worker are long-lived members: they stay out of the default su
 `tmux-dismiss --from <me> <secondary>` closes the secondary, the worker and the worker's sub agents. Claude/Codex members with resumable conversations can be reopened with `tmux-spawn --resume <name> --from <me>`, preserving membership. Existing chains keep their sub-agent status until restarted; there is no conversion command.
 
 ## Messages
+
+- For an open design question, the design agent sends its plan to the main. When the user is present, the main briefly walks them through it and relays their approval; when the user is away, the chain decides and records the decision in the away log. Only after approval does the secondary send the agreed plan to the worker. If implementation shows the plan does not work, the worker stops and reports to the secondary, which decides whether to return to design.
 
 In Codex code mode, `exec_command` remains a shell tool. Prefer quoted arguments or `--message-file` to heredocs for the briefs above. Run one tmux command per tool call, with file preparation and cleanup in separate calls; if socket permission denial persists, retry only the failed command with narrow escalation as described in the tmux-agents skill.
 
