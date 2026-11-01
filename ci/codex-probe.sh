@@ -196,6 +196,7 @@ run_profile() {
   case "$p" in *[!a-zA-Z0-9_-]*) die "unsafe profile name: $p" ;; esac
   name="codex-probe-$p"; prompt="$tmp/$p.prompt"; result="$tmp/$p.result"
   events="$tmp/$p.events"; done_file="$tmp/$p.done"; launch="$tmp/$p.launch"
+  mkdir -p "$tmp/state/$p"
   ask_argv="probe-ask-argv-$p"; ask_heredoc="probe-ask-heredoc-$p"; ask_escalated="probe-ask-escalated-$p"; ask_file='probe ask file'
   spawn_argv="probe-spawn-argv-$p"; spawn_heredoc="probe-spawn-heredoc-$p"; spawn_escalated="probe-spawn-escalated-$p"; spawn_file='probe spawn file'
   : > "$tmp/peer.log"
@@ -240,7 +241,7 @@ PROMPT
 set +e
 export CODEX_HOME=$(quote "$home")
 export TMUX_AGENTS_CODEX_HOMES=$(quote "$p=$home")
-export XDG_STATE_HOME=$(quote "$tmp/state")
+export XDG_STATE_HOME=$(quote "$tmp/state/$p")
 export PATH=$(quote "$probe_path")
 unset TMUX_SPAWN_BIN
 if [ -n $(quote "$model") ]; then
