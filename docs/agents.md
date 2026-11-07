@@ -36,19 +36,17 @@ For example, replace `my-agent`, `ME` and `PEER` with the executable, sender nam
 tmux-spawn my-agent --from ME --name review
 ```
 
-Inspect its pane or preview to confirm the input prompt is ready. Then send the work:
+Inspect its pane or preview to confirm the input prompt is ready. Then send the work as a quoted heredoc:
 
 ```sh
-message_dir="${TMPDIR:-/tmp}/tmux-agents/$ME"
-mkdir -p "$message_dir"
-brief_file="$(mktemp "$message_dir/brief.XXXXXX")"
-# write the review brief to "$brief_file"; remove after a successful send
-tmux-ask --from ME PEER --message-file "$brief_file"
+tmux-ask --from ME PEER <<'MSG'
+Review the specified work. Include findings and tests run.
+MSG
 ```
 
-Put the concrete goal, paths and constraints in the file. `--message-file` reads a literal message from one readable regular file up to 1 MiB; symlinks are rejected, positional text cannot be combined with it, and stdin is ignored. Create each message file with `mktemp` under `${TMPDIR:-/tmp}/tmux-agents/$ME/` so agents sharing a working directory cannot overwrite one another or dirty the project; remove it after a successful send or keep the unique file for a retry. Do not assume that the agent can load the tmux-agents or agent-chain skill. The message envelope supplies the sender, receiver and reply command; the agent still needs shell access and permission to execute that command. Use explicit `--from` for its replies and later commands because generic identity pinning is not guaranteed.
-
 For Codex and configured profiles, try a heredoc first. If it fails with a tmux socket permission error, retry that same command with narrow escalation and a short justification. Use `--message-file`, or a quoted argument for a short message, only if escalation is unavailable or denied. In code mode, `exec_command` is still a shell tool; make one tmux command per tool call.
+
+If escalation is unavailable or denied, use `--message-file PATH`: it sends literal text from one readable regular file (not a symlink) up to 1 MiB; positional text conflicts with it and stdin is ignored. Create a unique file under `${TMPDIR:-/tmp}/tmux-agents/$ME/` and remove it after a successful send, or keep it for retry. Do not assume that the agent can load the tmux-agents or agent-chain skill. The message envelope supplies the sender, receiver and reply command; the agent still needs shell access and permission to execute that command. Use explicit `--from` for its replies and later commands because generic identity pinning is not guaranteed.
 
 Normal queue rules still apply after you send: `queued` means the message is retained, so do not send it again. That differs from a spawn task reported as not sent. Use `tmux-ask --pending` to inspect undelivered messages. Closing an unsupported conversation does not make it resumable; a new launch is a new conversation.
 

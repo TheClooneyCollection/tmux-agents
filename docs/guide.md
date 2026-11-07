@@ -95,21 +95,19 @@ Borders show `name ⇄ peers`. Links are one-to-one: A↔B and B↔C do not link
 
 Use `tmux-ask --from ME PEER "task"` for requests, `--reply` for answers and `--notice` for information needing no work or reply. Requests include reply instructions; the sender ends its turn and receives the answer later. A request saying “no reply needed” still starts work and makes the sender await a reply. Replies do not invite another reply.
 
-For a message already saved in a file, use `--message-file`:
+For a multi-line request, use a quoted heredoc:
 
 ```sh
-message_dir="${TMPDIR:-/tmp}/tmux-agents/$ME"
-mkdir -p "$message_dir"
-message_file="$(mktemp "$message_dir/message.XXXXXX")"
-# write the request to "$message_file"; remove after a successful send
-tmux-ask --from ME PEER --message-file "$message_file"
+tmux-ask --from ME PEER <<'MSG'
+Write the request here.
+MSG
 ```
-
-The file must be one readable regular file, not a symlink, and at most 1 MiB. Its literal text is sent unchanged; empty files use the usual empty-message validation. The option conflicts with positional message text and ignores stdin without reading it.
 
 Reply instructions follow the receiving agent: Claude and Codex, including configured profiles, start with the supplied quoted heredoc form. Unknown executables receive quoted plain argv for portability. These forms leave request IDs and matching unchanged; preserve the supplied sender, target, `--request-id` and `--any` when present.
 
 In Codex code mode, `exec_command` is still a shell tool: wrapping it in JavaScript does not bypass shell parsing or sandbox permissions. Try the supplied heredoc first, with one tmux command per tool call. If it fails with a tmux socket permission error, retry that same command with narrowly escalated permissions and a short justification. Only if escalation is unavailable or denied, use `--message-file` or a quoted argument for a short reply. Create or clean up message files in separate calls, without command chains or pipes; substitute the file's actual path if variables do not persist across calls.
+
+If escalation is unavailable or denied, `--message-file PATH` is the file fallback. It reads literal text from one readable regular file (not a symlink), up to 1 MiB; empty content uses normal empty-message validation, positional text conflicts with it, and stdin is ignored. Create a unique file with `mktemp` under `${TMPDIR:-/tmp}/tmux-agents/ME/`; remove it after a successful send or keep it for retry.
 
 Each request has its own ID. Use the supplied reply command, including `--request-id RID`: `tmux-ask --from ME --reply --request-id RID PEER "answer"`. This completes that request even when PEER is not your parent. With the older `--reply PEER` form, a single pending request between the pair is matched automatically; several pending requests are refused with their IDs so you can select the one answered. Legacy messages without tracking remain compatible but cannot complete unrelated tracked requests. Queuing, retry, reopening and renaming preserve request association.
 
@@ -127,15 +125,15 @@ Agents use `tmux-spawn` instead of built-in sub agents so each helper has a real
 tmux-spawn --from ME --name auth-review "Review src/auth.ts"
 ```
 
-For a task already saved in a file, use `--message-file`:
+For a multi-line sub-agent task, use a quoted heredoc:
 
 ```sh
-task_file="$(mktemp "$message_dir/task.XXXXXX")"
-# write the task to "$task_file"; remove after successful delivery
-tmux-spawn --from ME --name auth-review --message-file "$task_file"
+tmux-spawn --from ME --name auth-review <<'MSG'
+Review the authentication flow and report findings and tests run.
+MSG
 ```
 
-`--message-file` accepts one readable regular file (not a symlink), up to 1 MiB, and sends its literal text. Empty content follows normal no-task behavior. It conflicts with positional task text and ignores stdin without reading it; it cannot be combined with `--resume` or `--list-closed`. Use a unique `mktemp` file under `${TMPDIR:-/tmp}/tmux-agents/$ME/` for each message so agents sharing a working directory cannot overwrite one another or dirty the project. Remove the file after a successful send, or keep its unique path for a retry.
+If the Codex heredoc fails with a tmux permission/socket error, retry the same command with narrow escalation. Use `--message-file` only if escalation is unavailable or denied; its rules are above. It is for new agents, not `--resume` or `--list-closed`.
 
 ### Start a helper
 
@@ -264,8 +262,8 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 
 | Command | What it reads | Agent message file? |
 | --- | --- | --- |
-| `tmux-ask` | User-authored message body when no positional text is supplied. | Yes. Use `--message-file` for saved text. |
-| `tmux-spawn` | User-authored task/brief when no positional task is supplied. | Yes. Use `--message-file` for saved text; other executables still need manual `tmux-ask` delivery. |
+| `tmux-ask` | User-authored message body when no positional text is supplied. | Yes. Use a heredoc for multi-line text; `--message-file` is the Codex fallback described above. |
+| `tmux-spawn` | User-authored task/brief when no positional task is supplied. | Yes. Use a heredoc for multi-line text; `--message-file` is the Codex fallback described above. Other executables still need manual `tmux-ask` delivery. |
 | `tmux-agent-report` | Hook payloads, including Claude hook JSON and progress/notification protocol data. | No. This is protocol input, not a user message. |
 | `tmux-connect` | Interactive numeric selection and key input. Other reads are generated row pipelines. | No. This is interaction, not a message body. |
 | `tmux-dismiss` | Confirmation is read from `/dev/tty`, not caller stdin. | No. |
