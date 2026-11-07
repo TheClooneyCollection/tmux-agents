@@ -64,12 +64,11 @@ for i in "${!targets[@]}"; do
         ;;
       codex)
         # shellcheck disable=SC2016
-        expected_last_lines="$(printf '(You are %s. When done, send a short reply with: %s "answer"; for a longer reply, use --message-file with a unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/<ME>/, then remove it after sending or keep it for retry.)\n[end of request from sender to %s]' "${targets[$i]}" "$command" "${targets[$i]}")"
-        check 'Codex trailer last lines include final period before wrapper' test "$last_lines" = "$expected_last_lines"
-        check 'Codex gets quoted-argument option' contains "$body" 'a short reply'
-        # shellcheck disable=SC2016
-        check 'Codex gets unique message-file guidance' contains "$body" 'unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/<ME>/'
-        if contains "$body" "<<'MSG'"; then fail 'Codex trailer avoids heredoc'; fi
+        codex_last_lines="$(printf '%s\n' "$body" | tail -n 5)"
+        expected_last_lines="$(printf '%s <<'\''MSG'\''\n<your reply>\nMSG\nIf it fails with a tmux permission/socket error, retry the same command with narrow escalation; only if escalation is unavailable or denied, use --message-file or a quoted short argument.)\n[end of request from sender to %s]' "$command" "${targets[$i]}")"
+        check 'Codex trailer ends with heredoc and escalation fallback' test "$codex_last_lines" = "$expected_last_lines"
+        check 'Codex trailer has exact heredoc reply command' contains "$body" "${command} <<'MSG'"
+        check 'Codex trailer gives escalation before file/argv fallback' contains "$body" 'only if escalation is unavailable or denied, use --message-file or a quoted short argument'
         ;;
       *)
         expected_last_lines="$(printf '(You are %s. When done, send a short reply as a quoted argument: %s "answer".)\n[end of request from sender to %s]' "${targets[$i]}" "$command" "${targets[$i]}")"
