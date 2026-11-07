@@ -207,7 +207,7 @@ run_profile() {
   cat > "$prompt" <<PROMPT
 Private tmux Codex probe only. Do not inspect or modify other files, call external agents, or message outside this server. Run one command per tool call. Record actual outcomes; no retries except the explicitly escalated-heredoc rows. Do not chain or pipe tmux commands.
 First emit SURFACE| followed by actual exposed shell tool names (direct shell or functions.exec/tools.exec_command).
-Use these exact form keys: argv, heredoc, message-file, escalated-heredoc. After each test emit RESULT|COMMAND|FORM|OK|-. On failure use RESULT|COMMAND|FORM|FAIL|short error without pipes. Do not rename or qualify a form key. Plain argv, message-file where supported, and escalated-heredoc fallbacks are recommended and must pass. Unescalated heredocs are diagnostic only.
+Use these exact form keys: argv, heredoc, message-file, escalated-heredoc. After each test emit RESULT|COMMAND|FORM|OK|-. On failure use RESULT|COMMAND|FORM|FAIL|short error without pipes. Do not rename or qualify a form key. Plain argv, message-file where supported, and escalated-heredoc are recommended and must pass. Unescalated heredocs are diagnostic only.
 Sender is $name, receiver codex-probe-peer.
 The parent independently checks the private receiver log, spawned panes and tasks, and activity options. Results are not accepted on self-report alone.
 Record these exact tmux-ask rows after the matching commands: RESULT|tmux-ask|argv|..., RESULT|tmux-ask|heredoc|..., RESULT|tmux-ask|message-file|..., RESULT|tmux-ask|escalated-heredoc|...

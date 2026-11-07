@@ -56,25 +56,24 @@ The main keeps its agent's permission defaults. Spawned Claude/Codex members def
 
 `<me>` is your current name (`tmux-peers` shows it). The skill-loading briefs below are for Claude/Codex. For other executables, follow the manual task delivery rules above: no supplied spawn brief is sent to the new agent, and an unknown recipient must not be told to load this skill.
 
-The spawn commands below use `--message-file` to keep each role brief in a file. The file must be one readable regular file, not a symlink, and at most 1 MiB; its literal text is sent. Empty content follows normal no-task behavior. This option conflicts with positional task text; stdin is ignored. It cannot be combined with `--resume` or `--list-closed`. Create each message file with `mktemp` under `${TMPDIR:-/tmp}/tmux-agents/$ME/` so agents sharing a working directory cannot overwrite one another or dirty the project; remove it after successful delivery or keep it for a retry.
+Send the role briefs as quoted heredocs. Codex tries the heredoc first, retries the same command with narrow escalation after a tmux permission/socket error, and uses `--message-file` only if escalation is unavailable or denied. See the tmux-agents skill for the file fallback rules. Run one tmux command per tool call.
 
 1. `tmux-rename --from <me> <me> main` renames you to `<kind>-<project>-main`. Use the new name as `<me>` from then on.
 2. Spawn the resolved secondary to your right; use its printed full name as `<secondary>`:
 
    ```sh
-   message_dir="${TMPDIR:-/tmp}/tmux-agents/$ME"
-   mkdir -p "$message_dir"
-   secondary_brief="$(mktemp "$message_dir/secondary.XXXXXX")"
-   # write the brief to "$secondary_brief"; remove after successful delivery
-   tmux-spawn <secondary agent> --from <me> --member --split <me> --right --name secondary --message-file "$secondary_brief"
+   tmux-spawn <secondary agent> --from <me> --member --split <me> --right --name secondary <<'MSG'
+   You are the secondary in the agent chain. Main: <me>.
+   Current goal: <goal>
+   MSG
    ```
 
 3. Spawn the worker for the secondary, below it:
 
    ```sh
-   worker_brief="$(mktemp "$message_dir/worker.XXXXXX")"
-   # write the brief to "$worker_brief"; remove after successful delivery
-   tmux-spawn <worker agent> --from <me> --member --for <secondary> --split <secondary> --below --name worker --message-file "$worker_brief"
+   tmux-spawn <worker agent> --from <me> --member --for <secondary> --split <secondary> --below --name worker <<'MSG'
+   <Brief for the secondary: the worker's role and its first goal.>
+   MSG
    ```
 
    The worker becomes the secondary's long-lived member, connected to the secondary only (not to you), and starts without a task. The secondary gets the brief, introduces itself to the worker (including that it is the worker in the agent chain and splits independent parts across sub agents by default) and sends the first task.
@@ -92,10 +91,10 @@ The secondary and worker are long-lived members: they stay out of the default su
 
 - For an open design question, the design agent replies with its plan to the secondary, which sends it to the main for review. When the user is present, the main briefly walks them through it and relays their approval; when the user is away, the chain decides and records the decision in the away log. Only after approval does the secondary send the agreed plan to the worker. If implementation shows the plan does not work, the worker stops and reports to the secondary, which decides whether to return to design.
 
-In Codex code mode, `exec_command` remains a shell tool. Prefer quoted arguments or `--message-file` to heredocs for the briefs above. Run one tmux command per tool call, with file preparation and cleanup in separate calls; if socket permission denial persists, retry only the failed command with narrow escalation as described in the tmux-agents skill.
+In Codex code mode, `exec_command` remains a shell tool. Try a heredoc for the brief first. If it fails with a tmux socket permission error, retry that same command with narrow escalation and a short justification. Only if escalation is unavailable or denied, use `--message-file` or a quoted argument for a short brief. Run one tmux command per tool call, with file preparation and cleanup in separate calls.
 
 - A direct user request handled within one turn needs no local report. When the main will keep working on a direct user request past the current turn, including repeated identical tasks, it runs `tmux-agent-report --from <me> --local "<what you are doing>"` at the beginning; when that local task is complete, it runs `tmux-agent-report --from <me> --local-done` without trailing text. Other requests and waits remain active. Follow the tmux-agents skill's `--local` rule to reset notification deduplication when identical input cannot identify a new turn. Codex has no turn-start hook, so its turn-end notify cannot protect work before that notification. Use ordinary progress reports inside peer requests and explicit `--waiting` for background waits, following the tmux-agents skill.
-- Everything goes through `tmux-ask`. Answer each request with its supplied `--request-id`, following the tmux-agents skill's reply forms: supplied quoted heredocs for Claude, quoted short arguments or a unique `mktemp` / `--message-file` for Codex and its profiles, and quoted plain argv for unknown executables. ID handling and the rules for older ambiguous replies are unchanged. A reply completes that request, including from a nonparent; other requests and work remain active. Long reports go in a file; the message is a short summary plus the path.
+- Everything goes through `tmux-ask`. Answer each request with its supplied `--request-id`, following the tmux-agents skill's reply forms: quoted heredocs for Claude and Codex profiles, with Codex using narrow escalation after a tmux permission/socket error and `--message-file` or quoted short text only if escalation is unavailable or denied; quoted plain argv for unknown executables. ID handling and the rules for older ambiguous replies are unchanged. A reply completes that request, including from a nonparent; other requests and work remain active. Long reports go in a file; the message is a short summary plus the path.
 - The user reads the secondary's messages to the main agent directly, so the main agent doesn't restate them; it brings up a decision as a one-line summary plus options.
 - Send FYIs as notices (`tmux-ask --notice`), not requests: a request makes the receiver work again and the sender wait for a reply, even if it says "no reply needed". A decision request states the default and what is blocked meanwhile.
 - Reply as soon as a request's main work is done (e.g. the release is out). Don't hold the reply for follow-ups such as a deploy going live; send those later as notices. For a request with several parts, send a notice as each part lands.

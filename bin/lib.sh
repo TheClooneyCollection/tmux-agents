@@ -359,7 +359,7 @@ request_body() {
       ;;
     codex)
       # shellcheck disable=SC2016
-      reply_command="$(printf 'send a short reply with: tmux-ask --from %s%s --reply %s "answer"; for a longer reply, use --message-file with a unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/<ME>/, then remove it after sending or keep it for retry.' "$3" "${4:+ $4}" "$1")"
+      reply_command="$(printf 'reply with:\ntmux-ask --from %s%s --reply %s <<'\''MSG'\''\n<your reply>\nMSG\nIf it fails with a tmux permission/socket error, retry the same command with narrow escalation; only if escalation is unavailable or denied, use --message-file or a quoted short argument.' "$3" "${4:+ $4}" "$1")"
       ;;
     *)
       reply_command="$(printf 'send a short reply as a quoted argument: tmux-ask --from %s%s --reply %s "answer".' "$3" "${4:+ $4}" "$1")"
