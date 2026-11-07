@@ -8,27 +8,36 @@ settings_get MAX_DEPTH TMUX_AGENTS_MAX_DEPTH @tmux_agents_max_depth 2
 
 usage() {
   cat <<'EOF'
-usage: tmux-spawn [AGENT] [--from ME] [--name NAME] [--exact] [task...]
+usage: tmux-spawn [AGENT] [options...] [task...]
+       tmux-spawn [AGENT] [options] -- ARGS...
        tmux-spawn [AGENT] [--message-file PATH] [options...]
-       tmux-spawn [AGENT] --for OWNER [--from ME] [--name NAME] [--exact] [brief...]
-       tmux-spawn [AGENT] --split PANE [--right | --below] [--size N%] [task...]
+       tmux-spawn [AGENT] [options...] --for OWNER [brief...]
+       tmux-spawn [AGENT] [options...] --split PANE [--right | --below] [--size N%]
        tmux-spawn --resume NAME | --resume-id ID [--from ME | --parent NAME]
        tmux-spawn --list-closed
 
 By default, starts a sub agent in its own window of the project's hidden session
 (agents-<project>), names it, connects it to this pane, and hands it
-the task (arguments, stdin if none, or --message-file) as a tmux-ask request. It
-replies with tmux-ask --reply when done. The agent defaults to the
+the task (positional text, stdin if none, or --message-file) as a tmux-ask
+request. It replies with tmux-ask --reply when done. The agent defaults to the
 same kind as the caller, in auto mode (Claude --permission-mode auto,
 Codex approvals_reviewer=auto_review). Set @tmux_agents_sub_auto or
 TMUX_AGENTS_SUB_AUTO to off to keep the agent's permission defaults.
 Other executable command names on PATH are accepted without agent-specific
 flags or an initial task; send their first task with tmux-ask at their prompt.
+Every word after -- is an agent argument; -- no longer introduces task text.
+Task text keeps its positional, stdin and --message-file forms. To combine a
+task with agent args, supply the task on stdin or with --message-file. A lone
+multi-word value after -- warns because it may be old task text; arbitrary
+arguments cannot be reliably distinguished from task text.
 
   --from ME     your own name (needed where $TMUX_PANE is wrong, e.g. Codex)
   --message-file PATH read literal text from one regular file (max 1 MiB; no symlinks);
                        conflicts with positional task text; stdin is ignored;
                        only for new agents, not --resume or --list-closed
+  -- ARGS...     pass every remaining argument unchanged to the agent, after
+                tmux-spawn's own flags; on resume, saved args come first
+                and any new args are appended and saved too
   --name NAME   short task name, e.g. auth-review, becomes <agent>-<dir>-NAME;
                 an existing prefix is kept; clashes add -2, -3...
                 profiles use codex as <agent>, home uses ~ as <dir>
@@ -71,12 +80,39 @@ Test hook: TMUX_SPAWN_BIN puts a directory first on the agent's PATH.
 EOF
 }
 
+encode_agent_args() {
+  [ "$#" -gt 0 ] || return 0
+  /usr/bin/perl -MMIME::Base64=encode_base64 -e \
+    'print encode_base64(join("\0", @ARGV) . "\0", "")' -- "$@"
+}
+
+decode_agent_args() {
+  local encoded="$1" arg
+  agent_args=()
+  [ -n "$encoded" ] || return 0
+  while IFS= read -r -d '' arg; do agent_args+=("$arg"); done < <(
+    /usr/bin/perl -MMIME::Base64=decode_base64 -e 'print decode_base64($ARGV[0])' -- "$encoded"
+  )
+}
+
+# tmux runs this command string through a shell. Quote every positional word
+# once so spaces, empty values, quotes and shell metacharacters stay literal.
+quote_command() {
+  local command="" arg quoted quote_escape="'\\''"
+  for arg in "$@"; do
+    quoted="${arg//\'/$quote_escape}"
+    command="$command '$quoted'"
+  done
+  printf '%s' "$command"
+}
+
 resolve_codex_homes codex_homes
 
 # Inside the new pane: start the agent with the task as its first prompt.
 if [ "${1:-}" = "--run" ]; then
   launch_env_snapshot
   agent="$2" file="$3" sid="${4:-}" mode="${5:-new}"
+  decode_agent_args "${9:-}"
   # Forward launch-only values privately: tmux -e public exports would become
   # part of the returned shell's baseline, including absent chain overrides.
   export TMUX_AGENTS_DEPTH="${TMUX_SPAWN_DEPTH:-0}"
@@ -140,6 +176,7 @@ if [ "${1:-}" = "--run" ]; then
   if [ -n "${7:-}" ]; then request_state delivered "$7" || true; fi
   if [ "$mode" = resume ]; then request_state restore "$TMUX_PANE"; fi
   build_agent_command "$agent" spawn "$sid" "$mode"
+  agent_command+=( ${agent_args[@]+"${agent_args[@]}"} )
   if [ "$split_exit" = shell ]; then
     status=0
     if [ -n "$prompt" ]; then "${agent_command[@]}" "$prompt" || status=$?
@@ -150,6 +187,8 @@ if [ "${1:-}" = "--run" ]; then
 fi
 
 agent="" name="" task="" message_file="" FROM_PANE="" resume="" resume_id="" list_closed=0 parent_name="" for_name=""
+agent_args=() requested_agent_args=() agent_args_given=0 args_separator=0
+agent_args_encoded=""
 task_arg_given=0
 exact=0 name_given=0 member=0
 split_target="" split_pane="" split_direction="" split_size="50%" split_options=0
@@ -189,16 +228,23 @@ while [ $# -gt 0 ]; do
     --size)
       [ -n "${2:-}" ] || die "--size needs a percentage (1% to 99%)"
       split_size="$2"; split_options=1; shift 2 ;;
-    --) shift; [ "$#" -eq 0 ] || task_arg_given=1; task="$*"; break ;;
+    --)
+      args_separator=1
+      agent_args_given=1
+      shift
+      agent_args=("$@")
+      break ;;
     -*) usage >&2; exit 1 ;;
     *) task_arg_given=1; task="$*"; break ;;
   esac
 done
 [ -z "$message_file" ] || [ "$task_arg_given" -eq 0 ] || die "--message-file conflicts with positional task text"
 [ -z "$message_file" ] || { [ -z "$resume$resume_id" ] && [ "$list_closed" -eq 0 ]; } || die "--message-file is only for a new sub agent"
+requested_agent_args=( ${agent_args[@]+"${agent_args[@]}"} )
 if [ -n "$message_file" ]; then
   read_message_file task "$message_file"
 fi
+[ "$list_closed" -eq 0 ] || [ "$agent_args_given" -eq 0 ] || die "--list-closed does not start an agent and cannot take agent arguments"
 [ -z "$resume$resume_id" ] || [ "$member" -eq 0 ] || die "--resume restores membership from its record; --member is only for new agents"
 [ -z "$resume" ] || [ -z "$resume_id" ] || die "choose --resume or --resume-id"
 [ -z "$resume$resume_id" ] || { [ "$name_given" -eq 0 ] && [ "$exact" -eq 0 ]; } || die "--resume keeps its recorded name; --name and --exact are only for new sub agents"
@@ -208,6 +254,17 @@ fi
 size_re='^([1-9]|[1-9][0-9])%$'
 [[ $split_size =~ $size_re ]] || die "--size must be a percentage from 1% to 99%"
 [ -n "$message_file" ] || { [ "$list_closed" -eq 1 ] || [ -n "$resume$resume_id" ] || [ -n "$task" ] || [ -t 0 ] || task="$(cat)"; }
+
+# A single multi-word positional value after `--` was a common old task form.
+# It is still passed through unchanged, but warn that it now reaches the agent.
+if [ "$args_separator" -eq 1 ] && [ -z "$task" ] && [ -z "$message_file" ] &&
+   [ "${#agent_args[@]}" -eq 1 ]; then
+  case "${agent_args[0]}" in
+    -*) ;;
+    *[[:space:]]*)
+      printf '%s\n' "tmux-spawn: warning: arguments after -- go to the agent; this looks like old task text. Supply task text separately as positional text, stdin or --message-file." >&2 ;;
+  esac
+fi
 
 sub_exit=""
 settings_get sub_exit TMUX_AGENTS_SUB_EXIT @tmux_agents_sub_exit shell
@@ -311,6 +368,14 @@ if [ -n "$resume$resume_id" ]; then
   closed_record "$resume_id" || die "'$resume_id' has no closed record or is still open"
   member=0
   [ "$(record_get "$resume_id" member)" != 1 ] || member=1
+  saved_agent_args_encoded="$(record_get "$resume_id" cli_args)"
+  if [ "$agent_args_given" -eq 1 ]; then
+    decode_agent_args "$saved_agent_args_encoded"
+    agent_args+=( ${requested_agent_args[@]+"${requested_agent_args[@]}"} )
+    agent_args_encoded="$(encode_agent_args ${agent_args[@]+"${agent_args[@]}"})"
+  else
+    agent_args_encoded="$saved_agent_args_encoded"
+  fi
   resume="$(record_get "$resume_id" name)"
   kind="$(record_get "$resume_id" kind)" sid="$(record_get "$resume_id" id)"
   full_agent_kind "$kind" || die "cannot resume '$resume': no conversation adapter for '$kind'"
@@ -333,8 +398,12 @@ if [ -n "$resume$resume_id" ]; then
   fi
   [ -z "$parent" ] || require_agent_pane "$parent"
   resume="$(unique_name "$resume")"
+  if [ "$agent_args_given" -eq 1 ] && [ -n "$agent_args_encoded" ]; then
+    record_set "$resume_id" cli_args "$agent_args_encoded"
+  fi
+  run_command="$(quote_command "$here/tmux-spawn" --run "$kind" '' "$sid" resume "$resume_id" '' '' "$agent_args_encoded")"
   pane="$(open_window "$(agents_session_for "$dir")" "$dir" "$resume" \
-    "'$here/tmux-spawn' --run '$kind' '' '$sid' resume '$resume_id'" "${rdepth:-1}")"
+    "$run_command" "${rdepth:-1}")"
   ensure_agent_id "$pane" "$resume_id" >/dev/null
   adopt "$pane" "$parent" "$resume"
   [ "$kind" = claude ] || tmux set-option -p -t "$pane" @codex_thread "$sid"
@@ -437,6 +506,7 @@ if ! full_agent_kind "$agent" && [ -n "$task" ]; then manual_task=1; task=""; fi
 agent_id="$(new_agent_id)"
 spawn_request_id=""
 [ -z "$task" ] || spawn_request_id="$(new_request_id)"
+agent_args_encoded="$(encode_agent_args ${agent_args[@]+"${agent_args[@]}"})"
 
 # Hand the prompt over in a file, so no shell ever has to quote it.
 file="$(mktemp "${TMPDIR:-/tmp}/tmux-spawn.XXXXXX")"
@@ -462,6 +532,7 @@ record_set "$agent_id" parent "$(ensure_agent_id "$owner")"
 record_set "$agent_id" parent_name "$owner_name"
 record_set "$agent_id" depth "$spawn_depth"
 [ "$member" -eq 0 ] || record_set "$agent_id" member 1
+[ -z "$agent_args_encoded" ] || record_set "$agent_id" cli_args "$agent_args_encoded"
 
 if [ -n "$spawn_request_id" ]; then
   request_state create "$spawn_request_id" "$(pane_agent_id "$self")" "$agent_id" spawn
@@ -472,7 +543,8 @@ if [ -n "$split_pane" ]; then
   if [ "$sub_exit" = shell ]; then
     split_gate="tmux-agents-split-$$-$RANDOM-$RANDOM"
   fi
-  if ! pane="$(open_split "$split_pane" "$cwd" "'$here/tmux-spawn' --run '$agent' '$file' '$sid' new '$agent_id' '$spawn_request_id' '$split_gate'" "$spawn_depth")"; then
+  run_command="$(quote_command "$here/tmux-spawn" --run "$agent" "$file" "$sid" new "$agent_id" "$spawn_request_id" "$split_gate" "$agent_args_encoded")"
+  if ! pane="$(open_split "$split_pane" "$cwd" "$run_command" "$spawn_depth")"; then
     [ -z "$spawn_request_id" ] || request_state cancel "$spawn_request_id"
     rm -f "$file"
     exit 1
@@ -485,7 +557,8 @@ if [ -n "$split_pane" ]; then
   adopt "$pane" "$owner" "$name" split
   location="in a visible split of $split_pane"
 else
-  if ! pane="$(open_window "$session" "$cwd" "$name" "'$here/tmux-spawn' --run '$agent' '$file' '$sid' new '$agent_id' '$spawn_request_id'" "$spawn_depth")"; then
+  run_command="$(quote_command "$here/tmux-spawn" --run "$agent" "$file" "$sid" new "$agent_id" "$spawn_request_id" '' "$agent_args_encoded")"
+  if ! pane="$(open_window "$session" "$cwd" "$name" "$run_command" "$spawn_depth")"; then
     [ -z "$spawn_request_id" ] || request_state cancel "$spawn_request_id"
     rm -f "$file"
     exit 1

@@ -66,6 +66,7 @@ A supplied spawn task is **not sent**. Read the printed result, retain the actua
 - `tmux-rename --from ME <agent> <new> [--exact]`: rename yourself or a descendant when asked; peers and unrelated agents are refused. Short names get the agent's command and directory prefix (e.g. `main` becomes `codex-~-main` at home); an existing matching prefix is kept. `--exact` uses the name verbatim. Use the resulting full name in every later `--from`; the old name stops resolving. The renamed agent and its peers receive notices. Plain `tmux-rename` is for the user.
 - `tmux-shell --from ME [--command CMD] [--client CLIENT] [--pane OPENER]`: open an owned shell or run a command (see Shell panes below).
 - `tmux-spawn [AGENT] --from ME --name <task-name> --message-file PATH`: start a sub agent with a saved brief (see below).
+- `tmux-spawn [AGENT] [options...] -- ARGS...`: pass CLI arguments through after tmux-agents' flags. The vector is saved and restored when you resume that sub agent. Task text keeps its positional, stdin and `--message-file` forms; use stdin or a message file when combining task text with agent args. A lone multi-word value after `--` warns because it may be old task text.
 
 The commands must be on PATH (tmux-agents' `install.sh` links them into `~/.local/bin`). Run one tmux command per tool call, separately from file creation and cleanup. Use the actual unique file path when shell variables do not persist across calls. Run each `tmux-*` command on its own, not chained with `&&`, `;` or pipes into it from other commands: permission rules match the start of the command, so a chained call may run sandboxed and fail with "can't reach the tmux server".
 - `tmux-connect --from ME <codex|claude|name|pane>`: connect to another agent, only when the user asks ("connect codex", "连接 claude", "talk to the codex next to you"). `codex` or `claude` always means the agent type: the one other pane **in this window** running it or named after it (`codex-...`); any other target is an exact name (this window first) or a pane id; unnamed panes, yours included, get names on the spot. If several panes match, it lists them: ask the user which, then pass that name. Then message it with `tmux-ask` as usual. A typical request like "connect codex and have it do xyz" is: `tmux-connect --from ME codex`, then `tmux-ask --from ME <its name> ...` with the task, then end your turn.
@@ -97,6 +98,13 @@ mkdir -p "$message_dir"
 message_file="$(mktemp "$message_dir/message.XXXXXX")"
 # write the task to "$message_file"; remove after a successful send
 tmux-spawn --from my-name --name auth-review --message-file "$message_file"
+```
+
+To select the agent's model, put its CLI option after `--`:
+
+```sh
+tmux-spawn claude --from ME --name auth-review -- --model claude-fable-5-1
+tmux-spawn codex --from ME --name auth-review -- --model MODEL
 ```
 
 The file must be a readable regular file, not a symlink, and at most 1 MiB; its literal text is sent. Empty content follows normal no-task behavior. The flag conflicts with positional task text and ignores stdin without reading it; it is unavailable with `--resume` or `--list-closed`.

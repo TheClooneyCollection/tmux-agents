@@ -6,7 +6,7 @@ Claude, Codex and configured Codex profiles have full integration today, with th
 
 `tmux-agents start AGENT`, `tmux-spawn [AGENT]`, chain role settings and `tmux-agents chain-config` accept `claude`, `codex`, configured Codex profiles and executable basenames on PATH. A configured profile takes precedence over a same-named executable. Supply a command name, not a path or a shell command string. `start chain` retains its special meaning as the chain launcher.
 
-For `tmux-spawn`, put the agent selector before options. A leading single word is validated as an agent selector; use the existing options-first task form for a bare task instead. `tmux-agents start AGENT -- ...` passes explicit agent arguments through unchanged. Other executables receive no injected initial prompt and no Claude/Codex flags. Validation by `chain-config` does not run the executable, and its role/value/source output is unchanged.
+For `tmux-spawn`, put the agent selector before options. A leading single word is validated as an agent selector; use the existing options-first task form for a bare task instead. `tmux-agents start AGENT -- ...` and `tmux-spawn AGENT [options] -- ARGS...` pass explicit agent arguments through unchanged; spawn records them and restores them on resume. Other executables receive no injected initial prompt and no Claude/Codex flags, but still receive arguments after `--`. Validation by `chain-config` does not run the executable, and its role/value/source output is unchanged.
 
 ## Capabilities
 
