@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Pass agent CLI arguments through `tmux-spawn`.** Put arguments after `--`; they follow tmux-agents' injected flags, are saved with the sub-agent session and return on resume. This changes `--`: it no longer introduces task text. Task input keeps its positional, stdin and `--message-file` forms; use stdin or a message file when combining a task with agent args. A lone multi-word value after `--` warns because it commonly meant a task; arbitrary arguments cannot be reliably distinguished from task text.
+
 ## v1.20.0 (2026-11-14)
 
 - **Project launchers.** `tmux-agents main-sequence` opens configured project windows in order, with optional names, plain shells and sticky main resume IDs; `chain` picks from the current directory, saved projects and an optional Git scan root. There are no built-in project directories or default scan root. Shared config supports `list`, `add --at N`, `set` and `unset`, and reads the legacy project file until the new XDG config file exists. The setup skill offers project selection, ordering, optional shell placement and scan-root configuration without requesting resume IDs.
