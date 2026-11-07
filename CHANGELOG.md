@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Pass agent CLI arguments through `tmux-spawn`.** Put arguments after `--`; they follow tmux-agents' injected flags, are saved with the sub-agent session and return on resume. This changes `--`: it no longer introduces task text. Task input keeps its positional, stdin and `--message-file` forms; use stdin or a message file when combining a task with agent args. A lone multi-word value after `--` warns because it commonly meant a task; arbitrary arguments cannot be reliably distinguished from task text.
 - **Codex compatibility probe.** Add a local, bounded probe for command access after Codex upgrades and before releases; it uses a private tmux server and is not part of CI.
 - **Agent-aware reply guidance.** Requests supply Claude with a quoted heredoc reply, Codex and configured profiles with quoted short arguments or a unique `mktemp` / `--message-file` form, and unknown executables with quoted plain argv for portability. Request ID handling is unchanged. Codex code-mode guidance treats `exec_command` as a shell tool, keeps tmux commands in separate calls and uses narrow escalation if socket permission denial persists.
 

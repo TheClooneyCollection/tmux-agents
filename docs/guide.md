@@ -141,6 +141,15 @@ tmux-spawn --from ME --name auth-review --message-file "$task_file"
 
 Helpers inherit the caller's agent kind and Codex profile. To choose another, put `claude`, `codex`, a configured profile or an executable basename before the options. For other executables, a supplied spawn task is not sent: use the printed full name and resend the actual brief with `tmux-ask` once the agent is at its prompt. See [manual task delivery](agents.md#sending-the-first-task). They open hidden, one window each in a project session such as `agents-api`. Use the full name printed by spawn; [naming rules](#renaming-agents) apply.
 
+Pass agent CLI arguments after `--`. They follow the flags tmux-agents adds, work with `--split`, `--member` and `--for`, and are saved for `--resume`:
+
+```sh
+tmux-spawn claude --from ME --name auth-review -- --model claude-fable-5-1
+tmux-spawn codex --from ME --name auth-review -- --model MODEL
+```
+
+`--` now always separates agent arguments; it no longer introduces task text. Tasks keep their positional, stdin and `--message-file` forms. Use stdin or a message file to combine task text with agent args. A lone multi-word value after `--` produces a warning when it looks like the former task form; arbitrary positional arguments cannot be identified reliably.
+
 | Spawn option | Effect |
 | --- | --- |
 | `--split PEER` | Place the helper visibly beside a named pane, using the caller's directory. |
