@@ -69,9 +69,11 @@ import sys,json
 args=open(sys.argv[1],'rb').read().split(b'\0')[:-1]
 assert args[-4:]==[b'space here',b'',b'quote" $value; *',b'line\nbreak'],args
 assert b'--permission-mode' not in args
-hooks=json.loads(args[args.index(b'--settings')+1]); assert set(hooks['hooks'])=={'Notification','PreToolUse','PostToolUse','PostToolUseFailure','UserPromptSubmit','Stop','StopFailure'}
+hooks=json.loads(args[args.index(b'--settings')+1]); assert set(hooks['hooks'])=={'Notification','ElicitationResult','PreToolUse','PostToolUse','PostToolUseFailure','UserPromptSubmit','Stop','StopFailure'}
+note={g['matcher']:g['hooks'][0]['command'].rsplit(' ',1)[-1] for g in hooks['hooks']['Notification']}
+assert note=={'permission_prompt':'on','elicitation_dialog|elicitation_url_dialog':'--asking','elicitation_complete|elicitation_response':'--tool-end'},note
 h=lambda e: hooks['hooks'][e][0]['hooks'][0]['command'].rsplit(' ',1)[-1]
-assert [h(e) for e in ('PreToolUse','PostToolUse','PostToolUseFailure','Stop','StopFailure')]==['--tool-start','--tool-end','--tool-end','--turn-end','--turn-end'],hooks
+assert [h(e) for e in ('ElicitationResult','PreToolUse','PostToolUse','PostToolUseFailure','Stop','StopFailure')]==['--tool-end','--tool-start','--tool-end','--tool-end','--turn-end','--turn-end'],hooks
 PY
 check 'Claude argv exactness, hooks and default permission mode' test "$?" = 0
 # start stays as a Bash foreground wrapper while the real agent runs below it.

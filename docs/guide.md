@@ -177,7 +177,7 @@ Names shorten under project headings. Search parts, such as `claude tmux seconda
 | `○ idle` | No task yet, or a top-level turn ended with nothing pending; ready for the next prompt. Pending work keeps top-level agents working. |
 | `✓ done` | All incoming requests are answered and no other work remains. A new request starts work again. |
 | `⚠ permission` | Waiting for approval; open its pane. Auto mode is configurable, not a guarantee against prompts. |
-| `◆ needs you` | An agent explicitly requested user attention, a Claude agent is asking you a question, or an agent ended its turn with unfinished work and no agent or background wait; inspect its question. |
+| `◆ needs you` | An agent explicitly requested user attention, a Claude agent is asking you a question or showing an MCP input dialog, or an agent ended its turn with unfinished work and no agent or background wait; inspect its question. |
 | `✉ message waiting` | Delivery has waited past the attention threshold; finish typing/scrolling, do not resend. |
 | `✗ exited` | Process exited; its pane/history remains until closed. |
 | `- untracked` | No turn tracking or worked time; messaging still works. |

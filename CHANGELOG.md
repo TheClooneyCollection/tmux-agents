@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **MCP input dialogs need you.** When an MCP server asks a Claude agent's user for input (a form or a browser URL), the agent shows `◆ needs you` until the dialog is answered, declined or cancelled, like `AskUserQuestion`. Restart running Claude agents to pick up the new hooks.
 - **Claude hook hardening.** A Claude agent's `⚠ permission` now clears on its next tool call, so denying a tool no longer leaves it red until the turn ends. A Claude agent asking you a question (`AskUserQuestion`) shows `◆ needs you` as soon as it asks, until you answer. A turn that ends on an API error (`StopFailure`, such as a rate limit) now ends the turn like `Stop`, instead of leaving the agent working. Restart running Claude agents to pick up the new hooks.
 - Removed the inactivity indicator for delivered unanswered requests; request-ID completion is unchanged.
 - **Explicit long messages.** Combine a positional summary with `tmux-ask --message-file PATH` to retain the file for 7 days and deliver a `tmux-read <id>` pointer. Agents and users can read it from a plain shell. Ordinary messages and file-only sends paste in full without archiving; automatic long-message truncation is removed. Relays can reuse the original pointer.

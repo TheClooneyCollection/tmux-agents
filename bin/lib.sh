@@ -1474,9 +1474,11 @@ build_agent_command() {
   # report anything itself. Claude runs hooks in its own process, so its
   # commands can carry the pane id. Any tool event proves a permission
   # dialog closed (a denial fires no PostToolUse); StopFailure replaces Stop
-  # when an API error ends the turn.
+  # when an API error ends the turn. An MCP elicitation dialog asks the user
+  # like AskUserQuestion; ElicitationResult or its completion notice clears
+  # it. Each notification has one type, so its matcher groups never race.
   report="'$here/tmux-agent-report' --pane '${TMUX_PANE:-}'"
-  claude_hooks="$(printf '{"hooks":{"Notification":[{"matcher":"permission_prompt","hooks":[{"type":"command","command":"%s --perm on"}]}],"PreToolUse":[{"hooks":[{"type":"command","command":"%s --tool-start"}]}],"PostToolUse":[{"hooks":[{"type":"command","command":"%s --tool-end"}]}],"PostToolUseFailure":[{"hooks":[{"type":"command","command":"%s --tool-end"}]}],"UserPromptSubmit":[{"hooks":[{"type":"command","command":"%s --turn-start"}]}],"Stop":[{"hooks":[{"type":"command","command":"%s --turn-end"}]}],"StopFailure":[{"hooks":[{"type":"command","command":"%s --turn-end"}]}]}}' "$report" "$report" "$report" "$report" "$report" "$report" "$report")"
+  claude_hooks="$(printf '{"hooks":{"Notification":[{"matcher":"permission_prompt","hooks":[{"type":"command","command":"%s --perm on"}]},{"matcher":"elicitation_dialog|elicitation_url_dialog","hooks":[{"type":"command","command":"%s --asking"}]},{"matcher":"elicitation_complete|elicitation_response","hooks":[{"type":"command","command":"%s --tool-end"}]}],"ElicitationResult":[{"hooks":[{"type":"command","command":"%s --tool-end"}]}],"PreToolUse":[{"hooks":[{"type":"command","command":"%s --tool-start"}]}],"PostToolUse":[{"hooks":[{"type":"command","command":"%s --tool-end"}]}],"PostToolUseFailure":[{"hooks":[{"type":"command","command":"%s --tool-end"}]}],"UserPromptSubmit":[{"hooks":[{"type":"command","command":"%s --turn-start"}]}],"Stop":[{"hooks":[{"type":"command","command":"%s --turn-end"}]}],"StopFailure":[{"hooks":[{"type":"command","command":"%s --turn-end"}]}]}}' "$report" "$report" "$report" "$report" "$report" "$report" "$report" "$report" "$report" "$report")"
   # Codex says when a turn ends through notify (not a hook, so no trust
   # prompt); tmux-agent-report finds the pane from the turn's messages.
   codex_notify=(-c "notify=[\"$here/tmux-agent-report\",\"--codex-notify\"]")

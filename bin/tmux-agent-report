@@ -12,7 +12,7 @@ usage: tmux-agent-report [--from ME] "what you're doing now"
        tmux-agent-report [--from ME] --waiting "what you're waiting for"
                      (background or another agent's work, never the user)
        tmux-agent-report --pane PANE --perm on|off   (Claude hooks)
-       tmux-agent-report --pane PANE --tool-start|--tool-end   (Claude hooks)
+       tmux-agent-report --pane PANE --tool-start|--tool-end|--asking   (Claude hooks)
        tmux-agent-report --pane PANE --turn-start|--turn-end   (Claude hooks)
        tmux-agent-report [--agent-id ID] --codex-notify JSON (Codex notify)
 
@@ -32,7 +32,8 @@ Hooks call --perm on when the agent is waiting for a permission answer;
 the chip turns that agent red. --tool-start (PreToolUse, tool JSON on
 stdin) and --tool-end (PostToolUse, PostToolUseFailure) clear it: any new
 tool call proves the dialog closed, even after a denial. --tool-start for
-AskUserQuestion marks the agent needs_you until the answer's --tool-end.
+AskUserQuestion, and --asking (an MCP elicitation dialog), mark the agent
+needs_you until the answer's --tool-end.
 --perm off clears permission only, for agents launched before these hooks.
 Codex sub agents get no hooks: they run with auto_review, so their
 permission requests go to a review model, never to the user. When one
@@ -58,6 +59,7 @@ while [ $# -gt 0 ]; do
     --perm) perm="${2:-}"; shift 2 ;;
     --tool-start) tool=start; shift ;;
     --tool-end) tool=end; shift ;;
+    --asking) tool=ask; shift ;;
     # Codex sub agents spawned before hooks were dropped still call this.
     --codex-hook) cat >/dev/null 2>&1; exit 0 ;;
     --needs-you) needs_you=1; shift ;;
@@ -83,6 +85,7 @@ fi
 if [ -n "$tool" ]; then
   [ -n "$pane" ] || { usage >&2; exit 1; }
   asking=0
+  [ "$tool" != ask ] || asking=1
   if [ "$tool" = start ] && [ ! -t 0 ]; then
     payload=""
     IFS= read -r -d '' payload || true
@@ -100,7 +103,7 @@ if [ -n "$tool" ]; then
   [ "$asking" -eq 1 ] || [ -n "$perm_since$was_asking" ] || exit 0
   [ -z "$perm_since" ] || agent_set_wait "$pane" perm ""
   if [ "$asking" -eq 1 ]; then
-    # A question blocks on the user like a permission dialog. Mark that this
+    # A question or elicitation blocks on the user like a permission dialog. Mark that this
     # hook set needs_you, so only the answer undoes it, never earlier attention.
     [ "$state" != needs_you ] || exit 0
     tmux set-option -p -t "$pane" @asking 1 \; set-option -p -t "$pane" @attention_since "$(date +%s)"

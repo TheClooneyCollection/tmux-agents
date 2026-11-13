@@ -194,6 +194,34 @@ tool start AskUserQuestion
 tool end AskUserQuestion
 expect "answer keeps explicit attention" needs_you
 check "explicit attention keeps its reason" test "$(st %1 @activity)" = "approve deploy"
+# MCP elicitation: Notification[elicitation_dialog] -> --asking, then
+# ElicitationResult (accept, decline or cancel) -> --tool-end.
+elicit() { printf '{"hook_event_name":"%s","notification_type":"elicitation_dialog"}' "$1" | "$B/tmux-agent-report" --pane %1 "$2"; }
+reset; tmux set -p -t %1 @parent %0
+elicit Notification --asking
+expect "elicitation dialog needs the user" needs_you
+check "elicitation marks its own attention" test -n "$(st %1 @attention_since)" -a "$(st %1 @asking)" = 1
+elicit Notification --asking
+check "repeated elicitation notice keeps one question" test "$(st %1 @asking)" = 1
+elicit ElicitationResult --tool-end
+expect "elicitation result resumes work" working
+check "elicitation result clears question markers" test -z "$(st %1 @asking)$(st %1 @attention_since)"
+elicit Notification --asking
+tool start Bash
+expect "next tool call clears an elicitation" working
+elicit Notification --asking
+"$B/tmux-agent-report" --pane %1 --turn-end </dev/null
+check "turn end clears an elicitation marker" test -z "$(st %1 @asking)"
+reset; tmux set -p -t %1 @parent %0
+"$B/tmux-agent-report" --from kid --needs-you "pick a region" >/dev/null
+elicit Notification --asking
+elicit ElicitationResult --tool-end
+expect "elicitation answer keeps explicit attention" needs_you
+check "explicit attention keeps its reason after elicitation" test "$(st %1 @activity)" = "pick a region"
+"$B/tmux-agent-report" --pane %1 --perm on
+elicit ElicitationResult --tool-end
+check "elicitation result also clears permission" test -z "$(st %1 @perm_since)"
+
 reset; tmux set -p -t %1 @parent %0
 turn_start "local work"
 "$B/tmux-agent-report" --pane %1 --perm on
