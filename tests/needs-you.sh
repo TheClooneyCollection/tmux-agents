@@ -425,6 +425,48 @@ notify main-thread "still working on the user task" "please review this directly
 expect "Codex direct user input reopens done and needs the user" needs_you
 check "Codex direct input completes with its turn" test -z "$(st %1 @request_local_work)"
 
+echo "Requester told when a sub agent stops without replying"
+# The requester is a cat pane: tty echo and cat each show a pasted line.
+told() { echo $(( $(tmux capture-pane -pJ -S - -t %0 | grep -c "kid stopped without replying to your request $1" || true) / 2 )); }
+records() { find "$state_dir/tmux-agents/$sock/requests" -name 'r*.record' 2>/dev/null | wc -l | tr -d ' '; }
+reset
+"$B/tmux-agent-report" --pane %1 "running tests" >/dev/null
+ask %0 kid "build it"; rid="$(request_state incoming %1)"
+turn_start "$(request_body boss 'build it' kid)"
+before="$(records)"
+turn_end
+expect "unanswered request still needs the user" needs_you
+check "requester gets one notice with the receiver's activity" test "$(told "$rid: running tests")" = 1
+check "the notice opens no request" test "$(records)" = "$before"
+turn_end
+check "a repeated stop without new work sends nothing" test "$(told "$rid")" = 1
+ask %0 --notice kid "any news?"; turn_start "$(printf '[notice from boss to kid via tmux-ask]\nany news?\n[end of notice from boss to kid]')"; turn_end
+check "a notice-only turn is not new work" test "$(told "$rid")" = 1
+"$B/tmux-agent-report" --pane %1 "retrying build" >/dev/null; turn_end
+check "progress re-arms the notice" test "$(told "$rid: retrying build")" = 1
+ask %1 --reply boss "built"; turn_end
+check "an answered request is not reported" test "$(told "$rid")" = 2
+reset
+tmux new-window -d cat; gone="$(tmux list-panes -a -F '#{pane_id}' | tail -1)"
+tmux set -p -t "$gone" @agent colleague; ensure_agent_id "$gone" >/dev/null
+TMUX_PANE="$gone" "$B/tmux-connect" %1 --as colleague <<< kid >/dev/null
+ask "$gone" kid "side job"; gone_rid="$(request_state incoming %1)"
+tmux kill-pane -t "$gone"
+turn_end
+check "a requester that is gone is skipped" test "$(told "$gone_rid")" = 0
+expect "pending request from a gone requester still needs the user" needs_you
+reset
+tmux set -p -t %1 @codex_thread stop-thread
+ask %0 kid "codex job"; codex_rid="$(request_state incoming %1)"
+notify stop-thread "stuck on auth" "$(request_body boss 'codex job' kid)"
+check "a Codex turn end tells the requester too" test "$(told "$codex_rid")" = 1
+notify stop-thread "still stuck" "$(printf '[notice from boss to kid via tmux-ask]\nping\n[end of notice from boss to kid]')"
+check "a Codex turn started by a notice sends nothing more" test "$(told "$codex_rid")" = 1
+reset; tmux set -pu -t %1 @parent
+ask %0 kid "top-level task"; top_rid="$(request_state incoming %1)"; turn_end
+check "a top-level receiver sends no notice" test "$(told "$top_rid")" = 0
+tmux set -p -t %1 @parent %0
+
 echo "Real cases: needs you"
 
 reset

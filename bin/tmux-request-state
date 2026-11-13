@@ -118,6 +118,8 @@ sub notify {
     my $c=context($id);
     return 0 if ($c->{notify_digest} // '') eq $digest;
     $c->{notify_digest}=$digest;
+    # A Codex turn that began with real input is new work.
+    delete $c->{stop_notified} unless ($kind // '') eq 'notice';
     if ($kind eq 'local' && !$panes{$id}{request_local_done} && !$panes{$id}{explicit_needs_you}) {
         $c->{base} ||= $panes{$id}{parent} ? 'done' : 'idle';
         # Inferred local work: the turn that ends now completes it unless
@@ -269,6 +271,8 @@ if ($op eq 'create' || $op eq 'publish-create') {
     my $id=$by_pane{$args[0]} // ''; exit 0 unless $id;
     setopt($id,'explicit_needs_you','');
     my $c=context($id);
+    # New work re-arms the stopped-without-replying notice.
+    save_context($id,$c) if delete $c->{stop_notified};
     if ($op eq 'local') {
         state($id,'working');
         setopt($id,'request_local_work','1');
@@ -325,6 +329,18 @@ if ($op eq 'create' || $op eq 'publish-create') {
     my $actual=<$state_read> // ''; close $state_read; chomp $actual;
     if ($actual eq 'needs_you') { setopt($id,'attention_since',"$now") unless $v->{attention_since}; }
     else { setopt($id,'attention_since',''); }
+    # A sub agent that stopped with an agent's request unanswered: tell each
+    # live requester once. New work (progress, a new turn) re-arms it.
+    if ($actual eq 'needs_you' && length($v->{parent} // '') && @incoming) {
+        my $ctx=context($id); my %sent=map { $_=>1 } split / /, $ctx->{stop_notified} // '';
+        my @tell;
+        for my $r (sort { $a->{created_at} <=> $b->{created_at} } @incoming) {
+            my $q=$panes{$r->{requester_id}};
+            next if $sent{$r->{request_id}} || !live($r->{requester_id}) || $q->{shell} eq '1';
+            $sent{$r->{request_id}}=1; push @tell,"$q->{pane}\t$r->{request_id}";
+        }
+        if (@tell) { $ctx->{stop_notified}=join(' ',sort keys %sent); save_context($id,$ctx); $result=join("\n",@tell); }
+    }
     setopt($id,'activity',$activity) if length($activity) && $actual eq 'working';
 } elsif ($op eq 'finish' || $op eq 'legacy-finish') {
     my $id=$by_pane{$args[0]} // ''; exit 1 unless $id;

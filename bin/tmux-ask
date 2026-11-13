@@ -270,15 +270,18 @@ try_delivery_locked() {
   return 1
 }
 
-# Internal durable notice entry point for rename; no request/reply state effects.
+# Internal durable notice entry point for rename and turn-end reports; no
+# request/reply state effects. The optional sender names the tool.
 if [ "${1:-}" = --system-notice ]; then
-  [ "$#" = 3 ] || die 'invalid system notice'
+  [ "$#" = 3 ] || [ "$#" = 4 ] || die 'invalid system notice'
+  sender="${4:-tmux-rename}"
+  case "$sender" in tmux-rename|tmux-agents) ;; *) die 'invalid system notice sender' ;; esac
   require_tmux
   to_pane="$(resolve_pane "$2")" to_name="$(pane_name "$2")"
   require_agent_pane "$to_pane"
   to_id="$(pane_agent_id "$to_pane")" from_id=""
-  from_pane="" from_name=tmux-rename kind=notice queued_at="$(date +%s)"
-  publish "$(notice_body tmux-rename "$3" "$to_name")"
+  from_pane="" from_name="$sender" kind=notice queued_at="$(date +%s)"
+  publish "$(notice_body "$sender" "$3" "$to_name")"
   if ! try_delivery "$to_pane" "$file"; then
     start_deliverer "$to_pane" "$file" || printf 'notice retained at %s\n' "$file" >&2
   fi

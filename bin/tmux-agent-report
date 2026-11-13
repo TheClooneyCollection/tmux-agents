@@ -287,9 +287,19 @@ fi
 case "$turn" in
   end)
     if [ -n "$notify_json" ]; then
-      request_state turn-end "$pane" "$notify_digest" "$local_prompt"
+      stopped="$(request_state turn-end "$pane" "$notify_digest" "$local_prompt")"
     else
-      request_state turn-end "$pane"
+      stopped="$(request_state turn-end "$pane")"
+    fi
+    # The ledger lists requesters to tell, once per request until new work.
+    # A notice is not a request: it opens no obligation and gets no answer.
+    if [ -n "$stopped" ]; then
+      me="$(pane_name "$pane")" doing="$(tmux show-option -pqv -t "$pane" @activity)"
+      while IFS=$'\t' read -r requester rid; do
+        "$(dirname "$0")/tmux-ask" --system-notice "$requester" \
+          "${me:-$pane} stopped without replying to your request $rid: ${doing:-no report yet}" tmux-agents \
+          </dev/null >/dev/null 2>&1 || true
+      done <<< "$stopped"
     fi
     exit 0 ;;
 

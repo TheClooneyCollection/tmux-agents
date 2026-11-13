@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Unanswered request notice.** When a sub agent ends its turn with another agent's request unanswered and nothing to wait on, the requester gets a notice, such as `worker stopped without replying to your request r1a2b3c4d5e6: running tests`, besides the `◆ needs you`. It is sent once per request until the sub agent does new work. The skills also tell sub agents owned by an agent to ask it rather than open a question tool, to end their turn after replying, to stop after 3 failed attempts, and never to dismiss or retry an agent for silence alone.
 - **MCP input dialogs need you.** When an MCP server asks a Claude agent's user for input (a form or a browser URL), the agent shows `◆ needs you` until the dialog is answered, declined or cancelled, like `AskUserQuestion`. Restart running Claude agents to pick up the new hooks.
 - **Claude hook hardening.** A Claude agent's `⚠ permission` now clears on its next tool call, so denying a tool no longer leaves it red until the turn ends. A Claude agent asking you a question (`AskUserQuestion`) shows `◆ needs you` as soon as it asks, until you answer. A turn that ends on an API error (`StopFailure`, such as a rate limit) now ends the turn like `Stop`, instead of leaving the agent working. Restart running Claude agents to pick up the new hooks.
 - Removed the inactivity indicator for delivered unanswered requests; request-ID completion is unchanged.
