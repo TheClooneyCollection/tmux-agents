@@ -1009,16 +1009,17 @@ record_closed() {
   agent_save_work "$1"
 }
 
-# Strict ancestry: only live, exact pane IDs participate. Reject cycles,
-# including cycles above the requested ancestor, rather than granting access.
+# Follow exact pane IDs to a live owner. A missing higher ancestor does not
+# revoke ownership already established, but reachable cycles still reject it.
 pane_is_descendant() {
   local child="$1" ancestor="$2" cursor="$1" seen=" " found=1
   [ "$child" != "$ancestor" ] || return 1
   pane_alive "$ancestor" && pane_alive "$child" || return 1
   while [ -n "$cursor" ]; do
     case "$cursor" in %*) ;; *) return 1 ;; esac
+    case "${cursor#%}" in ''|*[!0-9]*) return 1 ;; esac
     case "$seen" in *" $cursor "*) return 1 ;; esac
-    pane_alive "$cursor" || return 1
+    pane_alive "$cursor" || return "$found"
     seen="$seen$cursor "
     [ "$cursor" != "$ancestor" ] || found=0
     cursor="$(tmux show-options -pqv -t "$cursor" @parent)" || return 1

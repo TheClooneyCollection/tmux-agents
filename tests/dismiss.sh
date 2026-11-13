@@ -76,6 +76,24 @@ check 'nonexistent caller pane refused' reject --from %999999 worker
 check 'unknown target refused' reject --from main missing
 tmux set -p -t "$worker" @parent %999999
 check 'stale parent refused' reject --from main child
+check 'direct owner survives missing higher ancestor' pane_is_descendant "$child" "$worker"
+# A connection to a replacement secondary never transfers ownership.
+tmux set -p -t "$stranger" @peers "$worker"
+tmux set -p -t "$worker" @peers "$stranger"
+check 'replacement secondary peer cannot dismiss helper' reject --from stranger child
+tmux set -p -t "$worker" @parent "$secondary"
+tmux set -p -t "$secondary" @parent %999999
+check 'multilevel owner survives missing higher ancestor' pane_is_descendant "$child" "$secondary"
+check 'missing link before owner still refused' reject --from main child
+# Continue walking above an already found owner to reject reachable cycles.
+tmux set -p -t "$secondary" @parent "$stranger"
+tmux set -p -t "$stranger" @parent "$secondary"
+check 'cycle above direct owner refused' reject --from worker child
+check 'cycle above multilevel owner refused' reject --from secondary child
+tmux set -p -t "$stranger" @parent %0
+tmux set -p -t "$secondary" @parent %bogus
+check 'malformed parent above owner refused' reject --from worker child
+tmux set -p -t "$secondary" @parent %0
 tmux set -p -t "$worker" @parent "$child"
 check 'cyclic ancestry refused' reject --from main child
 tmux set -p -t "$worker" @parent "$secondary"
@@ -94,6 +112,21 @@ child="$(pane_of child)"
 check 'closed grandchild can resume' alive "$child"
 check 'resume removes closed timestamp' test "$(grep -c '^closed=' "$records/$child_id" || true)" = 0
 "$B/tmux-dismiss" --from main child >/dev/null
+tree
+tmux set -p -t "$secondary" @parent %999999
+check 'orphaned ancestor can dismiss descendant subtree' "$B/tmux-dismiss" --from secondary worker
+check 'orphaned ancestor dismissal closes worker' gone "$worker"
+check 'orphaned ancestor dismissal closes helper' gone "$child"
+check 'orphaned ancestor remains alive' alive "$secondary"
+# Clean up failed-regression fixtures too, without masking their assertions.
+"$B/tmux-dismiss" secondary >/dev/null
+tree
+tmux set -p -t "$worker" @parent %999999
+check 'orphaned direct owner can dismiss helper' "$B/tmux-dismiss" --from worker child
+check 'orphaned direct owner dismissal closes helper' gone "$child"
+check 'orphaned direct owner remains alive' alive "$worker"
+"$B/tmux-dismiss" worker >/dev/null
+"$B/tmux-dismiss" secondary >/dev/null
 tree
 "$B/tmux-dismiss" --from main worker >"$tmp/closed"
 check 'main can directly close a grandchild' gone "$worker"
