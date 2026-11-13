@@ -3,7 +3,7 @@
 # server and queue only; no actual legacy queue is ever inspected or changed.
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
-state="$(mktemp -d "${TMPDIR:-/tmp}/agent-ids.XXXXXX")"
+tmp_root="$(mktemp -d "${TMPDIR:-/tmp}/agent-ids.XXXXXX")"
 test_sock="agent-ids-test-$$"
 other_sock="agent-ids-other-test-$$"
 unset TMUX TMUX_PANE CLAUDECODE TMUX_AGENTS_PINNED
@@ -11,14 +11,14 @@ unset TMUX TMUX_PANE CLAUDECODE TMUX_AGENTS_PINNED
 cleanup() {
   cleanup_test_server "$test_sock" || return
   cleanup_test_server "$other_sock" || return
-  rm -rf "$state"
+  rm -rf "$tmp_root"
 }
 trap cleanup EXIT
 tmux -L "$test_sock" -f /dev/null new-session -d -s test 'exec /bin/sh'
 tmux -L "$test_sock" has-session || exit 1
 socket="$(tmux -L "$test_sock" display-message -p '#{socket_path}')"
 case "$socket" in ''|*/default) echo 'unsafe test socket' >&2; exit 1 ;; esac
-export TMUX="$socket,1,0" XDG_STATE_HOME="$state/state"
+export TMUX="$socket,1,0" XDG_STATE_HOME="$tmp_root/state"
 tmux set-option -g default-shell /bin/sh
 . "$here/bin/lib.sh"
 check() { "$@" || { echo "FAIL: $*" >&2; exit 1; }; }
@@ -29,7 +29,7 @@ if valid_agent_id a123456789abz || valid_agent_id 123456789abcd || valid_agent_i
 # shellcheck disable=SC2329
 ( tmux() { echo 'unexpected tmux call while sourcing' >&2; exit 1; }; . "$here/bin/lib.sh" )
 d="$(sessions_dir)"
-q="$state/queue"
+q="$tmp_root/queue"
 mkdir -p "$d" "$q/$test_sock" "$q/foreign"
 tmux set-option -p -t %0 @agent live
 tmux set-option -p -t %0 @awaiting 'child parent'
@@ -52,17 +52,17 @@ printf 'from_name=live\nto_name=parent\nserver=foreign\n' > "$q/4.meta"
 printf 'from_name=live\nto_name=parent\n' > "$q/foreign/5.meta"
 printf 'from_name=live\nto_name=parent\nsocket=%s\n' "$socket" > "$q/6.meta"
 printf 'from_name=live\nto_name=parent\nsocket=%s\n' "$other_sock" > "$q/7.meta"
-mkdir "$state/flat-originals" "$state/original-records"
-cp "$q"/*.meta "$state/flat-originals/"
-cp "$d"/* "$state/original-records/"
+mkdir "$tmp_root/flat-originals" "$tmp_root/original-records"
+cp "$q"/*.meta "$tmp_root/flat-originals/"
+cp "$d"/* "$tmp_root/original-records/"
 # Directories are never copied recursively, including leftover partial stages.
 mkdir -p "$d/nested" "$d/.pre-ids-v1.interrupted"
 printf 'not a record\n' > "$d/nested/child"
 printf 'partial copy\n' > "$d/.pre-ids-v1.interrupted/live"
 # Interrupt backup publication after copying. No journal, records, pane
 # options or queue metadata may have changed when the backup is incomplete.
-mkdir -p "$state/perl"
-cat > "$state/perl/InterruptBackup.pm" <<'PERL'
+mkdir -p "$tmp_root/perl"
+cat > "$tmp_root/perl/InterruptBackup.pm" <<'PERL'
 package InterruptBackup;
 BEGIN {
   *CORE::GLOBAL::rename = sub {
@@ -72,27 +72,27 @@ BEGIN {
 }
 1;
 PERL
-if PERL5LIB="$state/perl" PERL5OPT=-MInterruptBackup ensure_agent_ids "$q"; then
+if PERL5LIB="$tmp_root/perl" PERL5OPT=-MInterruptBackup ensure_agent_ids "$q"; then
   echo 'expected backup interruption' >&2; exit 1
 fi
 check test ! -e "$d/.pre-ids-v1"
 check test ! -e "$d/.ids-journal"
-for f in "$state/original-records"/*; do check cmp "$f" "$d/${f##*/}"; done
+for f in "$tmp_root/original-records"/*; do check cmp "$f" "$d/${f##*/}"; done
 check test -z "$(pane_agent_id %0)"
 check test "$(tmux show-options -pqv -t %0 @awaiting)" = 'child parent'
-for f in "$state/flat-originals"/*; do check cmp "$f" "$q/${f##*/}"; done
+for f in "$tmp_root/flat-originals"/*; do check cmp "$f" "$q/${f##*/}"; done
 check test "$(wc -l < "$q/$test_sock/1.meta" | tr -d ' ')" = 3
 # Never label a possibly partial old migration as an original backup.
 printf '{}\n' > "$d/.ids-journal"
 if ensure_agent_ids "$q"; then echo 'accepted journal without backup' >&2; exit 1; fi
 check test ! -e "$d/.pre-ids-v1"
-for f in "$state/original-records"/*; do check cmp "$f" "$d/${f##*/}"; done
+for f in "$tmp_root/original-records"/*; do check cmp "$f" "$d/${f##*/}"; done
 rm "$d/.ids-journal"
 # Simulate death after replacements and before final marker. A tmux shim
 # fails on the first option write; subsequent replay must reuse the journal.
 real_tmux="$(command -v tmux)"
-mkdir -p "$state/bin"
-cat > "$state/bin/tmux" <<'STUB'
+mkdir -p "$tmp_root/bin"
+cat > "$tmp_root/bin/tmux" <<'STUB'
 #!/bin/sh
 if [ "$1" = set-option ] && [ -f "$FAIL_ID_MIGRATION" ]; then
   read -r remaining < "$FAIL_ID_MIGRATION"
@@ -101,15 +101,16 @@ if [ "$1" = set-option ] && [ -f "$FAIL_ID_MIGRATION" ]; then
 fi
 exec "$REAL_TMUX" "$@"
 STUB
-chmod +x "$state/bin/tmux"
-export REAL_TMUX="$real_tmux" FAIL_ID_MIGRATION="$state/fail"
+chmod +x "$tmp_root/bin/tmux"
+export REAL_TMUX="$real_tmux" FAIL_ID_MIGRATION="$tmp_root/fail"
 printf '0\n' > "$FAIL_ID_MIGRATION"
-# The sourced launch builder changes PATH only when called; this test never calls it.
+# Temporarily put the fault-injection tmux shim on PATH for this call only.
+# The function call's scoped PATH must not escape into the rest of the suite.
 # shellcheck disable=SC2031
-if PATH="$state/bin:$PATH" ensure_agent_ids "$q"; then echo 'expected injected failure' >&2; exit 1; fi
+if PATH="$tmp_root/bin:$PATH" ensure_agent_ids "$q"; then echo 'expected injected failure' >&2; exit 1; fi
 check test ! -f "$d/.ids-v1"
 check test -f "$d/.ids-journal"
-check diff -r "$state/original-records" "$d/.pre-ids-v1"
+check diff -r "$tmp_root/original-records" "$d/.pre-ids-v1"
 parent_id="$(record_ids_by_name parent)"
 child_id="$(record_ids_by_name child)"
 shape_id="$(record_ids_by_name a111111111111)"
@@ -119,9 +120,10 @@ check test "$shape_id" != a111111111111
 check test "$(record_get "$child_id" parent)" = "$parent_id"
 # A second interruption occurs after ID and awaiting were already converted.
 printf '2\n' > "$FAIL_ID_MIGRATION"
-# The sourced launch builder changes PATH only when called; this test never calls it.
+# Temporarily put the fault-injection tmux shim on PATH for this call only.
+# The function call's scoped PATH must not escape into the rest of the suite.
 # shellcheck disable=SC2031
-if PATH="$state/bin:$PATH" ensure_agent_ids "$q"; then exit 1; fi
+if PATH="$tmp_root/bin:$PATH" ensure_agent_ids "$q"; then exit 1; fi
 check test "$(tmux show-options -pqv -t %0 @awaiting)" = "$child_id $parent_id"
 check test ! -f "$d/.ids-v1"
 rm "$FAIL_ID_MIGRATION"
@@ -148,20 +150,20 @@ check test "$(closed_names %0)" = "$parent_id $child_id $shape_id"
 check grep -qx "from_id=$live_id" "$q/$test_sock/1.meta"
 check grep -qx "to_id=$child_id" "$q/$test_sock/1.meta"
 check grep -qx "from_id=$parent_id" "$q/$test_sock/2.meta"
-for f in "$state/flat-originals"/*; do check cmp "$f" "$q/${f##*/}"; done
-check diff -r "$state/original-records" "$d/.pre-ids-v1"
+for f in "$tmp_root/flat-originals"/*; do check cmp "$f" "$q/${f##*/}"; done
+check diff -r "$tmp_root/original-records" "$d/.pre-ids-v1"
 check test "$(wc -l < "$q/4.meta" | tr -d ' ')" = 3
 check test "$(wc -l < "$q/foreign/5.meta" | tr -d ' ')" = 2
 check grep -qx 'body stays untouched' "$q/$test_sock/1.msg"
 check grep -qx 'undelivered body' "$q/$test_sock/2.undelivered"
-cp -R "$d" "$state/before-records"
-cp -R "$q" "$state/before-queue"
+cp -R "$d" "$tmp_root/before-records"
+cp -R "$q" "$tmp_root/before-queue"
 # Marker fast path must not invoke any external command, including tmux.
 # Invoked indirectly by test helpers or by commands under test.
 # shellcheck disable=SC2329
 ( tmux() { return 99; }; agent_identity_lock() { return 98; }; ensure_agent_ids "$q" )
-check diff -r "$state/before-records" "$d"
-check diff -r "$state/before-queue" "$q"
+check diff -r "$tmp_root/before-records" "$d"
+check diff -r "$tmp_root/before-queue" "$q"
 # A second server with matching names must also leave every flat file intact,
 # even files explicitly attributed to either server.
 tmux -L "$other_sock" -f /dev/null new-session -d -s test 'exec /bin/sh'
@@ -179,8 +181,8 @@ case "$other_socket" in ''|*/default) echo 'unsafe second socket' >&2; exit 1 ;;
   ensure_agent_ids "$q"
   check grep -q '^to_id=a' "$q/$other_sock/1.meta"
 )
-for f in "$state/flat-originals"/*; do check cmp "$f" "$q/${f##*/}"; done
-check diff -r "$state/original-records" "$d/.pre-ids-v1"
+for f in "$tmp_root/flat-originals"/*; do check cmp "$f" "$q/${f##*/}"; done
+check diff -r "$tmp_root/original-records" "$d/.pre-ids-v1"
 # Renames change only the live label and own record, preserving all refs.
 _rename_agent_locked %0 renamed >/dev/null
 check test "$(pane_agent_id %0)" = "$live_id"
