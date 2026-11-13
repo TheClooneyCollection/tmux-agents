@@ -49,6 +49,13 @@ queued_aged() {
 }
 chip_on() { [ "$(tmux show -gv status)" = 2 ]; }
 marked() { [ -n "$(tmux show -pqv -t %1 @msg_waiting_since)" ]; }
+# The delivery command can leave a child holding this advisory lock after its parent exits.
+pane_lock_free() {
+  perl -MFcntl=:flock -e '
+    open(my $lock, ">>", $ARGV[0]) or die "$ARGV[0]: $!";
+    exit(flock($lock, LOCK_EX | LOCK_NB) ? 0 : 1);
+  ' "$Q/.pane-1.lock"
+}
 cleared() { [ -z "$(tmux show -pqv -t %1 @msg_waiting_since)" ]; }
 no_queued() { [ -z "$(find "$Q" -name '*.msg' -o -name '*.sending')" ]; }
 not_captured() { ! captured "$@"; }
@@ -73,7 +80,7 @@ check wait_for marked
 check wait_for chip_on
 kill "$worker"
 wait "$worker" || true
-sleep .2
+check wait_for pane_lock_free
 check test "$(find "$Q" -name '*.msg' | wc -l | tr -d ' ')" = 2
 check test "$(find "$Q" -name '*.undelivered' | wc -l | tr -d ' ')" = 0
 "$B/tmux-ask" --pending > "$state_dir/pending" </dev/null

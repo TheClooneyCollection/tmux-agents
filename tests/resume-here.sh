@@ -65,7 +65,7 @@ target_id=a000000000101 request_id=r000000000101
 resume_record "$target_id" resume-child "$parent_id" 1
 request_state create "$request_id" "$parent_id" "$target_id"
 shell_pane="$(tmux new-window -d -P -F '#{pane_id}' -n resume-shell -c "$tmp/project" /bin/sh)"
-check 'fixture is an interactive plain shell' test "$(info "$shell_pane" pane_current_command)" = sh
+check 'fixture is an interactive plain shell' verify_resume_shell "$shell_pane"
 check 'tracked agent pane is rejected before mutation' reject_here %0
 check 'tracked agent identity is unchanged' test "$(info %0 @agent_id)" = "$parent_id"
 cat_pane="$(tmux new-window -d -P -F '#{pane_id}' -n non-shell -c "$tmp/project" cat)"
@@ -128,7 +128,7 @@ check 'marked shell enters tracked agent state' wait_for option_equals "$shell_p
 check 'marked shell is temporarily an agent' test "$(info "$shell_pane" @shell)" != 1
 tmux send-keys -t "$shell_pane" STOP Enter
 check 'marked shell pane returns to shell state' wait_for option_equals "$shell_pane" @shell 1
-check 'marked shell display name is restored' test "$(info "$shell_pane" @agent)" = shell-helper
+check 'marked shell display name is restored' wait_for option_equals "$shell_pane" @agent shell-helper
 
 printf '%s checks; failures=%s\n' "$count" "$fail"
 exit "$fail"

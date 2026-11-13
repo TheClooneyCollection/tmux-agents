@@ -23,12 +23,29 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 file="$tmp/body"
 # shellcheck disable=SC2016
 printf 'literal $HOME\nline two\n' > "$file"
-send() { TMUX_PANE=%0 "$B/tmux-ask" --from sender "$@"; }
+last_file=""
+send() {
+  local before=" " candidate rc
+  for candidate in "$Q"/*.msg; do
+    [ -f "$candidate" ] || continue
+    before="$before$candidate "
+  done
+  "$@" || { rc=$?; return "$rc"; }
+  last_file=""
+  for candidate in "$Q"/*.msg; do
+    [ -f "$candidate" ] || continue
+    case "$before" in *" $candidate "*) continue ;; esac
+    [ -z "$last_file" ] || fail 'multiple messages published by one send'
+    last_file="$candidate"
+  done
+  [ -n "$last_file" ] && [ -f "${last_file%.msg}.meta" ] || fail 'message and metadata not published'
+}
+ask() { send env TMUX_PANE=%0 "$B/tmux-ask" --from sender receiver "$@"; }
 tmux copy-mode -t %1
-latest() { find "$Q" -name '*.msg' -type f | sort | tail -n 1; }
+latest() { printf '%s\n' "$last_file"; }
 assert_body() { f="$(latest)"; grep -Fq -- "$1" "$f" || fail "body missing $1"; }
 assert_kind() { f="$(latest)"; grep -q "kind=$1" "${f%.msg}.meta" || fail "kind $1"; }
-printf 'ignored stdin payload' | send --message-file "$file" receiver; assert_kind request
+ask --message-file "$file" < <(printf 'ignored stdin payload'); assert_kind request
 # shellcheck disable=SC2016
 assert_body 'literal $HOME'
 assert_body 'short reply as a quoted argument: tmux-ask --from receiver --request-id '
@@ -38,20 +55,20 @@ if grep -Fq "<<'MSG'" "$(latest)"; then fail 'request reply command avoids hered
 # Use the generated request id to exercise reply handling.
 rid="$(sed -n 's/^request_id=//p' "$(latest | sed 's/\.msg$/.meta/')")"
 tmux copy-mode -t %0
-TMUX_PANE=%1 "$B/tmux-ask" --from receiver --reply --request-id "$rid" --message-file "$file" sender
+send env TMUX_PANE=%1 "$B/tmux-ask" --from receiver --reply --request-id "$rid" --message-file "$file" sender
 assert_kind reply; assert_body 'line two'
-send --notice --message-file "$file" receiver; assert_kind notice
-send --any --message-file "$file" receiver; assert_kind request
-send --message-file "$file" receiver extra
+ask --notice --message-file "$file"; assert_kind notice
+ask --any --message-file "$file"; assert_kind request
+ask --message-file "$file" extra
 assert_body extra
 assert_body 'Read the full message here: tmux-read '
-if send --message-file "$file" receiver '' >"$tmp/error" 2>&1; then fail empty-positional-conflict; fi
+if ask --message-file "$file" '' >"$tmp/error" 2>&1; then fail empty-positional-conflict; fi
 grep -q 'empty message' "$tmp/error" || fail empty-summary-error
 # A pipe with a writer still open and no data must not block the file path.
 mkfifo "$tmp/idle-stdin"
 exec 9<>"$tmp/idle-stdin"
 (
-  TMUX_PANE=%0 "$B/tmux-ask" --from sender --message-file "$file" receiver <"$tmp/idle-stdin" >"$tmp/idle.out" 2>"$tmp/idle.err" &
+  env TMUX_PANE=%0 "$B/tmux-ask" --from sender --message-file "$file" receiver <"$tmp/idle-stdin" >"$tmp/idle.out" 2>"$tmp/idle.err" &
   command_pid=$!
   (
     sleep 5 & timer_pid=$!
@@ -77,31 +94,31 @@ fi
 wait "$idle_pid" || fail 'idle-pipe message process exits cleanly'
 [ "$(cat "$tmp/idle.status")" = 0 ] || { cat "$tmp/idle.err" >&2; fail 'idle-pipe message succeeds'; }
 exec 9>&-
-if send --message-file >"$tmp/error" 2>&1; then fail missing-path; fi
+if ask --message-file >"$tmp/error" 2>&1; then fail missing-path; fi
 grep -q -- '--message-file needs a path' "$tmp/error" || fail missing-path-error
-if send --message-file '' receiver >"$tmp/error" 2>&1; then fail empty-path; fi
+if ask --message-file '' >"$tmp/error" 2>&1; then fail empty-path; fi
 grep -q -- '--message-file needs a path' "$tmp/error" || fail empty-path-error
-if send --message-file '' --message-file "$file" receiver >"$tmp/error" 2>&1; then fail duplicate-empty-option; fi
+if ask --message-file '' --message-file "$file" >"$tmp/error" 2>&1; then fail duplicate-empty-option; fi
 grep -q 'may only be used once' "$tmp/error" || fail duplicate-empty-option-error
 : > "$tmp/empty"
-if send --message-file "$tmp/empty" receiver >"$tmp/error" 2>&1; then fail empty-file; fi
+if ask --message-file "$tmp/empty" >"$tmp/error" 2>&1; then fail empty-file; fi
 grep -q 'empty message' "$tmp/error" || fail empty-file-error
-if send --message-file "$tmp/missing" receiver >"$tmp/error" 2>&1; then fail missing-file; fi
+if ask --message-file "$tmp/missing" >"$tmp/error" 2>&1; then fail missing-file; fi
 grep -q 'regular file' "$tmp/error" || fail missing-file-error
-if send --message-file "$file" --message-file "$file" receiver >"$tmp/error" 2>&1; then fail duplicate-option; fi
+if ask --message-file "$file" --message-file "$file" >"$tmp/error" 2>&1; then fail duplicate-option; fi
 grep -q 'may only be used once' "$tmp/error" || fail duplicate-option-error
 ln -s "$file" "$tmp/link"
-if send --message-file "$tmp/link" receiver >"$tmp/error" 2>&1; then fail symlink; fi
+if ask --message-file "$tmp/link" >"$tmp/error" 2>&1; then fail symlink; fi
 grep -q 'must not be a symlink' "$tmp/error" || fail symlink-error
 mkdir "$tmp/dir"
-if send --message-file "$tmp/dir" receiver >"$tmp/error" 2>&1; then fail nonregular; fi
+if ask --message-file "$tmp/dir" >"$tmp/error" 2>&1; then fail nonregular; fi
 grep -q 'regular file' "$tmp/error" || fail nonregular-error
 head -c 1048577 /dev/zero | tr '\000' x > "$tmp/large"
-if send --message-file "$tmp/large" receiver >"$tmp/error" 2>&1; then fail oversize; fi
+if ask --message-file "$tmp/large" >"$tmp/error" 2>&1; then fail oversize; fi
 grep -q '1048576-byte limit' "$tmp/error" || fail oversize-error
 chmod 000 "$file"
 if [ "$(id -u)" -ne 0 ]; then
-  if send --message-file "$file" receiver >"$tmp/error" 2>&1; then fail unreadable; fi
+  if ask --message-file "$file" >"$tmp/error" 2>&1; then fail unreadable; fi
   grep -q 'not readable' "$tmp/error" || fail unreadable-error
 fi
 printf 'ok: message-file request/reply/notice/any and validation cases\n'
