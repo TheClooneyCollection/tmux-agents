@@ -12,6 +12,7 @@ usage: tmux-agent-report [--from ME] "what you're doing now"
        tmux-agent-report [--from ME] --waiting "what you're waiting for"
                      (background or another agent's work, never the user)
        tmux-agent-report --pane PANE --perm on|off   (Claude hooks)
+       tmux-agent-report --pane PANE --tool-start|--tool-end   (Claude hooks)
        tmux-agent-report --pane PANE --turn-start|--turn-end   (Claude hooks)
        tmux-agent-report [--agent-id ID] --codex-notify JSON (Codex notify)
 
@@ -27,8 +28,12 @@ agent, including a top-level agent. It preserves pending requests and the
 reason through turn end. The next turn start or progress report clears it.
 Untracked agents must first be launched with tracking or receive a turn hook.
 
-Hooks call --perm on when the agent is waiting for a permission answer
-and --perm off when it moves on; the chip turns that agent red.
+Hooks call --perm on when the agent is waiting for a permission answer;
+the chip turns that agent red. --tool-start (PreToolUse, tool JSON on
+stdin) and --tool-end (PostToolUse, PostToolUseFailure) clear it: any new
+tool call proves the dialog closed, even after a denial. --tool-start for
+AskUserQuestion marks the agent needs_you until the answer's --tool-end.
+--perm off clears permission only, for agents launched before these hooks.
 Codex sub agents get no hooks: they run with auto_review, so their
 permission requests go to a review model, never to the user. When one
 does need the user, it ends its turn without replying. --turn-end
@@ -42,7 +47,7 @@ the pane (@codex_thread) for later turns.
 USAGE
 }
 
-FROM_PANE="" pane="" perm="" turn="" notify_json="" notify_agent_id="" waiting=0 save_work=0 local_work=0 local_done=0 needs_you=0
+FROM_PANE="" pane="" perm="" tool="" turn="" notify_json="" notify_agent_id="" waiting=0 save_work=0 local_work=0 local_done=0 needs_you=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
@@ -51,6 +56,8 @@ while [ $# -gt 0 ]; do
     --pane) pane="${2:-}"; shift 2 ;;
     --save-work) save_work=1; shift ;;
     --perm) perm="${2:-}"; shift 2 ;;
+    --tool-start) tool=start; shift ;;
+    --tool-end) tool=end; shift ;;
     # Codex sub agents spawned before hooks were dropped still call this.
     --codex-hook) cat >/dev/null 2>&1; exit 0 ;;
     --needs-you) needs_you=1; shift ;;
@@ -67,9 +74,44 @@ done
 
 # Validate user-facing work modes before identity or state mutations.
 if [ $((local_work + local_done + waiting + needs_you)) -gt 1 ] ||
-   { [ $((local_work + local_done + waiting + needs_you)) -gt 0 ] && [ -n "$turn$perm" ]; }; then
+   { [ $((local_work + local_done + waiting + needs_you)) -gt 0 ] && [ -n "$turn$perm$tool" ]; }; then
   usage >&2; exit 1
 fi
+
+# Tool hooks fire on every tool call: settle the common case (nothing to
+# clear) with one tmux call, before identity checks or the accounting lock.
+if [ -n "$tool" ]; then
+  [ -n "$pane" ] || { usage >&2; exit 1; }
+  asking=0
+  if [ "$tool" = start ] && [ ! -t 0 ]; then
+    payload=""
+    IFS= read -r -d '' payload || true
+    # Claude writes compact JSON with tool_name before tool_input. Quotes
+    # inside string values are escaped, so the first match is the key.
+    case "$payload" in
+      *'"tool_name":"AskUserQuestion"'*)
+        rest="${payload#*\"tool_name\":\"}"
+        [ "${rest%%\"*}" != AskUserQuestion ] || asking=1 ;;
+    esac
+  fi
+  marks="$(tmux display-message -p -t "$pane" '#{@perm_since}|#{@asking}|#{@state}' 2>/dev/null)" || exit 0
+  # Not a tab: read would merge empty whitespace-separated fields.
+  IFS='|' read -r perm_since was_asking state <<< "$marks" || true
+  [ "$asking" -eq 1 ] || [ -n "$perm_since$was_asking" ] || exit 0
+  [ -z "$perm_since" ] || agent_set_wait "$pane" perm ""
+  if [ "$asking" -eq 1 ]; then
+    # A question blocks on the user like a permission dialog. Mark that this
+    # hook set needs_you, so only the answer undoes it, never earlier attention.
+    [ "$state" != needs_you ] || exit 0
+    tmux set-option -p -t "$pane" @asking 1 \; set-option -p -t "$pane" @attention_since "$(date +%s)"
+    agent_set_state "$pane" needs_you
+  elif [ "$was_asking" = 1 ]; then
+    tmux set-option -pu -t "$pane" @asking \; set-option -pu -t "$pane" @attention_since
+    [ "$state" != needs_you ] || agent_set_state "$pane" working
+  fi
+  exit 0
+fi
+
 if [ "$local_done" -eq 1 ]; then
   [ "$#" -eq 0 ] || { usage >&2; exit 1; }
 elif [ -z "$turn$perm" ] && [ "$save_work" -eq 0 ]; then
@@ -236,7 +278,8 @@ fi
 [ "$save_work" -eq 0 ] || { agent_save_work "$pane"; exit 0; }
 
 # Turn hooks prove tracking even when configured outside the launcher.
-[ -z "$turn" ] || tmux set-option -p -t "$pane" @tracked 1
+# A turn boundary also ends any question the turn was asking.
+[ -z "$turn" ] || tmux set-option -p -t "$pane" @tracked 1 \; set-option -pu -t "$pane" @asking
 
 case "$turn" in
   end)

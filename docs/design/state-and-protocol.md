@@ -28,6 +28,7 @@ Live state uses tmux user options on the panes (`set-option -p`); session record
 | `@request_notify_digest` | Last accepted Codex notify identity, persisted in request context; explicit `--local` clears it. |
 | `@awaiting` | Agent IDs of live panes this pane sent requests to and hasn't had a reply from yet, rendered as labels. A request to an agent that is gone keeps its record for a reopen but is not waited on. |
 | `@activity`, `@waiting_on`, `@perm_since` | Sub agent reports for the [status chip](sub-agents.md#status-chip). |
+| `@asking` | `1` while a Claude `AskUserQuestion` hook holds the pane at `needs_you`; the next tool event, turn start or turn end clears it. See [Claude questions](sub-agents.md#data-not-screen-scraping). |
 | `@attention_since`, `@codex_thread` | When a sub agent started needing the user; the Codex thread id of a sub agent, for `notify`. |
 
 Windows that hold named panes also get `@agents_border=1`, plus window-level `pane-border-status top` and `pane-border-format`. The marker lets `refresh_labels` undo only the border settings it set itself.

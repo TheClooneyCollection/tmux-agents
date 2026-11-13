@@ -161,6 +161,53 @@ tmux set -p -t %1 @parent %0
 # Existing accounting cases start from a fresh turn counter.
 for o in @turns @turn_start @last_turn @worked; do tmux set -pu -t %1 "$o"; done
 
+echo "Claude tool hooks: permission and questions"
+tool() {  # event (start|end), tool name; Claude's compact hook JSON
+  printf '{"session_id":"s","cwd":"/tmp/a \\"q\\"","hook_event_name":"PreToolUse","tool_name":"%s","tool_input":{"command":"echo \\"tool_name\\":\\"AskUserQuestion\\""}}' "$2" |
+    "$B/tmux-agent-report" --pane %1 "--tool-$1"
+}
+reset; tmux set -p -t %1 @parent %0
+"$B/tmux-agent-report" --pane %1 --perm on
+check "permission prompt sets the overlay" test -n "$(st %1 @perm_since)"
+tool start Bash
+check "next tool call clears permission (user denied the last one)" test -z "$(st %1 @perm_since)"
+expect "denied tool leaves the turn working" working
+"$B/tmux-agent-report" --pane %1 --perm on
+tool end Bash
+check "failed or finished tool clears permission" test -z "$(st %1 @perm_since)"
+tool start Bash
+check "tool call with nothing to clear sets no question" test -z "$(st %1 @asking)"
+expect "quoted AskUserQuestion inside tool input is not a question" working
+tool start AskUserQuestion
+expect "AskUserQuestion needs the user at once" needs_you
+check "question marks its own attention" test -n "$(st %1 @attention_since)" -a "$(st %1 @asking)" = 1
+tool end AskUserQuestion
+expect "answered question resumes work" working
+check "answer clears question markers" test -z "$(st %1 @asking)$(st %1 @attention_since)"
+tool start AskUserQuestion
+turn_start "carry on"
+expect "dismissed question cleared by the next prompt" working
+check "turn start clears the question marker" test -z "$(st %1 @asking)"
+reset; tmux set -p -t %1 @parent %0
+"$B/tmux-agent-report" --from kid --needs-you "approve deploy" >/dev/null
+tool start AskUserQuestion
+tool end AskUserQuestion
+expect "answer keeps explicit attention" needs_you
+check "explicit attention keeps its reason" test "$(st %1 @activity)" = "approve deploy"
+reset; tmux set -p -t %1 @parent %0
+turn_start "local work"
+"$B/tmux-agent-report" --pane %1 --perm on
+"$B/tmux-agent-report" --pane %1 --turn-end </dev/null
+check "StopFailure turn end clears permission" test -z "$(st %1 @perm_since)"
+check "StopFailure turn end stops the turn clock" test -z "$(st %1 @turn_start)" -a "$(st %1 @state)" != working
+# Invoked through check.
+# shellcheck disable=SC2329
+gone_pane_hook() { printf '{}' | "$B/tmux-agent-report" --pane %999 --tool-start; }
+# shellcheck disable=SC2329
+paneless_hook() { ! "$B/tmux-agent-report" --tool-end </dev/null 2>/dev/null; }
+check "tool hook on a missing pane is a no-op" gone_pane_hook
+check "tool hook needs a pane" paneless_hook
+
 echo "Top-level turn ends and wakeups"
 reset
 tmux set -pu -t %1 @parent

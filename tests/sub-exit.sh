@@ -108,7 +108,7 @@ record_set "$id" id sub-conversation
 owned="$(tmux new-window -d -P -F '#{pane_id}' cat)"
 set_name "$owned" owned
 tmux set -p -t "$owned" @parent "$child"
-for key in member perm_since msg_waiting_since attention_since awaiting waiting_on codex_thread request_local_work; do tmux set -p -t "$child" "@$key" stale; done
+for key in member perm_since asking msg_waiting_since attention_since awaiting waiting_on codex_thread request_local_work; do tmux set -p -t "$child" "@$key" stale; done
 tmux send-keys -t "$child" C-d
 check 'exit clears identity' wait_for cleared "$child"
 # Identity is cleared before the remaining options. The shell only accepts
@@ -120,7 +120,7 @@ check 'visible pane survives' test "$(info "$child" pane_dead)" = 0
 check 'record closes' test -n "$(record_get "$id" closed)"
 check 'work saved before clearing' saved "$id"
 check 'conversation retained' test -n "$(record_get "$id" id)"
-for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored activity awaiting waiting_on attention_since codex_thread request_local_work request_local_done request_notify_digest; do
+for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored activity awaiting waiting_on attention_since asking codex_thread request_local_work request_local_done request_notify_digest; do
   check "exit clears @$key" test -z "$(info "$child" "@$key")"
 done
 check 'reverse peers disconnected' test -z "$(info %0 @peers)"

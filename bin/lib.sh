@@ -994,7 +994,7 @@ clear_agent() {
     [ "$keep_connections" = 1 ] || remove_word "$other" @peers "$pane"
     [ "$(tmux show-options -pqv -t "$other" @parent)" != "$pane" ] || tmux set-option -pu -t "$other" @parent
   done
-  for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored activity awaiting waiting_on attention_since explicit_needs_you codex_thread request_local_work request_local_done request_notify_digest resume_shell; do
+  for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored activity awaiting waiting_on attention_since explicit_needs_you asking codex_thread request_local_work request_local_done request_notify_digest resume_shell; do
     case "$key" in agent|peers|peer_names) [ "$keep_connections" != 1 ] || continue ;; esac
     tmux set-option -pu -t "$pane" "@$key" 2>/dev/null || true
   done
@@ -1445,9 +1445,11 @@ build_agent_command() {
   fi
   # Permission hooks feed the chip: an agent waiting for approval can't
   # report anything itself. Claude runs hooks in its own process, so its
-  # commands can carry the pane id.
+  # commands can carry the pane id. Any tool event proves a permission
+  # dialog closed (a denial fires no PostToolUse); StopFailure replaces Stop
+  # when an API error ends the turn.
   report="'$here/tmux-agent-report' --pane '${TMUX_PANE:-}'"
-  claude_hooks="$(printf '{"hooks":{"Notification":[{"matcher":"permission_prompt","hooks":[{"type":"command","command":"%s --perm on"}]}],"PostToolUse":[{"hooks":[{"type":"command","command":"%s --perm off"}]}],"UserPromptSubmit":[{"hooks":[{"type":"command","command":"%s --turn-start"}]}],"Stop":[{"hooks":[{"type":"command","command":"%s --turn-end"}]}]}}' "$report" "$report" "$report" "$report")"
+  claude_hooks="$(printf '{"hooks":{"Notification":[{"matcher":"permission_prompt","hooks":[{"type":"command","command":"%s --perm on"}]}],"PreToolUse":[{"hooks":[{"type":"command","command":"%s --tool-start"}]}],"PostToolUse":[{"hooks":[{"type":"command","command":"%s --tool-end"}]}],"PostToolUseFailure":[{"hooks":[{"type":"command","command":"%s --tool-end"}]}],"UserPromptSubmit":[{"hooks":[{"type":"command","command":"%s --turn-start"}]}],"Stop":[{"hooks":[{"type":"command","command":"%s --turn-end"}]}],"StopFailure":[{"hooks":[{"type":"command","command":"%s --turn-end"}]}]}}' "$report" "$report" "$report" "$report" "$report" "$report" "$report")"
   # Codex says when a turn ends through notify (not a hook, so no trust
   # prompt); tmux-agent-report finds the pane from the turn's messages.
   codex_notify=(-c "notify=[\"$here/tmux-agent-report\",\"--codex-notify\"]")

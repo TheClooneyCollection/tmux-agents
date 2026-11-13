@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Claude hook hardening.** A Claude agent's `⚠ permission` now clears on its next tool call, so denying a tool no longer leaves it red until the turn ends. A Claude agent asking you a question (`AskUserQuestion`) shows `◆ needs you` as soon as it asks, until you answer. A turn that ends on an API error (`StopFailure`, such as a rate limit) now ends the turn like `Stop`, instead of leaving the agent working. Restart running Claude agents to pick up the new hooks.
 - Removed the inactivity indicator for delivered unanswered requests; request-ID completion is unchanged.
 - **Codex compatibility probe.** Add a local, bounded probe for command access after Codex upgrades and before releases; it uses a private tmux server and is not part of CI.
 - **Agent-aware reply guidance.** Requests supply Claude with a quoted heredoc reply, Codex and configured profiles with quoted short arguments or a unique `mktemp` / `--message-file` form, and unknown executables with quoted plain argv for portability. Request ID handling is unchanged. Codex code-mode guidance treats `exec_command` as a shell tool, keeps tmux commands in separate calls and uses narrow escalation if socket permission denial persists.
