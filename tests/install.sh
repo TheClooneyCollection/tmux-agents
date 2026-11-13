@@ -32,6 +32,9 @@ install
 check 'fresh Claude links every skill' all_skills "$HOME/.claude/skills"
 check 'fresh default Codex links every skill' all_skills "$HOME/.codex/skills"
 check 'selected home with spaces links every skill' all_skills "$CODEX_HOME/skills"
+check 'tmux-read command linked' test -x "$BIN_DIR/tmux-read"
+check 'tmux-read rules installed' contains "$CODEX_HOME/rules/tmux-agents.rules" '["tmux-read"]'
+check 'Claude permits tmux-read' contains "$here/integrations/claude/settings.json" 'Bash(tmux-read:*)'
 check 'rules are real files' test ! -L "$CODEX_HOME/rules/tmux-agents.rules"
 check 'installed rules allow exact chain query' contains "$CODEX_HOME/rules/tmux-agents.rules" '["tmux-agents", "chain-config"]'
 for rules_home in "$HOME/.codex" "$CODEX_HOME"; do

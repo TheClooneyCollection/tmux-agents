@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Read a retained message without connecting to tmux.
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+. "$here/lib.sh"
+case "${1:-}" in
+  -h|--help) echo 'Usage: tmux-read <id>'; exit 0 ;;
+esac
+[ "$#" -eq 1 ] || die 'usage: tmux-read <id>'
+id="$1"
+[[ "$id" =~ ^[rm][0-9a-f]{12}$ ]] || die "invalid message ID '$id'"
+root="${XDG_STATE_HOME:-$HOME/.local/state}/tmux-agents"
+shopt -s nullglob
+matches=()
+for dir in "$root"/*/messages; do
+  prune_messages "$dir"
+  file="$dir/$id.txt"
+  if [ -f "$file" ] && [ ! -L "$file" ]; then matches+=("$file"); fi
+done
+[ "${#matches[@]}" -gt 0 ] || die "message '$id' not found (missing or pruned after 7 days)"
+[ "${#matches[@]}" -eq 1 ] || die "message ID '$id' is ambiguous across sockets"
+cat "${matches[0]}"

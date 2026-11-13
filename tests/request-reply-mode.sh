@@ -64,7 +64,7 @@ for i in "${!targets[@]}"; do
         ;;
       codex)
         # shellcheck disable=SC2016
-        expected_last_lines="$(printf '(You are %s. When done, send a short reply with: %s "answer"; for a longer reply, use --message-file with a unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/<ME>/, then remove it after sending or keep it for retry.)\n[end of request from sender to %s]' "${targets[$i]}" "$command" "${targets[$i]}")"
+        expected_last_lines="$(printf '(You are %s. When done, send a short reply with: %s "answer"; for a longer reply, send a short summary plus --message-file with a unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/<ME>/, then remove it after sending or keep it for retry.)\n[end of request from sender to %s]' "${targets[$i]}" "$command" "${targets[$i]}")"
         check 'Codex trailer last lines include final period before wrapper' test "$last_lines" = "$expected_last_lines"
         check 'Codex gets quoted-argument option' contains "$body" 'a short reply'
         # shellcheck disable=SC2016

@@ -54,7 +54,6 @@ chip_fps - 10 1
 ask_idle_secs TMUX_ASK_IDLE_SECS 8 2
 ask_copy_idle_secs TMUX_ASK_COPY_IDLE_SECS 300 0
 ask_queue_secs TMUX_ASK_QUEUE_SECS 1800 4
-ask_max_lines TMUX_ASK_MAX_LINES 60 10
 ask_enter_delay TMUX_ASK_ENTER_DELAY 0.5 0.01
 connect_highlight TMUX_CONNECT_HIGHLIGHT bg=colour24 bg=colour27
 MAP

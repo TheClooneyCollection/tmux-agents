@@ -11,7 +11,8 @@ cat >"$tmp/bin/codex" <<'STUB'
 echo 'FAKE codex'
 exec cat
 STUB
-chmod +x "$tmp/bin/codex"
+cp "$tmp/bin/codex" "$tmp/bin/claude"
+chmod +x "$tmp/bin/codex" "$tmp/bin/claude"
 unset TMUX TMUX_PANE CLAUDECODE TMUX_AGENTS_KIND TMUX_AGENTS_PINNED TMUX_AGENTS_DEPTH
 export XDG_STATE_HOME="$tmp/state" TMUX_SPAWN_BIN="$tmp/bin" TMUX_ASK_ENTER_DELAY=0
 tmux -L "$sock" -f /dev/null new-session -d -s work -x 160 -y 50 -c "$tmp" cat </dev/null
@@ -79,4 +80,5 @@ reject --message-file "$file" --list-closed || fail 'list-closed cannot use mess
 empty_out="$(TMUX_PANE=%0 "$B/tmux-spawn" codex --message-file "$tmp/empty" --name empty-file </dev/null)"
 printf '%s\n' "$empty_out" | grep -q '^spawned codex ' || fail 'empty file follows no-task behavior'
 tmux list-panes -a -F '#{@agent}' | grep -q -- '-empty-file$' || fail 'empty file starts a no-task agent'
+[ ! -d "$XDG_STATE_HOME/tmux-agents/$sock/messages" ] || fail 'spawn briefs must not be archived'
 printf 'ok: spawn message-file content, modes and validation\n'

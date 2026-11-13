@@ -343,6 +343,33 @@ request_receiver_kind() {
   esac
 }
 
+# Durable originals are independent of the delivery queue and need no socket I/O.
+messages_dir() {
+  local dir
+  dir="$(sessions_dir)"
+  printf '%s/messages\n' "${dir%/sessions}"
+}
+
+prune_messages() {
+  local dir="$1"
+  [ -d "$dir" ] || return 0
+  find "$dir" -type f -name '*.txt' -mmin +10079 -delete
+}
+
+# Save explicitly attached text once; ordinary message formatting has no storage side effects.
+store_message() {
+  local text="$1" id="$2" dir
+  dir="$(messages_dir)"
+  (umask 077; mkdir -p "$dir") || return 1
+  prune_messages "$dir" || return 1
+  printf '%s' "$text" | perl -MFcntl=:DEFAULT -e '
+    my ($path) = @ARGV;
+    sysopen(my $fh, $path, O_WRONLY | O_CREAT | O_EXCL, 0600) or die "cannot save message: $!\n";
+    while (read(STDIN, my $part, 65536)) { print {$fh} $part or die "cannot save message: $!\n" }
+    close($fh) or die "cannot save message: $!\n";
+  ' "$dir/$id.txt" || return 1
+}
+
 # Message bodies for tmux-ask. Requests carry their own reply instructions,
 # so a receiver that never loaded the skill can still answer.
 # Args: sender, message, receiver[, extra reply flags[, receiver ID]]. The
@@ -359,7 +386,7 @@ request_body() {
       ;;
     codex)
       # shellcheck disable=SC2016
-      reply_command="$(printf 'send a short reply with: tmux-ask --from %s%s --reply %s "answer"; for a longer reply, use --message-file with a unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/<ME>/, then remove it after sending or keep it for retry.' "$3" "${4:+ $4}" "$1")"
+      reply_command="$(printf 'send a short reply with: tmux-ask --from %s%s --reply %s "answer"; for a longer reply, send a short summary plus --message-file with a unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/<ME>/, then remove it after sending or keep it for retry.' "$3" "${4:+ $4}" "$1")"
       ;;
     *)
       reply_command="$(printf 'send a short reply as a quoted argument: tmux-ask --from %s%s --reply %s "answer".' "$3" "${4:+ $4}" "$1")"

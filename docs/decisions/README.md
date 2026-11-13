@@ -6,6 +6,7 @@ Each file: the context, the decision, why, and what was rejected. Name new ones 
 
 | Date | Decision |
 | --- | --- |
+| 2026-11-13 | [Retained messages and tmux-read](2026-11-13-message-pointers.md) |
 | 2026-10-30 | [Resumed Codex thread identity](2026-10-30-resumed-codex-thread.md) |
 | 2026-10-30 | [Done keeps the last report visible](2026-10-30-done-last-report.md) |
 | 2026-10-26 | [Explicit user attention](2026-10-26-explicit-needs-you.md) |

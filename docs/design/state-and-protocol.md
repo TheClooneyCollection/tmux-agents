@@ -121,7 +121,7 @@ An earlier version matched names globally first and command substrings for any t
 [request from claude to codex via tmux-ask]
 <message>
 
-(You are codex. When done, a short reply can use: tmux-ask --from codex --reply --request-id r0123456789ab claude "answer"; for a longer reply, create a unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/codex/ and use --message-file.)
+(You are codex. When done, a short reply can use: tmux-ask --from codex --reply --request-id r0123456789ab claude "answer"; for a longer reply, create a unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/codex/ and send a short summary plus --message-file.)
 [end of request from claude to codex]
 ```
 
@@ -182,5 +182,7 @@ Detecting drafts in the input line from the screen was prototyped and dropped: i
 
 ## Long messages
 
-- **Convention.** The skill asks for a 3 to 5 line summary plus a file path whenever an answer runs past about 20 lines. Claude writes to its session scratchpad; other agents write to `$TMPDIR/tmux-agents/<name>/`.
-- **Safety net.** Messages over `TMUX_ASK_MAX_LINES` (default 60) are written to `$TMPDIR/tmux-agents/<sender>/<time>-to-<receiver>.md`. Only the first 15 lines and the path are pasted, which keeps huge pastes out of TUIs.
+- **Explicit choice.** Ordinary arguments, stdin and `--message-file` alone paste in full without retaining an original. The sender decides when content needs a summary, by combining positional text with `--message-file PATH`. No line counting, truncation or paragraph splitting occurs.
+- **Summary and original.** The positional text is pasted as given, followed by exactly `Read the full message here: tmux-read <id>`, inside the existing markers and reply instructions. The validated file content is copied once to `${XDG_STATE_HOME:-~/.local/state}/tmux-agents/<socket>/messages/<id>.txt`. Requests reuse their request ID; replies and notices get independent m-IDs. Queue retries reuse the pointer and original; delivery cleanup removes only queue files.
+- **Reading and retention.** `tmux-read <id>` searches the state root's socket message directories without accessing tmux or requiring `TMUX`. Any agent or user can read an ID; duplicates across sockets produce an ambiguity error. IDs are validated before lookup. Saving an attachment or reading prunes originals at least 7 days old. Missing or pruned IDs fail explicitly; no cleanup runs while the commands are unused.
+- **Input.** Both file modes use the existing regular-file, no-symlink, 1 MiB validation and ignore stdin. Summaries are positional only, after the options, and must be nonempty. File bytes, including trailing newlines, are retained literally. `tmux-spawn --message-file` still sends the entire brief and rejects positional task text; spawn and system notices are not archived. Separate documents are needed only when they must outlive 7 days or be edited.

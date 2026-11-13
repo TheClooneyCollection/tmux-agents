@@ -166,7 +166,8 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 | --- | --- |
 | `tmux-connect` | 给当前 pane 命名并连接到另一个 pane |
 | `tmux-rename` | 修改 agent 标签，保留身份、历史和连接 |
-| `tmux-ask` | 给已连接的 agent 发消息 |
+| `tmux-ask` | 发送消息；`--message-file PATH` 搭配摘要文字可发送保留的全文附件 |
+| `tmux-read` | 按 ID 读取保留的消息全文 |
 | `tmux-shell` | 打开 shell 或运行 `--command CMD`；`--from NAME` 指定所属 agent |
 | `tmux-spawn` | 在隐藏窗口或 `--split` 分屏中启动子 agent，或用 `--member` 创建长期成员 |
 | `tmux-agents` | agent 列表（`prefix + a`）；`start` 启动可跟踪的 agent 或 chain；`chain-config` 查询角色选择 |

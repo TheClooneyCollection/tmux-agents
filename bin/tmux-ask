@@ -46,7 +46,6 @@ esac
 settings_get ask_enter_delay TMUX_ASK_ENTER_DELAY @tmux_agents_ask_enter_delay 0.5
 settings_get ask_queue_secs TMUX_ASK_QUEUE_SECS @tmux_agents_ask_queue_secs 1800
 settings_get ask_copy_idle_secs TMUX_ASK_COPY_IDLE_SECS @tmux_agents_ask_copy_idle_secs 300
-settings_get ask_max_lines TMUX_ASK_MAX_LINES @tmux_agents_ask_max_lines 60
 
 # Paste $2 into pane $1 and submit it. Bracketed paste keeps multi-line
 # text as one message. user_busy keeps us out of copy mode, where Enter
@@ -427,14 +426,17 @@ marked as needing no response, which stops endless back-and-forth.
   mkdir -p "$message_dir"
   reply_file="$(mktemp "$message_dir/reply.XXXXXX")"
   # write the reply to "$reply_file"; remove it after a successful send
-  tmux-ask --reply claude --message-file "$reply_file"
+  tmux-ask --reply claude --message-file "$reply_file" "Review complete; details attached."
 
 --pending: list queued and undelivered messages, including legacy files
 --retry [--to NAME]: retry undelivered messages by receiver name
 
 --request-id ID: resolve this exact request with --reply; required for ambiguous pairs
---message-file PATH: read the literal message body from a regular file (max 1 MiB)
-              rejects symlinks; conflicts with positional text; stdin is ignored
+--message-file PATH: use a readable regular text file (max 1 MiB; no symlinks)
+              alone: paste the full file as the message, without archiving it
+              with positional message text: that text is the summary; retain
+              the file for 7 days and append a tmux-read pointer to the summary
+              stdin is ignored in both modes; put options before the summary
               Use a unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/$ME/;
               remove it after a successful send or keep it for a retry.
 --from ME: your own name (needed where $TMUX_PANE is wrong, e.g. Codex)
@@ -443,8 +445,8 @@ marked as needing no response, which stops endless back-and-forth.
 --any:     send to a named pane you aren't connected to (the reply
            instructions include --any too)
 
-Messages over TMUX_ASK_MAX_LINES (default 60) are saved to
-$TMPDIR/tmux-agents/<you>/ and sent as the first 15 lines plus the path.
+Messages are never truncated or split. Choose a summary plus --message-file
+when the full text would flood the receiver. Otherwise send it in full.
 Replies resolve requests by identity; completion preserves other outstanding work.
 If the user is typing or scrolling in the receiver's pane, the message
 is queued and sent once they stop typing or leave copy mode. A pane
@@ -456,12 +458,11 @@ Settings (environment overrides option):
   escalation seconds: option @tmux_agents_ask_queue_secs, env TMUX_ASK_QUEUE_SECS (1800)
   copy-mode idle seconds: option @tmux_agents_ask_copy_idle_secs,
     env TMUX_ASK_COPY_IDLE_SECS (300; 0 = never leave automatically)
-  long-message lines: option @tmux_agents_ask_max_lines, env TMUX_ASK_MAX_LINES (60)
   paste-to-Enter seconds: option @tmux_agents_ask_enter_delay, env TMUX_ASK_ENTER_DELAY (0.5)
 EOF
 }
 
-target="" reply=0 notice=0 any=0 msg="" FROM_PANE="" request_id="" message_file="" message_file_given=0 positional_message=0
+target="" reply=0 notice=0 any=0 msg="" full_message="" FROM_PANE="" request_id="" message_file="" message_file_given=0 positional_message=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
@@ -483,8 +484,9 @@ done
 
 [ -n "$target" ] || { usage >&2; exit 1; }
 if [ "$message_file_given" -eq 1 ]; then
-  [ "$positional_message" -eq 0 ] || die "--message-file conflicts with positional message text"
-  read_message_file msg "$message_file"
+  read_message_file full_message "$message_file"
+  [ -n "$full_message" ] || die "empty message"
+  if [ "$positional_message" -eq 0 ]; then msg="$full_message"; fi
 else
   if [ -z "$msg" ]; then
     [ -t 0 ] && die "no message (pass it as arguments or on stdin)"
@@ -526,20 +528,16 @@ elif [ "$notice" -eq 0 ]; then
   request_id="$(new_request_id)"
 fi
 
-# Safety net for long messages: keep the full text in a file and send the
-# head plus the path. Agents are asked to do this themselves with a summary.
-# settings_get assigns this variable by name.
-# shellcheck disable=SC2154
-max="$ask_max_lines"
-lines="$(printf '%s\n' "$msg" | wc -l | tr -d ' ')"
-if [ "$lines" -gt "$max" ]; then
-  dir="${TMPDIR:-/tmp}"; dir="${dir%/}/tmux-agents/$me"
-  mkdir -p "$dir"
-  file="$dir/$(date +%Y%m%d-%H%M%S)-to-$(pane_name "$peer").md"
-  printf '%s\n' "$msg" > "$file"
-  msg="$(printf '%s\n' "$msg" | head -n 15)
-...
-(Message was $lines lines; the full text is in $file. Read it from there.)"
+# Only an explicit positional summary plus a file creates a retained original.
+# File-only sends still ignore stdin and paste the entire file.
+if [ "$message_file_given" -eq 1 ] && [ "$positional_message" -eq 1 ]; then
+  message_id="$request_id"
+  if [ "$reply" -eq 1 ] || [ "$notice" -eq 1 ]; then
+    message_id="$(new_agent_id)"; message_id="m${message_id#a}"
+  fi
+  store_message "$full_message" "$message_id"
+  msg="$msg
+Read the full message here: tmux-read $message_id"
 fi
 
 if [ "$notice" -eq 1 ]; then

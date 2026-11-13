@@ -63,6 +63,7 @@ copy() {
   echo "copied $2"
 }
 
+# Includes tmux-read, the socket-free retained-message reader.
 for f in "$here"/bin/tmux-*; do link "$f" "$bin_dir/$(basename "$f")"; done
 link "$here/bin/lib.sh" "$bin_dir/lib.sh"
 

@@ -27,7 +27,6 @@ set -g @tmux_agents_name_format exact
 | `@tmux_agents_ask_idle_secs` | `TMUX_ASK_IDLE_SECS` | `8` | Seconds without keys before delivery |
 | `@tmux_agents_ask_copy_idle_secs` | `TMUX_ASK_COPY_IDLE_SECS` | `300` | Exit idle copy mode after this many seconds; `0` disables |
 | `@tmux_agents_ask_queue_secs` | `TMUX_ASK_QUEUE_SECS` | `1800` | Seconds before showing message waiting; messages stay queued |
-| `@tmux_agents_ask_max_lines` | `TMUX_ASK_MAX_LINES` | `60` | Save longer messages to a file |
 | `@tmux_agents_ask_enter_delay` | `TMUX_ASK_ENTER_DELAY` | `0.5` | Seconds between paste and Enter |
 | `@tmux_agents_connect_highlight` | `TMUX_CONNECT_HIGHLIGHT` | `bg=colour24` | Style of the highlighted connection target |
 
@@ -138,3 +137,5 @@ set -g @tmux_agents_chain_worker codex-2nd
 Rerun `./install.sh` from your installation checkout after adding a profile so its home receives the skills and rules. Merely setting `CODEX_HOME` does not install them.
 
 The main keeps its agent permission defaults. Claude/Codex secondary and worker members use `sub_auto`, which defaults to `on`. Codex main uses identity pins and notify tracking, but has no turn-start hook: the main uses `--local` at the start of each direct user task and `--local-done` when that local work finishes. See [Starting agents](guide.md#starting-agents).
+
+Message length is not a setting. `tmux-ask` always pastes ordinary messages in full. Explicit summary text combined with `--message-file` creates a retained attachment for `tmux-read`; retention is fixed at 7 days. See [message delivery](guide.md#how-messages-flow).

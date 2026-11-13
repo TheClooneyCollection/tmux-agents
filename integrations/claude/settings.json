@@ -2,6 +2,7 @@
   "permissions": {
     "allow": [
       "Bash(tmux-ask:*)",
+      "Bash(tmux-read:*)",
       "Bash(tmux-peers:*)",
       "Bash(tmux-peek:*)",
       "Bash(tmux-spawn:*)",

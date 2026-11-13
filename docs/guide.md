@@ -105,7 +105,7 @@ message_file="$(mktemp "$message_dir/message.XXXXXX")"
 tmux-ask --from ME PEER --message-file "$message_file"
 ```
 
-The file must be one readable regular file, not a symlink, and at most 1 MiB. Its literal text is sent unchanged; empty files use the usual empty-message validation. The option conflicts with positional message text and ignores stdin without reading it.
+The file must be one readable regular file, not a symlink, and at most 1 MiB. Its literal text is sent unchanged; empty files use the usual empty-message validation. The option alone pastes the file in full without archiving it. To send a summary with the file as retained full text, use `tmux-ask --from ME PEER --message-file "$message_file" "Review complete; details attached."`. Put options before the summary. The file is copied to state storage and the summary receives a `Read the full message here: tmux-read <id>` line. Both modes ignore stdin without reading it; stdin summaries are not supported. Empty summaries are rejected.
 
 Reply instructions follow the receiving agent: Claude uses the supplied quoted heredoc form; Codex, including configured profiles, uses quoted short arguments or a unique `mktemp` file with `--message-file` as above. Unknown executables receive quoted plain argv for portability. These forms leave request IDs and matching unchanged; preserve the supplied sender, target, `--request-id` and `--any` when present.
 
@@ -117,7 +117,7 @@ Typing or scrolling delays delivery. `queued` means sent: do not resend. Leaving
 
 Use `tmux-ask --pending` to inspect saved messages and `tmux-ask --retry --to PEER` to retry a live receiver, or omit `--to` for all available receivers. Unavailable destinations stay saved.
 
-Message markers separate agent text from any user draft submitted with it. Agents treat text outside the markers as yours. Long reports use a summary plus file path; messages over the configured limit (default 60 lines) are saved automatically, with the first 15 lines and path delivered.
+Message markers separate agent text from any user draft submitted with it. Agents treat text outside the markers as yours. Keep messages short when possible. When content would flood the receiver's chat, send a temporary file with an explicit summary as above. Ordinary messages, including file-only sends, are never truncated, split or archived. Retained files last 7 days even after delivery; requests reuse their request ID, while replies and notices get independent message IDs. Any agent or user in a plain shell can read an ID across socket directories without contacting tmux. Missing or expired IDs produce an error. Read the full text when the summary is not enough. Separate document files are for content that must outlive 7 days or be edited. When relaying a message needing little or no change, add only your own short note and the original pointer line.
 
 ## Sub agents
 
@@ -248,7 +248,8 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 | `tmux-rename --from ME PEER NAME [--exact]` | Rename yourself or a descendant. |
 | `tmux-disconnect [name]` | User unlinks one peer or all. |
 | `tmux-peers --from ME [--ids]` | Show identity and connections. |
-| `tmux-ask --from ME [--any] [--reply\|--notice] [--request-id RID] PEER [msg...]` or `--message-file FILE` | Send request, answer or notice; accepts stdin when no message file is supplied. `--any` permits unlinked targets. |
+| `tmux-ask --from ME [--any] [--reply\|--notice] [--request-id RID] PEER [msg...]` or `--message-file FILE` | Send request, answer or notice; a file alone is the full message, a file plus positional text delivers a summary and retained-file pointer. Accepts stdin only without a message file. `--any` permits unlinked targets. |
+| `tmux-read ID` | Read any retained message by ID (7-day retention; no tmux connection needed). |
 | `tmux-ask --pending` | Inspect queued/undelivered messages. |
 | `tmux-ask --retry [--to PEER]` | Retry saved messages. |
 | `tmux-peek --from ME PEER [lines]` | Read peer output; default 40 lines. |

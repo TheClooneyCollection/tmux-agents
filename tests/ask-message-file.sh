@@ -42,10 +42,11 @@ TMUX_PANE=%1 "$B/tmux-ask" --from receiver --reply --request-id "$rid" --message
 assert_kind reply; assert_body 'line two'
 send --notice --message-file "$file" receiver; assert_kind notice
 send --any --message-file "$file" receiver; assert_kind request
-if send --message-file "$file" receiver extra >"$tmp/error" 2>&1; then fail positional-conflict; fi
-grep -q 'conflicts with positional message text' "$tmp/error" || fail positional-conflict-error
+send --message-file "$file" receiver extra
+assert_body extra
+assert_body 'Read the full message here: tmux-read '
 if send --message-file "$file" receiver '' >"$tmp/error" 2>&1; then fail empty-positional-conflict; fi
-grep -q 'conflicts with positional message text' "$tmp/error" || fail empty-positional-conflict-error
+grep -q 'empty message' "$tmp/error" || fail empty-summary-error
 # A pipe with a writer still open and no data must not block the file path.
 mkfifo "$tmp/idle-stdin"
 exec 9<>"$tmp/idle-stdin"
