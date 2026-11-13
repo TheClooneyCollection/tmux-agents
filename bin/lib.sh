@@ -994,11 +994,64 @@ clear_agent() {
     [ "$keep_connections" = 1 ] || remove_word "$other" @peers "$pane"
     [ "$(tmux show-options -pqv -t "$other" @parent)" != "$pane" ] || tmux set-option -pu -t "$other" @parent
   done
-  for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored activity awaiting waiting_on attention_since explicit_needs_you codex_thread request_local_work request_local_done request_notify_digest request_progress_at request_pending_since; do
+  for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored activity awaiting waiting_on attention_since explicit_needs_you codex_thread request_local_work request_local_done request_notify_digest request_progress_at request_pending_since resume_shell; do
     case "$key" in agent|peers|peer_names) [ "$keep_connections" != 1 ] || continue ;; esac
     tmux set-option -pu -t "$pane" "@$key" 2>/dev/null || true
   done
   refresh_labels
+}
+
+# Only a live interactive shell with no agent identity can be reused for an
+# in-place resume. Marked shell panes may have a display name in @agent.
+verify_resume_shell() {
+  local pane="$1" shell marker current expected agent agent_id tracked state
+  pane_alive "$pane" || die "pane '$pane' is not live"
+  agent_id="$(pane_agent_id "$pane")"
+  tracked="$(tmux show-options -pqv -t "$pane" @tracked)"
+  state="$(tmux show-options -pqv -t "$pane" @state)"
+  marker="$(tmux show-options -pqv -t "$pane" @resume_shell)"
+  shell_name="$(tmux show-options -pqv -t "$pane" @shell)"
+  agent="$(pane_name "$pane")"
+  [ -z "$agent_id" ] && [ "$tracked" != 1 ] && [ -z "$state" ] \
+    || die "pane '$pane' still has agent state; --here requires a plain shell"
+  if [ "$shell_name" != 1 ] && [ "$marker" != 1 ] && [ -n "$agent" ]; then
+    die "pane '$pane' is not a plain shell; --here requires an interactive shell"
+  fi
+  shell="$(tmux display-message -p -t "$pane" '#{default-shell}')"
+  expected="${shell##*/}"; expected="${expected#-}"
+  current="$(pane_command "$pane")"; current="${current##*/}"; current="${current#-}"
+  if [ -z "$expected" ] || [ "$current" != "$expected" ]; then
+    case "$expected:$current" in
+      sh:bash|bash:sh|sh:dash|dash:sh|bash:dash|dash:bash) ;;
+      *) die "pane '$pane' is running '$current', not its interactive shell; --here requires a plain shell" ;;
+    esac
+  fi
+}
+
+print_top_level_resume_hint() {
+  local kind="$1" name="$2" sid="${3:-}"
+  full_agent_kind "$kind" || return 0
+  # Names and conversation IDs are opaque data, but the launcher and agent
+  # CLIs accept these values as single shell tokens. Avoid emitting a command
+  # if a corrupted record could inject shell syntax.
+  valid_name "$name" || return 0
+  case "$sid" in *[!A-Za-z0-9._:-]*) sid="" ;; esac
+  if [ "$kind" = claude ]; then
+    printf 'Resume this session with: tmux-agents start %s --name %s --exact -- --resume' \
+      "$kind" "$name"
+  else
+    printf 'Resume this session with: tmux-agents start %s --name %s --exact -- resume' \
+      "$kind" "$name"
+  fi
+  [ -z "$sid" ] || printf ' %s' "$sid"
+  printf '\n'
+}
+
+print_sub_agent_resume_hint() {
+  local id="$1"
+  [ -n "$id" ] || return 0
+  valid_agent_id "$id" || return 0
+  printf 'Resume this sub agent with: tmux-spawn --resume-id %s --here\n' "$id"
 }
 
 # Mark the sub agent in pane $1 closed, if it has a record.

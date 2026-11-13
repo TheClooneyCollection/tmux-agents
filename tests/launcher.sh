@@ -133,6 +133,13 @@ check 'record tagged top-level' test "$(record_get "$aid" launcher)" = 1
 check 'top-level omitted from resumable subagents' bash -c '! "$1/tmux-spawn" --list-closed | grep -q "$2"' _ "$B" "$aid"
 for ((i=0;i<100;i++)); do tmux capture-pane -p -t "$new" | grep -q SHELL_RETURN && break; sleep .05; done
 check 'caller resumes after child exit' bash -c 'tmux capture-pane -p -t "$1" | grep -q SHELL_RETURN' _ "$new"
+resume_name="$(record_get "$aid" name)"
+resume_sid="$(record_get "$aid" id)"
+check 'top-level Claude prints an exact resume command' bash -c 'tmux capture-pane -pJ -S - -t "$1" | grep -Fq "$2"' _ "$new" \
+  "Resume this session with: tmux-agents start claude --name $resume_name --exact -- --resume $resume_sid"
+check 'top-level Codex picker hint omits unknown session id' test \
+  "$(print_top_level_resume_hint codex codex-test '')" = \
+  'Resume this session with: tmux-agents start codex --name codex-test --exact -- resume'
 cmd="$(python3 - "$B/tmux-agents-start" <<'PYARGV'
 import shlex, sys
 print(shlex.join([sys.argv[1], 'extra', '--name', 'profile', '--',
@@ -195,6 +202,14 @@ check 'notify before work never charges idle time' test "$(info "$pane" worked)"
 check 'notify before work never starts clock' test -z "$(info "$pane" turn_start)"
 check 'completed prompt clears attention' test -z "$(info "$pane" attention_since)"
 check 'actual launcher notify saves conversation' test "$(record_get "$(info "$pane" agent_id)" id)" = launcher-first-thread
+tmux send-keys -t "$pane" exit Enter
+resume_name="$(record_get "$(info "$pane" agent_id)" name)"
+for ((i=0;i<100;i++)); do
+  tmux capture-pane -pJ -S - -t "$pane" | grep -Fq -- "-- resume launcher-first-thread" && break
+  sleep .05
+done
+check 'top-level Codex prints a resume command' bash -c 'tmux capture-pane -pJ -S - -t "$1" | grep -Fq "$2"' _ "$pane" \
+  "Resume this session with: tmux-agents start extra --name $resume_name --exact -- resume launcher-first-thread"
 TMUX_PANE=%0 "$B/tmux-agents-start" chain "$tmp" --worker extra
 chain="$(tmux display -p '#{pane_id}')"
 wait_file "$tmp/$chain.init"

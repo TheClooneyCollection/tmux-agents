@@ -144,8 +144,14 @@ agent_id="$(new_agent_id)"
 # Only clean our identity: a replacement must never be erased by an old exit.
 # shellcheck disable=SC2329
 finish() {
+  local resume_kind resume_name resume_sid
   if [ "$(pane_agent_id "$pane")" = "$agent_id" ]; then
+    resume_kind="$(record_get "$agent_id" kind)"
+    resume_name="$(record_get "$agent_id" name)"
+    resume_sid="$(record_get "$agent_id" id)"
     clear_agent "$pane"
+    tmux set-option -p -t "$pane" @resume_shell 1
+    print_top_level_resume_hint "$resume_kind" "$resume_name" "$resume_sid"
   fi
   launch_env_restore
 }

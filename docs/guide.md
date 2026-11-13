@@ -203,6 +203,8 @@ Closed conversations remain listed for [7 days by default](configuration.md). `e
 
 `tmux-spawn --from ME --resume PEER` requires a unique closed match. For duplicate names, use `--list-closed`, then `--resume-id ID`. Labels may acquire a suffix if taken. Codex must finish a turn before its conversation can be reopened. Saved messages follow the original identity, never another agent reusing its label. Legacy records migrate automatically; see [recovery instructions](design/state-and-protocol.md#recovery).
 
+To resume a closed child in the current shell pane, run `tmux-spawn --resume-id ID --here` from a returned or verified interactive shell. The pane is reused, and its saved parent and membership are restored. A missing parent stays disconnected. The default `--resume` form still opens a hidden window. Claude and Codex print a resume command when their pane returns to the shell; top-level agents use `tmux-agents start`, while sub agents include `--here` to resume in place.
+
 ### Members and ownership
 
 | Role | Lifecycle |
@@ -254,7 +256,7 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 | `tmux-shell [--from AGENT] [--client CLIENT] [--pane OPENER]` | Open an independent or explicitly owned shell popup. |
 | `tmux-spawn [AGENT] --from ME [--member] [task]` or `--message-file FILE` | Spawn; accepts stdin when no task file is supplied, `--name`, `--split` and `--for`. |
 | `tmux-spawn --list-closed` | List saved conversations. |
-| `tmux-spawn --from ME --resume PEER` / `--resume-id ID` | Reopen a conversation. |
+| `tmux-spawn --from ME --resume PEER` / `--resume-id ID [--here]` | Reopen a conversation, optionally in the current shell pane. |
 | `tmux-agent-report --from ME [--waiting\|--local\|--needs-you] "text"` | Report progress, a work wait, multi-turn local work or user attention. |
 | `tmux-agent-report --from ME --local-done` | Complete `--local` work only; takes no trailing text. |
 | `tmux-agents` | Open the agent list. |

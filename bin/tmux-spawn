@@ -13,6 +13,7 @@ usage: tmux-spawn [AGENT] [--from ME] [--name NAME] [--exact] [task...]
        tmux-spawn [AGENT] --for OWNER [--from ME] [--name NAME] [--exact] [brief...]
        tmux-spawn [AGENT] --split PANE [--right | --below] [--size N%] [task...]
        tmux-spawn --resume NAME | --resume-id ID [--from ME | --parent NAME]
+       tmux-spawn --resume NAME | --resume-id ID --here
        tmux-spawn --list-closed
 
 By default, starts a sub agent in its own window of the project's hidden session
@@ -47,6 +48,8 @@ flags or an initial task; send their first task with tmux-ask at their prompt.
                 same project in a hidden window, connected to you (or to --parent);
                 ambiguous names require --resume-id; live clashes add -2, -3...
   --resume-id ID reopen one exact closed agent identity
+  --here        resume in this interactive shell pane; requires a plain or
+                returned shell, and restores the saved parent only if it is live
   --list-closed  list resumable identities, names, closed times, parents and projects
 
 Each sub agent's session is recorded (see sessions_dir in lib.sh), so a
@@ -77,6 +80,7 @@ resolve_codex_homes codex_homes
 if [ "${1:-}" = "--run" ]; then
   launch_env_snapshot
   agent="$2" file="$3" sid="${4:-}" mode="${5:-new}"
+  resume_here=0 return_shell="${9:-0}" return_name="${10:-}" return_parent="${11:-}" return_member="${12:-}"
   # Forward launch-only values privately: tmux -e public exports would become
   # part of the returned shell's baseline, including absent chain overrides.
   export TMUX_AGENTS_DEPTH="${TMUX_SPAWN_DEPTH:-0}"
@@ -100,7 +104,10 @@ if [ "${1:-}" = "--run" ]; then
   # launches cannot inherit shell behavior from the server environment.
   split_exit="${TMUX_SPAWN_SUB_EXIT:-keep}"
   unset TMUX_SPAWN_SUB_EXIT
-  if [ "$mode" = new ] && [ -n "${8:-}" ]; then
+  if [ "${8:-}" = here ]; then
+    split_exit=shell
+    resume_here=1
+  elif [ "$mode" = new ] && [ -n "${8:-}" ]; then
     tmux wait-for "$8"
   else
     split_exit=keep
@@ -111,11 +118,28 @@ if [ "${1:-}" = "--run" ]; then
     shell="$(tmux show-options -Av -t "$pane" default-shell)"
     # shellcheck disable=SC2329
     finish_split() {
+      local resume_kind resume_sid
       trap - EXIT
       if [ "$(pane_agent_id "$pane")" = "$agent_id" ]; then
+        resume_kind="$(record_get "$agent_id" kind)"
+        resume_sid="$(record_get "$agent_id" id)"
         clear_agent "$pane"
+        tmux set-option -p -t "$pane" @resume_shell 1
+        if [ "$resume_here" -eq 1 ] && [ "$return_shell" = 1 ]; then
+          tmux set-option -p -t "$pane" @shell 1
+          [ -z "$return_name" ] || tmux set-option -p -t "$pane" @agent "$return_name"
+          if [ -n "$return_parent" ] && pane_alive "$return_parent"; then
+            tmux set-option -p -t "$pane" @parent "$return_parent"
+          fi
+          [ -z "$return_member" ] || tmux set-option -p -t "$pane" @member "$return_member"
+          tmux set-option -p -t "$pane" @tracked 0
+        fi
+        if full_agent_kind "$resume_kind" && [ -n "$resume_sid" ]; then
+          print_sub_agent_resume_hint "$agent_id"
+        fi
       fi
       launch_env_restore
+      [ "$resume_here" -eq 0 ] || return 0
       exec "$shell"
     }
     trap finish_split EXIT
@@ -149,7 +173,7 @@ if [ "${1:-}" = "--run" ]; then
   if [ -n "$prompt" ]; then exec "${agent_command[@]}" "$prompt"; else exec "${agent_command[@]}"; fi
 fi
 
-agent="" name="" task="" message_file="" FROM_PANE="" resume="" resume_id="" list_closed=0 parent_name="" for_name=""
+agent="" name="" task="" message_file="" FROM_PANE="" resume="" resume_id="" list_closed=0 parent_name="" for_name="" here_resume=0
 task_arg_given=0
 exact=0 name_given=0 member=0
 split_target="" split_pane="" split_direction="" split_size="50%" split_options=0
@@ -177,6 +201,7 @@ while [ $# -gt 0 ]; do
     --from) FROM_PANE="${2:-}"; shift 2 ;;
     --resume) [ -n "${2:-}" ] || die "--resume needs a name"; resume="$2"; shift 2 ;;
     --resume-id) [ -n "${2:-}" ] || die "--resume-id needs an id"; resume_id="$2"; shift 2 ;;
+    --here) here_resume=1; shift ;;
     --list-closed) list_closed=1; shift ;;
     --parent) parent_name="${2:-}"; shift 2 ;;
     --for) for_name="${2:-}"; shift 2 ;;
@@ -201,10 +226,14 @@ if [ -n "$message_file" ]; then
 fi
 [ -z "$resume$resume_id" ] || [ "$member" -eq 0 ] || die "--resume restores membership from its record; --member is only for new agents"
 [ -z "$resume" ] || [ -z "$resume_id" ] || die "choose --resume or --resume-id"
+[ "$here_resume" -eq 0 ] || [ -n "$resume$resume_id" ] || die "--here requires --resume or --resume-id"
+[ "$here_resume" -eq 0 ] || { [ -z "$FROM_PANE" ] && [ -z "$parent_name" ]; } || die "--here cannot be combined with --from or --parent"
+[ "$here_resume" -eq 0 ] || { [ "$task_arg_given" -eq 0 ] && [ -z "$message_file$for_name" ]; } || die "--here only resumes a conversation; it cannot take a task, --for or --message-file"
 [ -z "$resume$resume_id" ] || { [ "$name_given" -eq 0 ] && [ "$exact" -eq 0 ]; } || die "--resume keeps its recorded name; --name and --exact are only for new sub agents"
 [ "$exact" -eq 0 ] || [ "$name_given" -eq 1 ] || die "--exact requires --name"
 [ "$split_options" -eq 0 ] || [ -n "$split_target" ] || die "--right, --below and --size require --split"
 [ -z "$resume$resume_id" ] || [ -z "$split_target" ] || die "--resume reopens hidden; --split is only for new sub agents"
+[ "$here_resume" -eq 0 ] || [ -z "$split_target" ] || die "--here cannot be combined with --split"
 size_re='^([1-9]|[1-9][0-9])%$'
 [[ $split_size =~ $size_re ]] || die "--size must be a percentage from 1% to 99%"
 [ -n "$message_file" ] || { [ "$list_closed" -eq 1 ] || [ -n "$resume$resume_id" ] || [ -n "$task" ] || [ -t 0 ] || task="$(cat)"; }
@@ -214,7 +243,13 @@ settings_get sub_exit TMUX_AGENTS_SUB_EXIT @tmux_agents_sub_exit shell
 case "$sub_exit" in shell|keep) ;; *) die "sub_exit must be shell or keep (got '$sub_exit')" ;; esac
 
 require_tmux
-ensure_agent_ids
+if [ "$here_resume" -eq 1 ]; then
+  self="${TMUX_PANE:-}"
+  [ -n "$self" ] || die "--here requires a live tmux shell pane"
+  verify_resume_shell "$self"
+else
+  ensure_agent_ids
+fi
 
 # Show a sub agent's pane, connected to its parent ($2, may be empty), and
 # keep its transcript on screen after the agent exits.
@@ -324,7 +359,7 @@ if [ -n "$resume$resume_id" ]; then
   fi
   parent="" saved_parent="$(record_get "$resume_id" parent)"
   if [ -n "$saved_parent" ]; then parent="$(find_pane_by_id "$saved_parent")"; fi
-  if [ -z "$parent" ]; then
+  if [ -z "$parent" ] && [ "$here_resume" -eq 0 ]; then
     if [ -n "$parent_name" ]; then
       parent="$(find_pane "$parent_name")"
     elif [ -n "$FROM_PANE" ] || [ -n "${TMUX_PANE:-}" ]; then
@@ -333,10 +368,22 @@ if [ -n "$resume$resume_id" ]; then
   fi
   [ -z "$parent" ] || require_agent_pane "$parent"
   resume="$(unique_name "$resume")"
-  pane="$(open_window "$(agents_session_for "$dir")" "$dir" "$resume" \
-    "'$here/tmux-spawn' --run '$kind' '' '$sid' resume '$resume_id'" "${rdepth:-1}")"
-  ensure_agent_id "$pane" "$resume_id" >/dev/null
-  adopt "$pane" "$parent" "$resume"
+  if [ "$here_resume" -eq 1 ]; then
+    pane="$self"
+    return_shell="$(tmux show-options -pqv -t "$pane" @shell)"
+    return_name="$(pane_name "$pane")"
+    return_parent="$(tmux show-options -pqv -t "$pane" @parent)"
+    return_member="$(tmux show-options -pqv -t "$pane" @member)"
+    tmux set-option -pu -t "$pane" @shell 2>/dev/null || true
+    tmux set-option -pu -t "$pane" @resume_shell 2>/dev/null || true
+    ensure_agent_id "$pane" "$resume_id" >/dev/null
+    adopt "$pane" "$parent" "$resume" split
+  else
+    pane="$(open_window "$(agents_session_for "$dir")" "$dir" "$resume" \
+      "'$here/tmux-spawn' --run '$kind' '' '$sid' resume '$resume_id'" "${rdepth:-1}")"
+    ensure_agent_id "$pane" "$resume_id" >/dev/null
+    adopt "$pane" "$parent" "$resume"
+  fi
   [ "$kind" = claude ] || tmux set-option -p -t "$pane" @codex_thread "$sid"
   agent_restore_work "$pane" "$resume_id"
   record_set "$resume_id" name "$resume"
@@ -346,11 +393,25 @@ if [ -n "$resume$resume_id" ]; then
     record_set "$resume_id" parent "$(ensure_agent_id "$parent")"
     record_set "$resume_id" parent_name "$(pane_name "$parent")"
     printf 'reopened %s (%s) with its conversation, connected to %s; send it the next task with tmux-ask.\n' "$resume" "$pane" "$(pane_name "$parent")"
+  elif [ "$here_resume" -eq 1 ]; then
+    record_set "$resume_id" parent ""
+    record_set "$resume_id" parent_name ""
+    printf 'reopened %s (%s) with its conversation; its parent is gone, so it is not connected to anyone.\n' "$resume" "$pane"
   else
     printf 'reopened %s (%s) with its conversation; its parent is gone, so it is not connected to anyone.\n' "$resume" "$pane"
   fi
   request_state restore "$pane"
   "$here/tmux-ask" --retry --to "$resume"
+  if [ "$here_resume" -eq 1 ]; then
+    # Run the resumed agent as a child so the suspended pane shell gets control
+    # back when it exits. The private arguments restore shell-pane metadata.
+    cd "$dir"
+    TMUX_SPAWN_SUB_EXIT=shell TMUX_SPAWN_DEPTH="${rdepth:-1}" \
+      TMUX_SPAWN_CODEX_HOMES="$codex_homes" \
+      "$here/tmux-spawn" --run "$kind" '' "$sid" resume "$resume_id" '' here \
+      "$return_shell" "$return_name" "$return_parent" "$return_member"
+    exit "$?"
+  fi
   exit 0
 fi
 

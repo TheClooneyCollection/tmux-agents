@@ -86,7 +86,7 @@ The secondary and worker are long-lived members: they stay out of the default su
 
 ## Ending the chain
 
-`tmux-dismiss --from <me> <secondary>` closes the secondary, the worker and the worker's sub agents. Claude/Codex members with resumable conversations can be reopened with `tmux-spawn --resume <name> --from <me>`, preserving membership. Existing chains keep their sub-agent status until restarted; there is no conversion command.
+`tmux-dismiss --from <me> <secondary>` closes the secondary, the worker and the worker's sub agents. Claude/Codex members with resumable conversations can be reopened with `tmux-spawn --resume <name> --from <me>`, preserving membership, or in place from a returned shell with `tmux-spawn --resume-id <id> --here`. Existing chains keep their sub-agent status until restarted; there is no conversion command.
 
 ## Messages
 

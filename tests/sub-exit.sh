@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
 # Visible exit shells, retained hidden/dead panes, settings and identity cleanup.
 set -euE
 here="$(cd "$(dirname "$0")/.." && pwd)"
@@ -103,6 +104,7 @@ tmux kill-session -t '=readiness'
 spawn claude shell-child --split main
 check 'default split does not enable remain-on-exit' test "$(tmux show-options -pqv -t "$child" remain-on-exit)" != on
 seed_work
+record_set "$id" id sub-conversation
 owned="$(tmux new-window -d -P -F '#{pane_id}' cat)"
 set_name "$owned" owned
 tmux set -p -t "$owned" @parent "$child"
@@ -112,6 +114,8 @@ check 'exit clears identity' wait_for cleared "$child"
 # Identity is cleared before the remaining options. The shell only accepts
 # commands after finish_split completes cleanup, so assert the final state then.
 check 'default shell accepts commands' shell_ready "$child"
+check 'sub agent prints a resumable identity hint' bash -c 'tmux capture-pane -pJ -S - -t "$1" | grep -Fq "$2"' _ "$child" \
+  "tmux-spawn --resume-id $id --here"
 check 'visible pane survives' test "$(info "$child" pane_dead)" = 0
 check 'record closes' test -n "$(record_get "$id" closed)"
 check 'work saved before clearing' saved "$id"
