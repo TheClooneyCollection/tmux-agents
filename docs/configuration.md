@@ -27,7 +27,6 @@ set -g @tmux_agents_name_format exact
 | `@tmux_agents_ask_idle_secs` | `TMUX_ASK_IDLE_SECS` | `8` | Seconds without keys before delivery |
 | `@tmux_agents_ask_copy_idle_secs` | `TMUX_ASK_COPY_IDLE_SECS` | `300` | Exit idle copy mode after this many seconds; `0` disables |
 | `@tmux_agents_ask_queue_secs` | `TMUX_ASK_QUEUE_SECS` | `1800` | Seconds before showing message waiting; messages stay queued |
-| `@tmux_agents_reply_overdue_secs` | `TMUX_AGENTS_REPLY_OVERDUE_SECS` | `1800` | Inactive seconds after delivery before showing reply overdue; `0` disables |
 | `@tmux_agents_ask_max_lines` | `TMUX_ASK_MAX_LINES` | `60` | Save longer messages to a file |
 | `@tmux_agents_ask_enter_delay` | `TMUX_ASK_ENTER_DELAY` | `0.5` | Seconds between paste and Enter |
 | `@tmux_agents_connect_highlight` | `TMUX_CONNECT_HIGHLIGHT` | `bg=colour24` | Style of the highlighted connection target |
@@ -45,10 +44,6 @@ With `sub_auto` on, `tmux-spawn` adds Claude's `--permission-mode auto` or Codex
 New `tmux-spawn --split` panes return to tmux’s `default-shell` after the agent exits. The conversation record closes and worked time is saved; agent state and peer connections are cleared, and direct children become unowned. The pane remains usable as a shell.
 
 Set `@tmux_agents_sub_exit keep` to retain the dead split and transcript instead. Nonempty `TMUX_AGENTS_SUB_EXIT` wins over the option; empty values fall through to the default `shell`. Only `shell` and `keep` are accepted. The setting applies at launch, including visible members. Hidden spawns and resumes retain dead panes in either mode; top-level `tmux-agents start` keeps its existing shell-return behavior.
-
-## Reply overdue
-
-A delivered, unanswered request shows `reply overdue` on its receiver after 1800 seconds without observable progress. Set `@tmux_agents_reply_overdue_secs` or `TMUX_AGENTS_REPLY_OVERDUE_SECS` to a nonnegative number of seconds; `0` disables it. Reported progress and turn events restart the inactivity interval; it does not inspect the agent TUI or infer arbitrary background-task completion. This is separate from queued `message waiting`, does not change the agent's state to `needs_you`, and does not measure the task's total duration. Inspect the receiver's progress before deciding whether to intervene.
 
 ## Shell popup key
 

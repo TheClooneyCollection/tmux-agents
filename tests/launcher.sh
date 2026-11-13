@@ -113,15 +113,15 @@ add_peer "$new" %0
 tmux set-option -p -t %0 @parent "$new"
 tmux set-option -p -t "$new" @waiting_on background
 tmux set-option -p -t "$new" @attention_since 1
-# All request projection fields must be removed before this pane is a shell.
-for marker in request_local_work request_local_done request_progress_at request_pending_since; do
+# Request work markers must be removed before this pane is a shell.
+for marker in request_local_work request_local_done; do
   tmux set -p -t "$new" "@$marker" 1
 done
 tmux send-keys -t "$new" exit Enter
 for ((i=0;i<100;i++)); do tmux capture-pane -p -t "$new" | grep -q SHELL_RETURN && break; sleep .05; done
 check 'child exit clears identity' test -z "$(info "$new" agent_id)"
 check 'child exit clears tracking' test -z "$(info "$new" tracked)"
-for marker in request_local_work request_local_done request_progress_at request_pending_since; do
+for marker in request_local_work request_local_done; do
   check "exit clears $marker before shell reuse" test -z "$(info "$new" "$marker")"
 done
 check 'exit removes peer relationship' test -z "$(info %0 peers)"

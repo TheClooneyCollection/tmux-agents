@@ -120,7 +120,7 @@ check 'visible pane survives' test "$(info "$child" pane_dead)" = 0
 check 'record closes' test -n "$(record_get "$id" closed)"
 check 'work saved before clearing' saved "$id"
 check 'conversation retained' test -n "$(record_get "$id" id)"
-for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored activity awaiting waiting_on attention_since codex_thread request_local_work request_local_done request_notify_digest request_progress_at request_pending_since; do
+for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored activity awaiting waiting_on attention_since codex_thread request_local_work request_local_done request_notify_digest; do
   check "exit clears @$key" test -z "$(info "$child" "@$key")"
 done
 check 'reverse peers disconnected' test -z "$(info %0 @peers)"

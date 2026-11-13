@@ -83,7 +83,6 @@ check 'queued body reply instruction carries exact ID' contains "$body1" "--requ
 check 'queued meta identifies receiver' contains "${body1%.msg}.meta" "to_id=$receiver_id"
 check 'queued request is pending' contains "$ledger/$r1.record" status=pending
 check 'queued request not delivered yet' test -z "$(field "$ledger/$r1.record" delivered_at)"
-check 'queued request not overdue candidate' test -z "$(opt "$receiver" request_pending_since)"
 ask --from main receiver lifecycle-queued-two >"$tmp/queued-two"
 body2="$(body_for msg lifecycle-queued-two)"
 r2="$(field "${body2%.msg}.meta" request_id)"
@@ -101,7 +100,6 @@ ask --retry --to receiver >"$tmp/retry"
 check 'first request eventually delivered by identity' wait_for contains "$REQUEST_LIFECYCLE_LOG" lifecycle-queued-one
 check 'second request eventually delivered by identity' wait_for contains "$REQUEST_LIFECYCLE_LOG" lifecycle-queued-two
 check 'retry first request retains ledger ID' contains "$ledger/$r1.record" "request_id=$r1"
-check 'retry first request sets delivery projection' test -n "$(opt "$receiver" request_pending_since)"
 ask --from receiver --reply main --request-id "$r1" lifecycle-first-answer >"$tmp/first-answer"
 check 'first exact reply resolves only first request' contains "$ledger/$r1.record" status=answered
 check 'second request remains pending' contains "$ledger/$r2.record" status=pending
@@ -110,7 +108,6 @@ check 'receiver remains working for second request' test "$(opt "$receiver" stat
 ask --from receiver --reply main lifecycle-unique-answer >"$tmp/unique-answer"
 check 'unique implicit reply resolves remaining request' contains "$ledger/$r2.record" status=answered
 check 'last reply clears aggregate wait' test -z "$(opt %0 awaiting)"
-check 'last reply clears pending projection' test -z "$(opt "$receiver" request_pending_since)"
 # Reinject a durable old copy, just as a crash/retry can retain one.
 cp "$tmp/saved-meta" "$queue/1000000000-000001-${receiver#%}.meta"
 cp "$tmp/saved-body" "$queue/1000000000-000001-${receiver#%}.undelivered"
@@ -162,7 +159,6 @@ check 'local-done still preserves background wait' test "$(opt "$receiver" state
 "$B/tmux-agent-report" --from renamed lifecycle-background-finished >"$tmp/background-finished"
 "$B/tmux-agent-report" --from renamed --turn-end >"$tmp/turn-end"
 check 'completion after background wait clears' test "$(opt "$receiver" state)" = "done"
-check 'all completed requests clear projection' test -z "$(opt "$receiver" request_pending_since)"
 # Deterministic completion/create interleaving: a new request arrives after the
 # completion query returns, before the old caller commits its terminal state.
 /usr/bin/perl "$B/tmux-request-state" local-done "$receiver"

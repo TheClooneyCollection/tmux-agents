@@ -131,7 +131,7 @@ The file must be a readable regular file, not a symlink, and at most 1 MiB; its 
 2. Write a self-contained message. The other agent can't see your conversation, so include file paths, context, and what you want back.
 3. Send it with `tmux-ask`, tell the user what you sent, and **end your turn**. Do not wait, sleep, or poll. The reply arrives as a new message.
 4. If `tmux-ask` answers **`queued ...`**, the user is typing or scrolling in the receiver's pane. The message is safely queued and goes out once they stop. A long wait shows `✉ message waiting`; it does not discard the message. If the receiver disappears, you get a delivery failure notice. Treat it as sent: don't resend, just end your turn.
-5. If the reply is slow or shows `reply overdue`, use `tmux-peek` to see progress. Overdue means no observable progress for the configured interval (default 1800 seconds), not a request for user intervention. Never send the same request twice. The peer may be waiting on the user for a permission prompt.
+5. If the reply is slow, use `tmux-peek` to see progress. Never send the same request twice. The peer may be waiting on the user for a permission prompt.
 
 ## Receiving a message
 

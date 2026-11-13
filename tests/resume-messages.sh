@@ -23,7 +23,7 @@ cleanup() {
     printf '%s\n' "$result" >"$trace_dir/exit-status"
     cp -R "$tmp" "$trace_dir/final-state"
     if [ -d "$queue" ]; then cp -R "$queue" "$trace_dir/final-queue"; fi
-    tmux -L "$sock" list-panes -a -F '#{pane_id} #{@agent_id} #{@agent} #{@state} #{@awaiting} #{@request_pending_since}' >"$trace_dir/final-panes" 2>/dev/null || true
+    tmux -L "$sock" list-panes -a -F '#{pane_id} #{@agent_id} #{@agent} #{@state} #{@awaiting}' >"$trace_dir/final-panes" 2>/dev/null || true
   fi
   cleanup_test_server || return
   rm -rf "$tmp"

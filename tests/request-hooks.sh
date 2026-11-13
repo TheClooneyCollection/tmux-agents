@@ -33,7 +33,7 @@ check() { local label="$1"; shift; if "$@"; then echo "ok $label"; else echo "FA
 st() { tmux show -pqv -t %1 "$1"; }
 reset_case() {
   rm -rf "$XDG_STATE_HOME/tmux-agents/$sock/requests"
-  for opt in state attention_since waiting_on awaiting request_local_work request_local_done request_progress_at request_pending_since request_notify_digest codex_thread; do
+  for opt in state attention_since waiting_on awaiting request_local_work request_local_done request_notify_digest codex_thread; do
     tmux set -pu -t %1 "@$opt" 2>/dev/null || true
   done
   tmux set -p -t %1 @tracked 1

@@ -59,7 +59,7 @@ check 'the wait reason reaches the activity intact' test "$(st "$peer" @activity
 check 'a top-level wait is not a needs-you' test "$(st "$peer" @state)" = working
 TMUX_PANE=%0 "$B/tmux-ask" --any peer 'while you wait' >/dev/null
 check 'a request to a waiting pane is pending' test "$(pending)" = 2
-check 'tab-free columns keep the shell flag correct' test "$(st "$peer" @request_pending_since)" != ''
+check 'tab in wait reason survives a ledger update' test "$(st "$peer" @activity)" = 'waiting for lint build'
 
 echo "A rejected request publication leaves no orphan queue files"
 chmod 500 "$ledger"

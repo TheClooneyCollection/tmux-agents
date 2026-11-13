@@ -52,7 +52,7 @@ for my $path (@journals) {
     unlink $path unless $requests{$rid} && $requests{$rid}{publication};
 }
 # Free text (waiting_on) is last: a stray tab inside it cannot shift fixed columns.
-my @keys=qw(agent_id agent state tracked parent awaiting request_progress_at request_local_work request_local_done request_notify_digest request_pending_since attention_since shell pane_dead explicit_needs_you waiting_on);
+my @keys=qw(agent_id agent state tracked parent awaiting request_local_work request_local_done request_notify_digest attention_since shell pane_dead explicit_needs_you waiting_on);
 my $fmt='#{pane_id}' . join('', map { $_ eq 'pane_dead' ? "\t#{pane_dead}" : "\t\#{\@$_}" } @keys);
 open my $snap, '-|', 'tmux', 'list-panes', '-a', '-F', $fmt or die "$!";
 my (%panes,%by_pane,@all_panes);
@@ -117,7 +117,7 @@ sub notify {
     my ($id,$digest,$kind)=@_;
     my $c=context($id);
     return 0 if ($c->{notify_digest} // '') eq $digest;
-    $c->{notify_digest}=$digest; $c->{progress_at}=$now;
+    $c->{notify_digest}=$digest;
     if ($kind eq 'local' && !$panes{$id}{request_local_done} && !$panes{$id}{explicit_needs_you}) {
         $c->{base} ||= $panes{$id}{parent} ? 'done' : 'idle';
         # Inferred local work: the turn that ends now completes it unless
@@ -130,7 +130,6 @@ sub notify {
         setopt($id,'request_local_work','1');
     }
     setopt($id,'request_notify_digest',$digest);
-    setopt($id,'request_progress_at',"$now");
     setopt($id,'request_local_done','');
     delete $c->{local_done}; save_context($id,$c);
     return 1;
@@ -269,10 +268,7 @@ if ($op eq 'create' || $op eq 'publish-create') {
 } elsif ($op eq 'progress' || $op eq 'local') {
     my $id=$by_pane{$args[0]} // ''; exit 0 unless $id;
     setopt($id,'explicit_needs_you','');
-    setopt($id,'request_progress_at',"$now");
     my $c=context($id);
-    $c->{progress_at}=$now;
-    save_context($id,$c);
     if ($op eq 'local') {
         state($id,'working');
         setopt($id,'request_local_work','1');
@@ -294,7 +290,6 @@ if ($op eq 'create' || $op eq 'publish-create') {
     my ($pane,$digest,$kind)=@args;
     my $id=$by_pane{$pane} // ''; exit 0 unless $id;
     if (length($digest // '')) { notify($id,$digest,$kind) or exit 0; }
-    else { my $c=context($id); $c->{progress_at}=$now; save_context($id,$c); setopt($id,'request_progress_at',"$now"); }
     my $v=$panes{$id}; my $c=context($id);
     # Explicit user attention outlives notifications and turn completion.
     exit 0 if $v->{explicit_needs_you};
@@ -346,12 +341,11 @@ if ($op eq 'create' || $op eq 'publish-create') {
     my $c=context($id);
     setopt($id,'request_local_work',$c->{local_work} ? '1' : '');
     setopt($id,'waiting_on',$c->{saved_wait} // '');
-    setopt($id,'request_progress_at',$c->{progress_at} // '');
     setopt($id,'request_notify_digest',$c->{notify_digest} // '');
     setopt($id,'request_local_done',$c->{local_done} // '');
     state($id,'working') if pending($id) || $c->{local_work} || $c->{saved_wait};
 } elsif ($op ne 'sync') { die "unknown request ledger operation\n"; }
-# Derive compatibility waits and overdue UI fields from the durable ledger.
+# Derive compatibility waits from the durable ledger.
 # Pending requests survive close/reopen; labels never participate in identity.
 unless ($context_only || $op eq 'resolve' || $op eq 'incoming') {
     my (%in,%known,%out);
@@ -363,8 +357,6 @@ unless ($context_only || $op eq 'resolve' || $op eq 'incoming') {
     }
     for my $id (keys %panes) {
         my @in=@{$in{$id} // []};
-        my @delivered=sort {$a<=>$b} map { $_->{delivered_at} } grep { $_->{delivered_at} } @in;
-        setopt($id,'request_pending_since',@delivered ? $delivered[0] : '');
         my %known=%{$known{$id} // {}};
         my %out=%{$out{$id} // {}};
         # Keep waits created by older tools that have no ledger entry, dropping only IDs of panes that are gone.

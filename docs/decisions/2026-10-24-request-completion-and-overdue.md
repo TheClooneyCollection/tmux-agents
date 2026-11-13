@@ -34,3 +34,7 @@ A review of the implementation found three groups of problems; the user asked fo
 - Ledger bookkeeping after a successful paste or spawn was fatal under `set -e`. A `delivered` error re-queued the pasted request every retry, or closed a new pane before its agent started. Those calls are now best effort, and a request publication the ledger rejects removes its own staged files.
 - Completion could get stuck: a pending request to a receiver that no longer exists blocked its requester forever, and local work inferred from a user prompt was never completed unless the agent called `--local-done`, so every top-level session without the skill ended each turn as `needs you`. Inferred local work now ends with its turn when nothing else is outstanding; only explicit `--local` requires `--local-done`. Outgoing waits count live receivers only. A top-level agent's restore base is `idle`, never the sub agent `done`.
 - Each turn end ran three ledger processes and parsed the Codex notify payload three times. The turn end is now one ledger operation and one parser, and free-text pane options are tab free so the ledger's pane snapshot cannot be shifted.
+
+## Superseded (2026-11-13)
+
+The user removed reply overdue because it was overcomplicated and often misleading. It fired for agents legitimately waiting on others and for idle chains, and it still required inspecting the pane with `tmux-peek`. Request-ID based completion remains.

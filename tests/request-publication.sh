@@ -185,14 +185,12 @@ PUBLICATION_REAL_TMUX="$real_tmux" PATH="$tmp/tools:$PATH" "$B/tmux-ask" --attem
 check 'paste failure reached exact fault' contains "$tmp/paste.log" 'injected paste failure'
 check 'failed attempt returns failure' test "$rc" != 0
 check 'failed paste does not mark delivered' test -z "$(field "$ledger/$r4.record" delivered_at)"
-check 'failed paste does not project overdue pending' test -z "$(opt "$receiver" request_pending_since)"
 check 'failed paste retains exact retry body' contains "$p4" "publication-body:$r4:$p4"
 check 'failed paste retains exact request meta' contains "${p4%.msg}.meta" "request_id=$r4"
 cp "$p4" "$tmp/retry-body"
 cp "${p4%.msg}.meta" "$tmp/retry-meta"
 "$B/tmux-ask" --attempt "$receiver" "$p4" 1
 check 'successful retry records delivery' test -n "$(field "$ledger/$r4.record" delivered_at)"
-check 'successful retry projects pending delivery' test -n "$(opt "$receiver" request_pending_since)"
 # Retrying an old durable body must not re-register an existing request.
 state answered "$r4"
 cp "$tmp/retry-body" "${p4%.msg}.undelivered"
@@ -201,7 +199,6 @@ rc=0
 "$B/tmux-ask" --retry --to receiver >"$tmp/retry.log" 2>&1 || rc=$?
 check 'undelivered retry accepts existing request identity' test "$rc" = 0
 check 'undelivered retry does not reopen answered ledger' contains "$ledger/$r4.record" status=answered
-check 'undelivered retry does not recreate overdue projection' test -z "$(opt "$receiver" request_pending_since)"
 check 'undelivered retry consumes exact source' test ! -f "${p4%.msg}.undelivered"
 tmux capture-pane -p -t "$receiver" >"$tmp/received"
 check 'undelivered retry retains exact body identity' contains "$tmp/received" "publication-body:$r4:"

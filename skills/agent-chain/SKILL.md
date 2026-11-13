@@ -99,7 +99,7 @@ In Codex code mode, `exec_command` remains a shell tool. Prefer quoted arguments
 - The user reads the secondary's messages to the main agent directly, so the main agent doesn't restate them; it brings up a decision as a one-line summary plus options.
 - Send FYIs as notices (`tmux-ask --notice`), not requests: a request makes the receiver work again and the sender wait for a reply, even if it says "no reply needed". A decision request states the default and what is blocked meanwhile.
 - Reply as soon as a request's main work is done (e.g. the release is out). Don't hold the reply for follow-ups such as a deploy going live; send those later as notices. For a request with several parts, send a notice as each part lands.
-- `reply overdue` means a delivered request lacks observable progress for the configured interval. Inspect the receiver with `tmux-peek`; it does not itself mean `needs you`.
+- If a reply is slow, inspect the receiver with `tmux-peek`.
 - An instruction the user gives directly to any agent wins; that agent tells the others what changed.
 
 ## Working across projects

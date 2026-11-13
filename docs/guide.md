@@ -179,7 +179,6 @@ Names shorten under project headings. Search parts, such as `claude tmux seconda
 | `⚠ permission` | Waiting for approval; open its pane. Auto mode is configurable, not a guarantee against prompts. |
 | `◆ needs you` | An agent explicitly requested user attention, or ended its turn with unfinished work and no agent or background wait; inspect its question. |
 | `✉ message waiting` | Delivery has waited past the attention threshold; finish typing/scrolling, do not resend. |
-| `◷ reply overdue` | A delivered, unanswered request has no observable progress for the configured interval; inspect the receiver. This does not change its work state. |
 | `✗ exited` | Process exited; its pane/history remains until closed. |
 | `- untracked` | No turn tracking or worked time; messaging still works. |
 

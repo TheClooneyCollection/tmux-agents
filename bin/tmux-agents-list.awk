@@ -22,8 +22,6 @@ $1 == "P" {
     # P16..21 are timing; P22 is membership; P23 is explicit hook tracking.
     # P24..25 identify persistent shells and their independent origin window.
     isshell[p]=($24==1); shellwindow[p]=$25
-    # P29..30 are request inactivity, separate from state and attention.
-    pending[p]=$29; progress[p]=$30
     command_id[p]=$26; command_text[p]=$27; command_status[p]=$28
     if ($26!="" && $26!="-") livecommand[$26]=p
     attention[p]=$12; waiting[p]=$13; window[p]=$14; ismember[p]=($22==1); tracked[p]=($23==1)
@@ -175,8 +173,6 @@ function before(a,b) {
     return a < b
 }
 function color(s) {
-    if (sub(/ · ◷ reply overdue$/, "", s)) return color(s) " · \033[38;5;179m◷ reply overdue\033[0m"
-
     if (s=="⚠ permission") return "\033[1;97;41m" s "\033[0m"
     if (s=="◆ needs you" || s=="✉ message waiting") return "\033[1;30;48;5;214m" s "\033[0m"
     if (s=="⠿ working") return "\033[38;5;117m" s "\033[0m"
@@ -205,10 +201,7 @@ END {
     } while (changed)
     for (i=1;i<=np;i++) {
         p=order[i]
-        base=pending[p]+0
-        if (numeric(progress[p]) && progress[p]+0>base) base=progress[p]+0
-        overdue=(dead[p]!=1 && !isshell[p] && ENVIRON["LIST_REPLY_OVERDUE_SECS"]+0>0 && numeric(pending[p]) && pending[p]+0>0 && now-base>=ENVIRON["LIST_REPLY_OVERDUE_SECS"]+0)
-        if (!((name[p]!="-" && (mode=="all" || parent[p]!="-" || isshell[p] || (dead[p]!=1 && tracked[p] && state[p]=="needs_you"))) || waiting[p]!="-" || overdue)) continue
+        if (!((name[p]!="-" && (mode=="all" || parent[p]!="-" || isshell[p] || (dead[p]!=1 && tracked[p] && state[p]=="needs_you"))) || waiting[p]!="-")) continue
         if (command_id[p]!="" && command_id[p]!="-") { rank=3; status=command_status[p] }
         else if (dead[p]==1) { rank=5; status="✗ exited" }
         else if (perm[p]!="-") { rank=0; status="⚠ permission" }
@@ -230,11 +223,6 @@ END {
             if (report=="-") report="no report yet"
             report=location[visible(p)] " · " section " · " report
             section="needs you"
-        } else if (overdue) {
-            rank=base-10000000000
-            if (report=="-") report="no report yet"
-            report=location[visible(p)] " · " section " · " report
-            section="reply overdue"
         } else {
             if (mode!="all" && ismember[p]) continue
             if (scope!="all" && !inwindow[p]) continue
@@ -251,7 +239,6 @@ END {
             work=""
             if (perm[p]=="-" && waiting[p]=="-") since=""
         }
-        if (overdue) status=status " · ◷ reply overdue"
         add(rank,section,p,name[p]=="-" ? p : name[p],status,ownername,report,timecell(since,work))
         pp=parent[p]
         parentprojects[nr]=index(session[pp],prefix)==1 ? substr(session[pp],length(prefix)+1) : project[path[pp]]

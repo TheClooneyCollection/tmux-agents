@@ -46,7 +46,7 @@ reset() {
   # suite's socket ledger beneath its own temporary state directory.
   rm -rf "$state_dir/tmux-agents/$sock/requests"
   for p in %0 %1; do
-    for o in @explicit_needs_you @attention_since @waiting_on @awaiting @activity @codex_thread @request_local_work @request_local_done @request_progress_at @request_pending_since; do tmux set -pu -t "$p" "$o" 2>/dev/null; done
+    for o in @explicit_needs_you @attention_since @waiting_on @awaiting @activity @codex_thread @request_local_work @request_local_done; do tmux set -pu -t "$p" "$o" 2>/dev/null; done
   done
   tmux set -p -t %1 @tracked 1; tmux set -p -t %1 @state working
 }
