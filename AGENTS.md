@@ -36,7 +36,7 @@ Notes for AI agents working on tmux-agents.
 
 - CI entry points and dependencies are documented in [ci/README.md](ci/README.md). Run `ci/static.sh` and `ci/docs.py` when changing shell scripts or documentation; `ci/suites.sh` runs all offline suites and keeps their logs. Installation, upgrade and pinned skills CLI checks have separate local entry points.
 - Every fix gets a test that fails without it; every new workflow gets a case in its suite.
-- **A flaky test blocks the release** until its cause is known. Rerun a suspect suite about ten times with background CPU load, and fix the cause, never with a sleep. Async tests wait for explicit conditions and assert on a message's identity (its body and `.meta`), not on how many files a directory holds.
+- **A flaky test blocks the release** until its cause is known. Find the cause from the failure output and the code, adding the actual values to the failing assertion's message if needed, and fix it, never with a sleep. Don't rerun suites in loops or under artificial CPU load. Async tests wait for explicit conditions and assert on a message's identity (its body and `.meta`), not on how many files a directory holds.
 - Target bash 3.2 (macOS): see [environment](docs/design/environment.md#macos-bash-32) and [pitfalls](docs/design/pitfalls-and-testing.md).
 
 ## Rules that keep it fast and correct
