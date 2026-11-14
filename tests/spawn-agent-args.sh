@@ -15,6 +15,7 @@ for kind in claude codex other-agent; do
   cat >"$tmp/bin/$kind" <<'STUB'
 #!/bin/sh
 set -eu
+printf '%s' "${CODEX_HOME:-}" >"$SPAWN_ARGS_LOG/${TMUX_PANE#%}.home"
 printf '%s\0' "$@" >"$SPAWN_ARGS_LOG/${TMUX_PANE#%}.args"
 printf 'SPAWN STUB READY %s\n' "${0##*/}"
 exec cat >>"$SPAWN_ARGS_LOG/${TMUX_PANE#%}.input"
@@ -163,6 +164,37 @@ check 'old -- task form gives an actionable warning' grep -Fq 'arguments after -
 check 'old -- task string is passed unchanged as an arg' suffix_is "$old_pane" 'Review src/auth.ts'
 check 'old -- task string does not become a prompt' test "$(tmux show-options -pqv -t "$old_pane" @state)" = idle
 check '--list-closed rejects agent arguments' rejects "$B/tmux-spawn" --list-closed -- --flag
+
+
+# Recorded profile wins over shared process environment and survives resume.
+export TMUX_AGENTS_CODEX_HOMES="args-profile=$tmp/profile"
+main_id="$(pane_agent_id %0)"
+record_set "$main_id" kind args-profile
+"$B/tmux-spawn" --from main --name profile-args -- --model initial-model </dev/null
+profile_pane="$(pane_of codex-project-profile-args)"
+check 'inherited profile starts with args' wait_ready "$profile_pane"
+check 'inherited profile home' test "$(cat "$SPAWN_ARGS_LOG/${profile_pane#%}.home")" = "$tmp/profile"
+check 'inherited profile args' suffix_is "$profile_pane" --model initial-model
+profile_id="$(pane_agent_id "$profile_pane")"
+record_set "$profile_id" id test-profile-thread
+"$B/tmux-dismiss" --from main codex-project-profile-args
+"$B/tmux-spawn" --from main --resume-id "$profile_id" -- --model resumed-model </dev/null
+profile_pane="$(pane_of codex-project-profile-args)"
+check 'profile resume starts' wait_ready "$profile_pane"
+check 'profile resume home' test "$(cat "$SPAWN_ARGS_LOG/${profile_pane#%}.home")" = "$tmp/profile"
+check 'resume appends args once after resume prefix' python3 - "$(args_file "$profile_pane")" <<'PYARGS'
+import pathlib, sys
+a=pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")[:-1]
+assert a[0]==b'resume', a
+assert a[-4:]==[b'--model',b'initial-model',b'--model',b'resumed-model'],a
+assert a.count(b'test-profile-thread')==1,a
+assert sum(x.startswith(b'notify=') for x in a)==1,a
+PYARGS
+spawn_agent codex --name explicit-args -- --model explicit-model </dev/null
+explicit_pane="$(pane_of codex-project-explicit-args)"
+check 'explicit agent starts with args' wait_ready "$explicit_pane"
+check 'explicit plain Codex overrides parent profile' test "$(cat "$SPAWN_ARGS_LOG/${explicit_pane#%}.home")" = ''
+check 'explicit args survive' suffix_is "$explicit_pane" --model explicit-model
 
 [ "$fail" -eq 0 ] && echo "all $count passed" || echo 'some failed'
 exit "$fail"
