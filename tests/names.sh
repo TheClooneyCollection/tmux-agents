@@ -108,7 +108,7 @@ record_set "$child_id" parent "$me_id"
 record_set "$closed_id" parent "$me_id"
 record_set "$closed_id" closed 123
 tmux set -p -t %1 @parent %0
-tmux set -p -t %1 @awaiting "before $me_id after"
+tmux set -p -t %1 @owed_to "$me_id"
 tmux set -p -t %1 @closed "before $me_id after"
 printf 'connect-queued-fixture\n' >"$queue/connect-fixture.msg"
 printf 'from_pane=%%1\nfrom_name=claude-blog.example.io-1\nto_pane=%%0\nto_name=me\nkind=request\nqueued_at=1\n' >"$queue/connect-fixture.meta"
@@ -122,7 +122,7 @@ check "old session record is removed" ok test ! -e "$records/me"
 check "renamed record keeps session id" ok grep -qx 'id=connect-session' "$records/$me_id"
 check "live child's saved parent retains identity" ok grep -qx "parent=$me_id" "$records/$child_id"
 check "closed child's saved parent retains identity" ok grep -qx "parent=$me_id" "$records/$closed_id"
-check "awaiting references retain identity" ok test "$(tmux show -pqv -t %1 @awaiting)" = "before $me_id after"
+check "reply slot retains sender identity" ok test "$(tmux show -pqv -t %1 @owed_to)" = "$me_id"
 check "other panes' closed references retain identity" ok test "$(tmux show -pqv -t "$observer" @closed)" = "before $me_id after"
 check "reconnected live peer is removed from closed references" ok test "$(tmux show -pqv -t %1 @closed)" = 'before after'
 check "queued destination retains identity" ok grep -qx "to_id=$me_id" "$queue/connect-fixture.meta"
@@ -139,14 +139,14 @@ check "old --from cannot rename again" fails env TMUX_PANE=%0 "$B/tmux-connect" 
 check "failed identity leaves name intact" ok test "$(tmux show -pqv -t %0 @agent)" = renamed
 check "old name cannot receive messages" fails env TMUX_PANE=%1 "$B/tmux-ask" --from claude-blog.example.io-1 me stale-rename-message
 check "old name cannot connect" fails env TMUX_PANE=%1 "$B/tmux-connect" --from claude-blog.example.io-1 me
-# The renamed sender must clear the new awaiting token when replying.
+# The renamed sender can still reply by the new name.
 tmux send-keys -t %1 -X cancel
 check "new name can reply" ok env TMUX_PANE=%0 "$B/tmux-ask" --from renamed --reply claude-blog.example.io-1 connect-rename-reply
 # Invoked indirectly by test helpers or by commands under test.
 # shellcheck disable=SC2329
 reply_received() { tmux capture-pane -p -J -t %1 -S -200 | grep -q 'connect-rename-reply'; }
 check "reply reaches the connected peer" ok wait_for reply_received
-check "reply clears renamed awaiting token" ok test "$(tmux show -pqv -t %1 @awaiting)" = 'before after'
+check "reply retains sender identity in slot" ok test "$(tmux show -pqv -t %1 @owed_to)" = "$me_id"
 
 # The stub process is cat, so kind matching must use the prefixed name.
 check "codex finds a prefixed name in this window" ok env TMUX_PANE=%0 "$B/tmux-connect" --from renamed codex

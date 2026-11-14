@@ -22,6 +22,7 @@ tmux split-window cat
 TMUX_PANE=%0 "$B/tmux-connect" %1 --as boss <<< legacy >/dev/null
 tmux set -p -t %1 @parent %0
 . "$B/lib.sh"
+record_set "$(pane_agent_id %1)" kind codex
 opt() { tmux show -pqv -t %1 "@$1"; }
 rows() { FZF_PROMPT='all · all windows> ' "$B/tmux-agents" --list | tr '\0' '\n' | sed $'s/\033\\[[0-9;]*m//g'; }
 for state in working needs_you "done"; do
@@ -49,29 +50,25 @@ tmux set -p -t %1 @msg_waiting_since 1
 rows >"$tmp/rows"
 grep -q '✉ message waiting' "$tmp/rows"
 tmux set -pu -t %1 @msg_waiting_since
-# A request preserves state, tracking and an explicit background wait.
+# A delivered request preserves an untracked receiver's state and tracking.
+tmux set -pu -t %1 @attention_since
 tmux set -p -t %1 @state idle
-tmux set -p -t %1 @waiting_on background
 "$B/tmux-ask" --from boss legacy 'untracked request' >/dev/null
 [ "$(opt state)" = idle ]
 [ -z "$(opt tracked)" ]
-[ "$(opt waiting_on)" = background ]
 [ -z "$(opt attention_since)" ]
-[ -n "$(tmux show -pqv -t %0 @awaiting)" ]
-echo 'ok    request does not start untracked receiver and preserves wait bookkeeping'
+echo 'ok    request does not start untracked receiver'
 # Retrying a retained request follows the same opt-in rule.
 q="/tmp/tmux-agents-$(id -u)/queue/$sock"
 mkdir -p "$q"
 for tracked in 0 1; do
   tmux set -p -t %1 @tracked "$tracked"
   tmux set -p -t %1 @state idle
-  tmux set -p -t %1 @waiting_on background
   stem="$q/$(date +%s)-$$-retry-$tracked"
   printf '[request from boss to legacy via tmux-ask]\nretry-%s\n' "$tracked" >"$stem.undelivered"
   printf 'from_id=%s\nto_id=%s\nkind=request\n' "$(pane_agent_id %0)" "$(pane_agent_id %1)" >"$stem.meta"
   "$B/tmux-ask" --retry --to legacy </dev/null >"$tmp/retry-result"
   [ ! -f "$stem.undelivered" ]
-  [ "$(opt waiting_on)" = background ]
   if [ "$tracked" = 1 ]; then [ "$(opt state)" = working ]; else [ "$(opt state)" = idle ]; fi
 done
 echo 'ok    retained request retry starts only tracked receivers'
@@ -103,9 +100,8 @@ tmux set -p -t "$plain" @state working
 plain_json='{"type":"agent-turn-complete","thread-id":"plain-thread","input-messages":["hello"],"last-assistant-message":"hello back"}'
 "$B/tmux-agent-report" --agent-id "$plain_id" --codex-notify "$plain_json"
 [ "$(tmux show -pqv -t "$plain" @tracked)" = 1 ]
-# A plain user prompt is local work for that turn only: it ends idle.
+# A plain user prompt ends idle.
 [ "$(tmux show -pqv -t "$plain" @state)" = idle ]
-[ -z "$(tmux show -pqv -t "$plain" @request_local_work)" ]
 [ -z "$(tmux show -pqv -t "$plain" @attention_since)" ]
 [ "$(record_get "$plain_id" id)" = plain-thread ]
 # A side-thread title and a different conversation cannot replace the binding.

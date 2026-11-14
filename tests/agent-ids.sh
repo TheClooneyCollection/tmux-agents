@@ -32,7 +32,6 @@ d="$(sessions_dir)"
 q="$tmp_root/queue"
 mkdir -p "$d" "$q/$test_sock" "$q/foreign"
 tmux set-option -p -t %0 @agent live
-tmux set-option -p -t %0 @awaiting 'child parent'
 tmux set-option -p -t %0 @closed 'parent child a111111111111'
 printf 'kind=codex\nid=live-conversation\ndir=/tmp/with spaces\nextra=a=b\n' > "$d/live"
 printf 'kind=claude\nid=parent-conversation\nclosed=100\n' > "$d/parent"
@@ -79,7 +78,6 @@ check test ! -e "$d/.pre-ids-v1"
 check test ! -e "$d/.ids-journal"
 for f in "$tmp_root/original-records"/*; do check cmp "$f" "$d/${f##*/}"; done
 check test -z "$(pane_agent_id %0)"
-check test "$(tmux show-options -pqv -t %0 @awaiting)" = 'child parent'
 for f in "$tmp_root/flat-originals"/*; do check cmp "$f" "$q/${f##*/}"; done
 check test "$(wc -l < "$q/$test_sock/1.meta" | tr -d ' ')" = 3
 # Never label a possibly partial old migration as an original backup.
@@ -118,13 +116,12 @@ check valid_agent_id "$parent_id"
 check valid_agent_id "$child_id"
 check test "$shape_id" != a111111111111
 check test "$(record_get "$child_id" parent)" = "$parent_id"
-# A second interruption occurs after ID and awaiting were already converted.
-printf '2\n' > "$FAIL_ID_MIGRATION"
+# A second interruption occurs after the live ID was already converted.
+printf '1\n' > "$FAIL_ID_MIGRATION"
 # Temporarily put the fault-injection tmux shim on PATH for this call only.
 # The function call's scoped PATH must not escape into the rest of the suite.
 # shellcheck disable=SC2031
 if PATH="$tmp_root/bin:$PATH" ensure_agent_ids "$q"; then exit 1; fi
-check test "$(tmux show-options -pqv -t %0 @awaiting)" = "$child_id $parent_id"
 check test ! -f "$d/.ids-v1"
 rm "$FAIL_ID_MIGRATION"
 ensure_agent_ids "$q"
@@ -145,7 +142,6 @@ check test "$(record_get "$orphan_id" parent_name)" = missing
 recovered_child="$(record_ids_by_name recovered-child)"
 check test "$(record_get "$recovered_child" parent)" = a222222222222
 check test "$(record_get a222222222222 id)" = recovered-conversation
-check test "$(tmux show-options -pqv -t %0 @awaiting)" = "$child_id $parent_id"
 check test "$(closed_names %0)" = "$parent_id $child_id $shape_id"
 check grep -qx "from_id=$live_id" "$q/$test_sock/1.meta"
 check grep -qx "to_id=$child_id" "$q/$test_sock/1.meta"

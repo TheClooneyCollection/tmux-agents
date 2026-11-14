@@ -104,8 +104,10 @@ check 'plain Claude with opaque arguments begins idle' test "$(info "$new" state
 check 'plain Claude has no active clock' test -z "$(info "$new" turn_start)"
 check 'plain Claude starts with zero work' test "$(info "$new" worked)" = 0
 /usr/bin/perl -MJSON::PP -e 'print encode_json({prompt=>$ARGV[0]})' "$(notice_body parent information agent)" | "$B/tmux-agent-report" --pane "$new" --turn-start
-check 'notice hook keeps idle launcher idle' test "$(info "$new" state)" = idle
-check 'notice hook does not start clock' test -z "$(info "$new" turn_start)"
+check 'notice hook starts idle launcher turn' test "$(info "$new" state)" = working
+check 'notice hook starts clock' test -n "$(info "$new" turn_start)"
+"$B/tmux-agent-report" --pane "$new" --turn-end </dev/null
+check 'notice turn ends idle' test "$(info "$new" state)" = idle
 printf '%s\n' '{"prompt":"perform the task"}' | "$B/tmux-agent-report" --pane "$new" --turn-start
 check 'real turn-start wakes idle launcher' test "$(info "$new" state)" = working
 check 'real turn-start starts clock' test -n "$(info "$new" turn_start)"
@@ -115,22 +117,22 @@ agent_save_work "$new" 105
 add_peer %0 "$new"
 add_peer "$new" %0
 tmux set-option -p -t %0 @parent "$new"
-tmux set-option -p -t "$new" @waiting_on background
+tmux set-option -p -t "$new" @owed_to old-requester
 tmux set-option -p -t "$new" @attention_since 1
-# Request work markers must be removed before this pane is a shell.
-for marker in request_local_work request_local_done; do
+# Turn and reply-slot markers must be removed before this pane is a shell.
+for marker in turn_began last_delivered owed_msg owed_at owed owed_settled owed_notified owed_asked; do
   tmux set -p -t "$new" "@$marker" 1
 done
 tmux send-keys -t "$new" exit Enter
 for ((i=0;i<100;i++)); do tmux capture-pane -p -t "$new" | grep -q SHELL_RETURN && break; sleep .05; done
 check 'child exit clears identity' test -z "$(info "$new" agent_id)"
 check 'child exit clears tracking' test -z "$(info "$new" tracked)"
-for marker in request_local_work request_local_done; do
+for marker in turn_began last_delivered owed_msg owed_at owed owed_settled owed_notified owed_asked; do
   check "exit clears $marker before shell reuse" test -z "$(info "$new" "$marker")"
 done
 check 'exit removes peer relationship' test -z "$(info %0 peers)"
 check 'exit detaches children from reused shell pane' test -z "$(info %0 parent)"
-check 'exit clears waiting and attention markers' test -z "$(info "$new" waiting_on)$(info "$new" attention_since)"
+check 'exit clears reply-slot and attention markers' test -z "$(info "$new" owed_to)$(info "$new" attention_since)"
 check 'record retains worked time' test "$(record_get "$aid" worked)" = 5
 check 'record closed' test -n "$(record_get "$aid" closed)"
 check 'record tagged top-level' test "$(record_get "$aid" launcher)" = 1
@@ -194,16 +196,26 @@ assert b'shell_environment_policy.set.TMUX_AGENTS_KIND="extra"' in args
 assert args[-2:]==[b'--resume',b'thread with spaces']
 PY
 check 'Codex pins, notify, passthrough and default approvals' test "$?" = 0
-python3 - "$tmp/$pane.args" <<'PYTEST'
+python3 - "$tmp/$pane.args" "$pane" <<'PYTEST'
 import json,subprocess,sys
 args=open(sys.argv[1],'rb').read().split(b'\0')[:-1]
 notify=json.loads(next(a for a in args if a.startswith(b'notify=')).split(b'=',1)[1])
 subprocess.run(notify+[json.dumps({'type':'agent-turn-complete','thread-id':'launcher-first-thread','input-messages':['plain user prompt'],'last-assistant-message':'Finished'})],check=True)
+# Rename notices are real delivered turns. A callback from the earlier plain
+# prompt must not finish the newer paste; then complete the turn that saw it.
+pane=sys.argv[2]
+def option(key):
+    return subprocess.check_output(['tmux','show','-pqv','-t',pane,'@'+key],text=True).strip()
+token=option('last_delivered')
+assert token and option('state')=='working'
+name=option('agent')
+notice=f'[notice from tmux-rename to {name} via tmux-ask · {token}]'
+subprocess.run(notify+[json.dumps({'type':'agent-turn-complete','thread-id':'launcher-first-thread',
+    'input-messages':[notice],'last-assistant-message':'Noted'})],check=True)
 PYTEST
-check 'direct user notify completes the prompt idle' test "$(info "$pane" state)" = idle
-check 'direct user notify leaves no local obligation' test -z "$(info "$pane" request_local_work)"
-check 'notify before work never charges idle time' test "$(info "$pane" worked)" = 0
-check 'notify before work never starts clock' test -z "$(info "$pane" turn_start)"
+check 'matching rename notify completes launcher turn idle' test "$(info "$pane" state)" = idle
+check 'notice turns record worked time' test "$(info "$pane" worked)" -ge 0
+check 'matching notify closes notice turn clock' test -z "$(info "$pane" turn_start)"
 check 'completed prompt clears attention' test -z "$(info "$pane" attention_since)"
 check 'actual launcher notify saves conversation' test "$(record_get "$(info "$pane" agent_id)" id)" = launcher-first-thread
 tmux send-keys -t "$pane" exit Enter
@@ -294,19 +306,17 @@ PYTEST
 check 'two chains preserve separate env maps, safely encoded pins and actual notify' test "$?" = 0
 for chain_codex in "$chain_a" "$chain_b"; do
   check 'Codex main finished prompt ends idle' test "$(info "$chain_codex" state)" = idle
-  check 'Codex main finished prompt leaves no local obligation' test -z "$(info "$chain_codex" request_local_work)"
   check 'Codex main completion clears clock' test -z "$(info "$chain_codex" turn_start)"
   check 'Codex main completion has no attention' test -z "$(info "$chain_codex" attention_since)"
-  "$B/tmux-agent-report" --from "$(info "$chain_codex" agent)" --local 'next user task' >/dev/null
+  "$B/tmux-agent-report" --from "$(info "$chain_codex" agent)" 'next user task' >/dev/null
   check 'Codex main progress wakes idle' test "$(info "$chain_codex" state)" = working
   check 'Codex main progress starts clock' test -n "$(info "$chain_codex" turn_start)"
-  "$B/tmux-agent-report" --pane "$chain_codex" --waiting background-job >/dev/null
+  "$B/tmux-agent-report" --pane "$chain_codex" 'waiting for background job' >/dev/null
   "$B/tmux-agent-report" --pane "$chain_codex" --turn-end </dev/null
-  check 'Codex main pending task stays working' test "$(info "$chain_codex" state)" = working
+  check 'Codex main turn ends idle while background job runs' test "$(info "$chain_codex" state)" = idle
   "$B/tmux-agent-report" --pane "$chain_codex" 'background job finished' >/dev/null
   "$B/tmux-agent-report" --pane "$chain_codex" --turn-end </dev/null
-  check 'background completion preserves unfinished local task' test "$(info "$chain_codex" state)" = needs_you
-  "$B/tmux-agent-report" --pane "$chain_codex" --local-done
+  check 'background completion turn ends idle' test "$(info "$chain_codex" state)" = idle
   "$B/tmux-agent-report" --pane "$chain_codex" --turn-end </dev/null
   check 'Codex main completed follow-up returns idle' test "$(info "$chain_codex" state)" = idle
 done

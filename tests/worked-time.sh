@@ -40,7 +40,7 @@ clear_work() {
 # Waiting for the first prompt is not work, even if a completion arrives first.
 first="$(tmux new-window -d -P -F '#{pane_id}' cat </dev/null)"
 agent_start_work "$first" idle 100
-agent_turn_state "$first" end needs_you 2000
+agent_turn_state "$first" end idle 2000
 expect 'initial idle interval accrues no work' "$first" worked 0
 expect 'completion before start leaves idle state' "$first" state idle
 expect 'completion before start has no active interval' "$first" turn_start ''
@@ -50,9 +50,12 @@ expect 'first turn clock begins at event not launch' "$first" turn_start 3000
 agent_set_state "$first" "done" 3007
 expect 'only post-start seconds count' "$first" worked 7
 agent_turn_state "$first" start '' 4000
-expect 'turn hook preserves done guard' "$first" state "done"
-expect 'done guard accrues no further work' "$first" worked 7
-expect 'done guard has no active interval' "$first" turn_start ''
+expect 'turn hook starts a new turn after done' "$first" state working
+expect 'new turn has not accrued work yet' "$first" worked 7
+expect 'new turn starts its own interval' "$first" turn_start 4000
+agent_turn_state "$first" end "done" 4010
+expect 'separate turns exclude idle gap' "$first" worked 17
+expect 'each completed turn counts once' "$first" turns 2
 # The old pane's true start cannot be recovered from its age or stale state.
 clear_work
 tmux set -p -t %0 @state working
@@ -283,9 +286,9 @@ expect 'duplicate real start hook retains interval' "$hooks" turn_start "$hook_s
 "$B/tmux-agent-report" --pane "$hooks" --turn-end </dev/null
 hook_work="$(opt "$hooks" worked)" hook_since="$(opt "$hooks" state_since)"
 check 'real end hook banks active work' test "${hook_work:-0}" -ge 30
-expect 'real end hook flags needs you' "$hooks" state needs_you
+expect 'real end hook finishes subagent turn' "$hooks" state "done"
 "$B/tmux-agent-report" --pane "$hooks" --turn-end </dev/null
-expect 'needs-you hooks keep turn paused, not completed' "$hooks" turns 0
+expect 'duplicate end hook counts completed turn once' "$hooks" turns 1
 expect 'duplicate real end hook keeps total' "$hooks" worked "$hook_work"
 expect 'duplicate real end hook keeps state age' "$hooks" state_since "$hook_since"
 [ "$fail" -eq 0 ] && echo 'all passed' || echo 'some failed'

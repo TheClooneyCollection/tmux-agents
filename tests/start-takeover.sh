@@ -120,7 +120,7 @@ tmux set -p -t %0 @parent "$pane"
 for key in tracked member state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored attention_since; do
   tmux set -p -t "$pane" "@$key" 1
 done
-for key in parent closed activity awaiting waiting_on codex_thread; do
+for key in parent closed activity turn_began last_delivered owed_to owed_msg owed_at owed owed_settled owed_notified owed_asked codex_thread; do
   tmux set -p -t "$pane" "@$key" stale
 done
 tmux set -p -t "$pane" @state needs_you
@@ -130,7 +130,6 @@ peer_peers="$(info %0 peers)"
 # Keep peer notices queued, so their body and stable identity can be checked.
 tmux copy-mode -t %0
 peer_id="$(pane_agent_id %0)"
-tmux set -p -t %0 @awaiting "$old_id"
 tmux set -p -t %0 @closed "retained-id $old_id"
 mkdir -p "$Q"
 printf 'from_id=%s\nto_id=%s\nfrom_name=stale-label\nto_name=peer-label\nkind=reply\n' "$old_id" "$peer_id" > "$Q/retained.meta"
@@ -168,7 +167,6 @@ check 'takeover preserves peers and labels' test "$(info "$pane" peers):$(info "
 check 'takeover preserves reverse peers and labels' test "$(info %0 peers):$(info %0 peer_names)" = "$peer_peers:renamed-label"
 check 'takeover detaches old child parent link' test -z "$(info %0 parent)"
 check 'old record follows rename before closing' test "$(record_get "$old_id" name)" = renamed-label
-check 'peer awaiting link retains old identity' test "$(info %0 awaiting)" = "$old_id"
 check 'saved queue identity metadata stays unchanged' cmp "$Q/retained.meta" "$tmp/retained-before"
 check 'rename emits existing peer notice with identity metadata' notice_matches "$peer_id" 'stale-label is now renamed-label'
 check 'old record closed' test -n "$(record_get "$old_id" closed)"
@@ -176,7 +174,7 @@ check 'old conversation preserved' test "$(record_get "$old_id" id)" = old-threa
 check 'peer receives old identity closure' test "$(info %0 closed)" = "retained-id $old_id"
 check 'new record describes preserved name and launcher' test "$(record_get "$new_id" name):$(record_get "$new_id" launcher)" = renamed-label:1
 check 'new record is open' test -z "$(record_get "$new_id" closed)"
-for key in parent closed last_turn turn_start turn_work turn_active perm_since msg_waiting_since work_closed work_restored activity awaiting waiting_on attention_since codex_thread; do
+for key in parent closed last_turn turn_start turn_work turn_active perm_since msg_waiting_since work_closed work_restored activity turn_began last_delivered owed_to owed_msg owed_at owed owed_settled owed_notified owed_asked attention_since codex_thread; do
   check "takeover clears @$key" test -z "$(info "$pane" "$key")"
 done
 # Exiting the new child still does ordinary disconnect-and-clear cleanup.
