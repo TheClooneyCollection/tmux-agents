@@ -30,6 +30,10 @@ diagnostics() {
   echo "step=$step child=${child:-unset}" >&2
   tmux list-panes -a -F '#{pane_id} name=#{@agent} size=#{pane_width}x#{pane_height} dead=#{pane_dead} status=#{pane_dead_status} command=#{pane_current_command}' >&2 || true
   if [ -n "${child:-}" ]; then
+    tmux display-message -p -t "$child" 'state=#{@state} worked=#{@worked} turn_start=#{@turn_start} turn_active=#{@turn_active} work_closed=#{@work_closed}' >&2 || true
+    if [ -n "${id:-}" ]; then
+      printf 'record %s worked=%s closed=%s (expected worked=37)\n' "$id" "$(record_get "$id" worked)" "$(record_get "$id" closed)" >&2
+    fi
     echo 'pane screen:' >&2
     tmux capture-pane -p -t "$child" >&2 || true
     echo 'pane joined history:' >&2
