@@ -29,10 +29,12 @@ Exiting saves work, clears agent state and returns to the shell. Reusing a named
 For another independent agent, split manually and run `start` there. For a connected helper, ask your agent to use `tmux-spawn --split`.
 
 ```sh
-tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--secondary AGENT] [--worker AGENT]
+tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--main-resume ID] [--secondary AGENT] [--worker AGENT]
 ```
 
 This opens a window in DIR (default `$PWD`) and starts the selected main. Without `--target`, it opens and focuses the new window in the current tmux session. With `--target session[:index]`, it creates a detached window in an existing session without changing focus; a bare session uses its next free window index. Target mode needs no caller pane or `TMUX` variable when tmux can reach the existing server. The window name is `--name NAME`, or DIR's basename by default (`root` for the filesystem root). Both `automatic-rename` and `allow-rename` are disabled before the agent starts. Chain `--name` names the window; `start AGENT --name` names the agent pane.
+
+Add `--main-resume ID` to resume only the main conversation; the secondary and worker start fresh. Claude receives `--resume ID`, then the launcher waits for its empty input prompt, submits `/rc`, and sends the chain brief. Codex and configured Codex profiles receive `resume ID` with the brief, without `/rc`. Chain naming is unchanged. The option expects a conversation UUID from Claude's project session file or a rollout file in the selected Codex home. Missing, malformed, unavailable or wrong-kind IDs warn on stderr and start a fresh main; unsupported executables also warn and start fresh. Stdout remains only the pane ID. If Claude does not reach an empty prompt within about a minute, a warning appears in its pane and the brief is not sent; resolve startup dialogs and send the brief manually.
 
 A Claude/Codex main receives the chain request; other executables receive no initial prompt, so send the actual brief manually with `tmux-ask` after they reach their prompt. For Claude/Codex, the [agent-chain skill](../skills/agent-chain/SKILL.md) creates its secondary and worker members. Each role accepts Claude, Codex, a configured Codex profile or an executable basename on PATH; defaults are `claude`/`claude`/`codex`. Inspect them with `tmux-agents chain-config --sources`; see [Chain roles](configuration.md#chain-roles) for precedence and instruction-file preferences.
 
@@ -56,6 +58,37 @@ fi
 ```
 
 Saying “start the chain” to an existing top-level agent keeps it as main. Role settings affect new chains only. Main keeps its permission defaults; Claude/Codex members use `sub_auto` (default `on`). Codex main has identity pins and turn-end notify, but no turn-start hook, so a direct user task that spans several turns starts with `tmux-agent-report --from ME --local "<task>"` and ends with `--local-done`; a task finished within one turn needs neither.
+
+## Project launchers
+
+`tmux-agents chain [DIR]` wraps `start chain`. With no DIR, fzf offers the current directory, configured project directories, then Git repositories under the configured scan root at depths 1 and 2. There are no built-in projects and no default scan root. Scanning stops at a repository; `--include-worktrees` also includes `.git` files. Without a terminal or fzf it warns and uses the current directory. Esc cancels. `--filter QUERY` selects noninteractively through fzf.
+
+Use `--target session[:index]`, `--name NAME` and `--main-resume ID` as with `start chain`. A successful launch saves a bare directory line unless `--no-save` is used; `--save` restores saving, and the last save flag wins. Existing lines with that directory, including field-carrying lines, prevent duplicates. The picker chooses directories; configured window fields apply when opening the sequence. Set an explicit `--main-resume` to resume a picker launch. Both launchers honor the [project settings](configuration.md#project-launchers).
+
+`tmux-agents main-sequence` opens the configured windows in line order in session `main`, then joins through a separate `main-N` client session. Clients share windows but select them independently; their sessions disappear on detach. The base session survives. Existing windows stay unchanged unless `--add-missing` adds missing names, using the configured index when free or appending otherwise. `--no-attach` opens windows without creating a client session. Empty configuration creates no session. Configure unique names when opening the same directory more than once.
+
+The shared project file is `${XDG_CONFIG_HOME:-$HOME/.config}/tmux-agents/projects`. Until it exists, the commands read `~/.config/tmux-main-sequence/projects`. The first edit or new save copies the fallback content into the new path without changing the old file. `TMUX_MAIN_SEQUENCE_CONFIG` overrides both paths. Each line contains a directory with optional `name=NAME`, `shell` and `resume=ID` fields. `~` expands to HOME; quote paths or values containing spaces. Blank lines and `#` comments are preserved. Unknown fields warn and are ignored. `shell` opens a plain shell and ignores `resume`. A resume field remains until explicitly removed.
+
+```text
+~ name=dashboard shell
+~ name=home
+~/projects/example name=example
+"~/projects/two words" name="two words" shell
+```
+
+Use the same commands from a shell or an agent; no manual file editing is needed:
+
+```sh
+tmux-agents main-sequence list
+tmux-agents main-sequence add ~/projects/example name=example
+tmux-agents main-sequence add ~ name=dashboard shell --at 1
+tmux-agents main-sequence set example resume=11111111-1111-4111-8111-111111111111
+tmux-agents main-sequence unset example resume
+tmux-agents main-sequence --no-attach
+tmux-agents main-sequence --add-missing
+```
+
+`add` appends unless `--at N` inserts before project N (1-based, counting project records rather than comments); N one beyond the last project appends. `set` and `unset` match a directory or a configured/default window name and print the resulting line. Ambiguous matches error and list candidate lines, so use a unique name. Edits preserve other lines, comments and order. `list` prints the source file, including comments. These config commands do not launch agents.
 
 ## Shell panes
 
@@ -242,7 +275,9 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 | Command | Purpose |
 | --- | --- |
 | `tmux-agents start AGENT [-- AGENT ARGS]` | Launch an independent agent; Claude/Codex have tracking. |
-| `tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--secondary AGENT] [--worker AGENT]` | Start a chain in a new window. |
+| `tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--main-resume ID] [--secondary AGENT] [--worker AGENT]` | Start a chain in a new window. |
+| `tmux-agents chain [DIR]` | Pick or launch a project chain. |
+| `tmux-agents main-sequence` | Open or edit configured project windows. |
 | `tmux-connect [target] [--as NAME] [--all]` | User's connection picker or direct target. |
 | `tmux-connect --from ME TARGET` | Agent connection by type, name or pane. |
 | `tmux-rename --from ME PEER NAME [--exact]` | Rename yourself or a descendant. |

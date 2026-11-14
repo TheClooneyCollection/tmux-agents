@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Configured project windows, shared through independent client sessions.
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+. "$here/lib.sh"
+. "$here/tmux-agents-projects.sh"
+usage() {
+  cat <<'HELP'
+usage: tmux-agents main-sequence [--add-missing] [--no-attach]
+       tmux-agents main-sequence list
+       tmux-agents main-sequence add DIR [name=NAME] [shell] [resume=ID] [--at N]
+       tmux-agents main-sequence set DIR|NAME resume=ID
+       tmux-agents main-sequence unset DIR|NAME resume
+
+Open configured projects in line order, then join a separate main-N client.
+--add-missing adds missing window names to an existing group.
+--no-attach creates no client session and does not attach.
+Settings: TMUX_MAIN_SEQUENCE_SESSION / _CONFIG / _AGENT / _SOCKET.
+Config: ${XDG_CONFIG_HOME:-$HOME/.config}/tmux-agents/projects;
+fallback: ~/.config/tmux-main-sequence/projects. No built-in projects.
+--at N inserts before project N (1-based); omitted means append.
+Lines: DIR [name=NAME] [shell] [resume=ID]. Quote paths/names with spaces.
+HELP
+}
+case "${1:-}" in -h|--help) usage; exit 0 ;; esac
+projects_settings
+case "${1:-}" in
+  set|unset|add|list) operation="$1"; shift; exec "$here/tmux-agents-project-config" "$operation" "$projects_read" "$projects_write" "$@" ;;
+esac
+add_missing=0 attach=1
+for arg in "$@"; do
+  case "$arg" in --add-missing) add_missing=1 ;; --no-attach) attach=0 ;; *) die "unknown main-sequence argument '$arg'" ;; esac
+done
+# Assigned by projects_settings through settings_get.
+# shellcheck disable=SC2154
+case "$projects_session" in ''|*[.:]*) die 'main-sequence session name must be nonempty and contain no colon or dot' ;; esac
+session_id="" base_id="" fresh=0
+while IFS='|' read -r id name group; do
+  if [ "$group" = "$projects_session" ]; then session_id="$id"; break; fi
+  [ "$name" != "$projects_session" ] || base_id="$id"
+done < <(tmux list-sessions -F '#{session_id}|#{session_name}|#{session_group}' 2>/dev/null || true)
+session_id="${session_id:-$base_id}"
+attach_session() {
+  local number=1 client_id
+  [ "$attach" = 1 ] || return 0
+  while tmux has-session -t "=$projects_session-$number" 2>/dev/null; do number=$((number + 1)); done
+  client_id="$(tmux new-session -d -t "$session_id" -s "$projects_session-$number" -P -F '#{session_id}')"
+  if [ -n "${TMUX:-}" ] && [ -z "$projects_socket" ]; then
+    tmux set-option -t "$client_id" destroy-unattached on \; switch-client -t "$client_id"
+  else
+    tmux set-option -t "$client_id" destroy-unattached on \; attach-session -t "$client_id"
+  fi
+}
+if [ -n "$session_id" ] && [ "$add_missing" = 0 ]; then attach_session; exit 0; fi
+# Materialize records first so parser failures never become an empty config.
+records="$(mktemp "${TMPDIR:-/tmp}/tmux-projects.XXXXXX")"
+trap 'rm -f "$records"' EXIT
+projects_records > "$records"
+[ -s "$records" ] || { printf 'main-sequence: no configured projects; nothing to open\n' >&2; exit 0; }
+if [ -z "$session_id" ]; then fresh=1; fi
+index=0 first_pane="" bootstrap=""
+while IFS= read -r -d '' dir && IFS= read -r -d '' name && IFS= read -r -d '' shell && IFS= read -r -d '' resume; do
+  if [ ! -d "$dir" ]; then printf 'main-sequence: skipping missing directory: %s\n' "$dir" >&2; continue; fi
+  if [ -z "$session_id" ]; then
+    # Temporary bootstrap occupies no final configured index or window name.
+    session_id="$(tmux new-session -d -s "$projects_session" -c "$dir" -P -F '#{session_id}' 'exec cat')"
+    bootstrap="$(tmux display -p -t "$session_id:" '#{pane_id}')"
+    tmux set-option -t "$session_id" base-index 0
+    tmux set-option -t "$session_id" renumber-windows off
+    tmux move-window -s "$session_id:" -t "$session_id:999999"
+  fi
+  found=0 max=-1 occupied=0
+  while IFS='|' read -r existing existing_name; do
+    if [ -n "$bootstrap" ] && [ "$existing" = 999999 ]; then continue; fi
+    [ "$existing_name" != "$name" ] || found=1
+    [ "$existing" != "$index" ] || occupied=1
+    [ "$existing" = 999999 ] || { [ "$existing" -le "$max" ] || max="$existing"; }
+  done < <(tmux list-windows -t "$session_id" -F '#{window_index}|#{window_name}')
+  if [ "$found" = 0 ]; then
+    destination="$index"
+    if [ "$occupied" = 1 ]; then destination=$((max + 1)); fi
+    if [ "$shell" = 1 ]; then
+      pane="$(tmux new-window -d -t "$session_id:$destination" -n "$name" -c "$dir" -P -F '#{pane_id}')"
+      tmux set-option -w -t "$pane" automatic-rename off
+      tmux set-option -w -t "$pane" allow-rename off
+    else
+      pane="$(projects_start_chain "$dir" "$session_id:$destination" "$name" "$resume")"
+    fi
+    [ -n "$first_pane" ] || first_pane="$pane"
+    if [ -n "$bootstrap" ]; then tmux kill-pane -t "$bootstrap"; bootstrap=""; fi
+  fi
+  index=$((index + 1))
+done < "$records"
+[ -n "$session_id" ] || exit 0
+if [ "$fresh" = 1 ] && [ -n "$first_pane" ]; then tmux select-window -t "$first_pane"; fi
+attach_session

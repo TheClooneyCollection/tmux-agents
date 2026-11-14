@@ -5,7 +5,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 . "$here/lib.sh"
 usage() {
   echo 'usage: tmux-agents start AGENT [--name NAME [--exact]] [-- ARGS...]'
-  echo '       tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--secondary AGENT] [--worker AGENT]'
+  echo '       tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--main-resume ID] [--secondary AGENT] [--worker AGENT]'
 }
 case "${1:-}" in -h|--help) usage; exit 0 ;; '') usage >&2; exit 1 ;; esac
 case "${1:-}:${2:-}" in chain:-h|chain:--help) usage; exit 0 ;; esac
@@ -24,6 +24,9 @@ unset TMUX_START_NAME_EXACT
 start_chain_work=0
 [ "${TMUX_START_CHAIN_WORK:-}" != 1 ] || start_chain_work=1
 unset TMUX_START_CHAIN_WORK
+chain_resume="${TMUX_START_CHAIN_RESUME:-}"
+unset TMUX_START_CHAIN_RESUME
+. "$here/tmux-agents-chain-resume.sh"
 kind="$1"; shift
 name="" window="" target="" dir="$PWD"
 explicit_exact=0
@@ -41,6 +44,12 @@ if [ "$kind" = chain ]; then
           --name) window="$2" ;;
         esac
         shift 2 ;;
+      --main-resume)
+        # A missing value is a recoverable resume error, including before a flag.
+        chain_resume_requested=1
+        chain_resume=""
+        shift
+        if [ $# -gt 0 ] && [[ $1 != --* ]]; then chain_resume="$1"; shift; fi ;;
       --main|--secondary|--worker)
         [ $# -ge 2 ] && [ -n "$2" ] || die "$1 needs an agent"
         role_args+=("$1" "$2"); shift 2 ;;
@@ -66,6 +75,9 @@ For env/option/default choices, apply applicable CLAUDE.md/AGENTS.md member pref
   # Assigned dynamically by chain_roles_resolve.
   # shellcheck disable=SC2154
   kind="$chain_main"
+  if [ "${chain_resume_requested:-0}" = 1 ]; then
+    if ! chain_resume_validate "$kind" "$chain_resume" "$dir"; then chain_resume=""; fi
+  fi
   if full_agent_kind "$kind"; then set -- "$prompt"
   else set --; start_chain_work=0; fi
 else
@@ -93,7 +105,11 @@ if [ -n "$window" ]; then
   # env applies forwarded overrides only to the child launcher. Its exports
   # (including PINNED and profile PATH) cannot reach this outer shell, which
   # retains the pane's original environment when it execs the default shell.
-  args=(env "TMUX_AGENTS_CHAIN_MAIN=${TMUX_AGENTS_CHAIN_MAIN:-}" "TMUX_AGENTS_CHAIN_SECONDARY=${TMUX_AGENTS_CHAIN_SECONDARY:-}" "TMUX_AGENTS_CHAIN_WORKER=${TMUX_AGENTS_CHAIN_WORKER:-}" TMUX_START_NAME_EXACT=1 "TMUX_START_CHAIN_WORK=$start_chain_work" "TMUX_START_CODEX_HOMES=$codex_homes" "TMUX_SPAWN_BIN=${TMUX_SPAWN_BIN:-}" "XDG_STATE_HOME=${XDG_STATE_HOME:-$HOME/.local/state}" "$here/tmux-agents-start" "$kind")
+  chain_env=()
+  if [ -n "$chain_resume" ]; then
+    chain_env=("TMUX_START_CHAIN_RESUME=$chain_resume" "CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude}" "CODEX_HOME=${CODEX_HOME:-$HOME/.codex}")
+  fi
+  args=(env ${chain_env[@]+"${chain_env[@]}"} "TMUX_AGENTS_CHAIN_MAIN=${TMUX_AGENTS_CHAIN_MAIN:-}" "TMUX_AGENTS_CHAIN_SECONDARY=${TMUX_AGENTS_CHAIN_SECONDARY:-}" "TMUX_AGENTS_CHAIN_WORKER=${TMUX_AGENTS_CHAIN_WORKER:-}" TMUX_START_NAME_EXACT=1 "TMUX_START_CHAIN_WORK=$start_chain_work" "TMUX_START_CODEX_HOMES=$codex_homes" "TMUX_SPAWN_BIN=${TMUX_SPAWN_BIN:-}" "XDG_STATE_HOME=${XDG_STATE_HOME:-$HOME/.local/state}" "$here/tmux-agents-start" "$kind")
   if ! full_agent_kind "$kind"; then args=(env "PATH=$PATH" "${args[@]}"); fi
   [ -z "$name" ] || args+=(--name "$name")
   args+=(-- "$@")
@@ -145,6 +161,10 @@ agent_id="$(new_agent_id)"
 # shellcheck disable=SC2329
 finish() {
   local resume_kind resume_name resume_sid
+  if [ -n "${chain_delivery_pid:-}" ]; then
+    kill "$chain_delivery_pid" 2>/dev/null || true
+    wait "$chain_delivery_pid" 2>/dev/null || true
+  fi
   if [ "$(pane_agent_id "$pane")" = "$agent_id" ]; then
     resume_kind="$(record_get "$agent_id" kind)"
     resume_name="$(record_get "$agent_id" name)"
@@ -181,6 +201,7 @@ if [ "$kind" = claude ]; then
     sid="$(printf '%s' "$sid" | tr '[:upper:]' '[:lower:]')"
   fi
 fi
+[ -z "$chain_resume" ] || sid="$chain_resume"
 record_set "$agent_id" id "$sid"
 tmux set-option -p -t "$pane" @member 0
 if full_agent_kind "$kind"; then
@@ -193,7 +214,14 @@ else
 fi
 
 refresh_labels
-build_agent_command "$kind" start "$sid"
+launch_mode=new
+[ -z "$chain_resume" ] || launch_mode=resume
+build_agent_command "$kind" start "$sid" "$launch_mode"
+if [ -n "$chain_resume" ] && [ "$kind" = claude ]; then
+  chain_resume_deliver "$pane" "$agent_id" "$1" &
+  chain_delivery_pid=$!
+  set --
+fi
 status=0
 "${agent_command[@]}" "$@" || status=$?
 exit "$status"

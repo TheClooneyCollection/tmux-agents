@@ -3,7 +3,7 @@
 set -euo pipefail
 here="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
 case "${1:-}" in
-  start|chain-config) subcommand="$1"; shift; exec "$here/tmux-agents-$subcommand" "$@" ;;
+  start|chain-config|main-sequence|chain) subcommand="$1"; shift; exec "$here/tmux-agents-$subcommand" "$@" ;;
 esac
 . "$here/lib.sh"
 
@@ -13,6 +13,10 @@ usage: tmux-agents [--client NAME]
 
 Lists sub agents and persistent shells with a live preview.
 Bound to prefix + a.
+
+Commands: start AGENT, start chain, chain-config, chain (project picker),
+          main-sequence (configured project session group).
+Run tmux-agents COMMAND --help for its flags.
 
   enter   open it: hidden agents in a popup (prefix + d closes), others jump
   ctrl-o  jump to it full screen (prefix + L jumps back)

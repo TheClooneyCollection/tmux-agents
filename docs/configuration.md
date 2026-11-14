@@ -17,6 +17,11 @@ set -g @tmux_agents_name_format exact
 | `@tmux_agents_chain_main` | `TMUX_AGENTS_CHAIN_MAIN` | `claude` | Main agent for a new `start chain` window |
 | `@tmux_agents_chain_secondary` | `TMUX_AGENTS_CHAIN_SECONDARY` | `claude` | Secondary for a new chain |
 | `@tmux_agents_chain_worker` | `TMUX_AGENTS_CHAIN_WORKER` | `codex` | Worker for a new chain |
+| `@tmux_agents_main_sequence_session` | `TMUX_MAIN_SEQUENCE_SESSION` | `main` | Project base/group session; client sessions use `NAME-N` |
+| `@tmux_agents_projects_config` | `TMUX_MAIN_SEQUENCE_CONFIG` | XDG config path | Shared project file; see below |
+| `@tmux_agents_chain_scan_root` | `TMUX_CHAIN_SCAN_ROOT` | none | Optional Git scan root for the project picker |
+| `@tmux_agents_main_sequence_agent` | `TMUX_MAIN_SEQUENCE_AGENT` | none | Legacy custom shell command instead of `start chain` |
+| `@tmux_agents_main_sequence_socket` | `TMUX_MAIN_SEQUENCE_SOCKET` | current server | Named tmux socket (`-L`) for project launchers |
 | `@tmux_agents_max_depth` | `TMUX_AGENTS_MAX_DEPTH` | `2` | Maximum sub agent depth |
 | `@tmux_agents_codex_homes` | `TMUX_AGENTS_CODEX_HOMES` | `none` | Extra accounts as `PROFILE=CODEX_HOME` pairs |
 | `@tmux_agents_session_prefix` | `TMUX_AGENTS_PREFIX` | `agents` | Hidden session name prefix |
@@ -139,3 +144,13 @@ Rerun `./install.sh` from your installation checkout after adding a profile so i
 The main keeps its agent permission defaults. Claude/Codex secondary and worker members use `sub_auto`, which defaults to `on`. Codex main uses identity pins and notify tracking, but has no turn-start hook: the main uses `--local` at the start of each direct user task and `--local-done` when that local work finishes. See [Starting agents](guide.md#starting-agents).
 
 Message length is not a setting. `tmux-ask` always pastes ordinary messages in full. Explicit summary text combined with `--message-file` creates a retained attachment for `tmux-read`; retention is fixed at 7 days. See [message delivery](guide.md#how-messages-flow).
+
+## Project launchers
+
+`main-sequence` and `chain` share `${XDG_CONFIG_HOME:-$HOME/.config}/tmux-agents/projects`, falling back to `~/.config/tmux-main-sequence/projects` only while the new file is absent. An explicit config setting overrides both. Writes preserve fallback content in the new file, leaving the old one untouched. See [Project launchers](guide.md#project-launchers) for fields and editing commands.
+
+The scan root has no default. When neither environment nor option supplies a nonempty root, the picker lists only the current directory and configured projects. Set `@tmux_agents_chain_scan_root` to a directory you choose to enable scanning at depths 1 and 2. No personal project paths are built in. Session `main` is the only session-name default.
+
+`TMUX_MAIN_SEQUENCE_SOCKET` selects a named server before launching; remaining options are read from that server. Its option fallback is read on the caller's server. The custom agent command is a compatibility setting: it runs through the configured shell and does not receive chain-role or resume flags. Normal launches use `tmux-agents start chain`; choose roles through the existing chain settings. Shell records always open plain shell windows.
+
+For `--main-resume`, Claude session existence is checked under `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/<directory-key>/<ID>.jsonl`, where nonalphanumeric directory characters become hyphens. Codex checks rollout files beneath `${CODEX_HOME:-$HOME/.codex}/sessions`; configured Codex profiles use their mapped home. Missing files warn and start fresh. No new Claude-profile configuration is introduced.

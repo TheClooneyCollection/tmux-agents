@@ -11,7 +11,9 @@
       "Bash(tmux-dismiss --from:*)",
       "Bash(tmux-shell --from:*)",
       "Bash(tmux-rename --from:*)",
-      "Bash(tmux-agents chain-config:*)"
+      "Bash(tmux-agents chain-config:*)",
+      "Bash(tmux-agents main-sequence:*)",
+      "Bash(tmux-agents chain:*)"
     ]
   }
 }

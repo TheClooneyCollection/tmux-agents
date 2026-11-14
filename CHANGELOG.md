@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `tmux-agents main-sequence` opens configured project windows in order, with optional names, plain shells and sticky main resume IDs; `chain` picks from the current directory, saved projects and an optional Git scan root. There are no built-in project directories or default scan root. Shared config supports `list`, `add --at N`, `set` and `unset`, and reads the legacy project file until the new XDG config file exists. The setup skill offers project selection, ordering, optional shell placement and scan-root configuration without requesting resume IDs.
+
+- `tmux-agents start chain --main-resume ID` resumes only the main conversation. Claude submits `/rc` before the chain brief; Codex and its profiles resume with the brief. Invalid or unavailable IDs and unsupported agents warn and start a fresh main. Secondary and worker remain fresh.
+
 ## v1.19.0 (2026-11-14)
 
 - **Explicit long messages with `tmux-read`.** Combine a positional summary with `tmux-ask --message-file PATH` to keep the file for 7 days and deliver the summary plus `Read the full message here: tmux-read <id>`. Any agent, or the user in a plain shell, can read it with `tmux-read <id>`; it needs no tmux connection. Ordinary messages and file-only sends paste in full without archiving, and automatic long-message truncation is removed. Relays can reuse the original pointer.

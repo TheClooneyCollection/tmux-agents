@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+
+# shellcheck disable=SC2088
+# Labels intentionally display a literal tilde.
+# tmux-agents chain: start an agent chain in a new project window.
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+. "$here/lib.sh"
+. "$here/tmux-agents-projects.sh"
+
+usage() {
+  cat <<'EOF'
+Usage: tmux-agents chain [dir] [--no-save] [--target session[:index]] [--name name]
+
+Start a chain in a new tmux window. With no dir, pick from $PWD (default)
+then configured projects and optionally scanned Git repos using fzf.
+An explicit dir skips the picker. Paths under HOME are displayed with ~.
+Without a terminal or fzf, warn and use $PWD. Esc cancels without saving.
+Print the new pane ID to stdout. Without --target, run inside tmux and
+focus the new window. With --target, leave the new window detached.
+Successful launches save the directory unless --no-save is given.
+
+Options:
+  --include-worktrees  include scanned repos whose .git is a file
+  --no-save       do not add the directory to the projects file
+  --save          save the canonical directory (default; compatibility option)
+  --filter QUERY  choose with fzf noninteractively
+  --main-resume ID resume only the selected main
+  --target        destination session, optionally with a window index
+  --name          window name (default: directory basename)
+  -h, --help      show this help
+  --              treat remaining arguments as the directory
+
+Environment:
+  TMUX_MAIN_SEQUENCE_AGENT   when set, custom shell command sent to a new window
+                             when unset, delegate to tmux-agents start chain
+  TMUX_MAIN_SEQUENCE_CONFIG  projects file (default: tmux-agents projects config; legacy fallback)
+  TMUX_MAIN_SEQUENCE_SOCKET  named tmux socket, passed with -L
+  TMUX_CHAIN_SCAN_ROOT       scan Git repos at depths 1 and 2 (unset: no scan)
+                             skip worktrees by default; stop at any repo
+
+Saved paths use ~ for HOME. Existing paths are resolved relative to the
+current directory for deduplication; blank lines and comments are ignored.
+EOF
+}
+
+fail() { printf 'tmux-agents chain: %s\n' "$*" >&2; exit 1; }
+invalid() { printf 'tmux-agents chain: %s\n' "$*" >&2; usage >&2; exit 2; }
+
+DIR=$PWD
+HAVE_DIR=0
+SAVE=1
+INCLUDE_WORKTREES=0
+TARGET=
+NAME=
+RESUME=
+FILTER=
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    --include-worktrees) INCLUDE_WORKTREES=1; shift ;;
+    --save) SAVE=1; shift ;;
+    --no-save) SAVE=0; shift ;;
+    --target|--name|--main-resume|--filter)
+      [[ $# -ge 2 && -n $2 && $2 != --* ]] || invalid "$1 requires a value"
+      case "$1" in
+        --target) TARGET=$2 ;;
+        --name) NAME=$2 ;;
+        --main-resume) RESUME=$2 ;;
+        --filter) FILTER=$2 ;;
+      esac
+      shift 2
+      ;;
+    --) shift; break ;;
+    -*) invalid "unknown option: $1" ;;
+    *)
+      [[ $HAVE_DIR -eq 0 ]] || invalid "only one directory is allowed"
+      DIR=$1; HAVE_DIR=1; shift
+      ;;
+  esac
+done
+for ARG in "$@"; do
+  [[ $HAVE_DIR -eq 0 ]] || invalid "only one directory is allowed"
+  DIR=$ARG; HAVE_DIR=1
+done
+
+projects_settings
+canonical_dir() { projects_canonical "$1"; }
+saved_dirs() {
+  local dir name shell resume
+  while IFS= read -r -d '' dir && IFS= read -r -d '' name && IFS= read -r -d '' shell && IFS= read -r -d '' resume; do
+    canonical_dir "$dir" || true
+  done < <(projects_records)
+}
+
+# Only inspect two levels, and do not descend into a repository.
+scanned_dirs() (
+  local root first second
+  [[ -n $projects_scan ]] || return 0
+  root=$(canonical_dir "$projects_scan") || return 0
+  shopt -s nullglob dotglob
+  for first in "$root"/*; do
+    [[ -d $first ]] || continue
+    if [[ -d $first/.git || -f $first/.git ]]; then
+      if [[ -d $first/.git || $INCLUDE_WORKTREES -eq 1 ]]; then
+        printf '%s\n' "$first"
+      fi
+      continue
+    fi
+    for second in "$first"/*; do
+      [[ -d $second && ( -d $second/.git || ( $INCLUDE_WORKTREES -eq 1 && -f $second/.git ) ) ]] || continue
+      printf '%s\n' "$second"
+    done
+  done
+)
+
+[[ -n $DIR ]] || fail "directory must not be empty"
+DIR=$(canonical_dir "$DIR") || fail "directory does not exist or is inaccessible"
+[[ $DIR != *$'\n'* ]] || fail "directory names containing newlines are not supported"
+if [[ $HAVE_DIR -eq 0 ]]; then
+  if [[ -z $FILTER && ( ! -t 0 || ! -t 2 ) ]]; then
+    printf 'tmux-agents chain: no terminal; using current directory\n' >&2
+  elif ! command -v fzf >/dev/null 2>&1; then
+    printf 'tmux-agents chain: fzf is not on PATH; using current directory\n' >&2
+  else
+    # Preserve order so the current directory is the initial choice.
+    HOME_DIR=$(canonical_dir "$HOME")
+    CHOICES=("$DIR")
+    while IFS= read -r ENTRY; do
+      ENTRY=$(canonical_dir "$ENTRY") || continue
+      [[ $ENTRY != *$'\n'* ]] || continue
+      FOUND=0
+      for EXISTING in "${CHOICES[@]}"; do
+        if [[ $EXISTING == "$ENTRY" ]]; then FOUND=1; break; fi
+      done
+      [[ $FOUND -eq 1 ]] || CHOICES+=("$ENTRY")
+    done < <(saved_dirs; scanned_dirs)
+    LABELS=()
+    for ENTRY in "${CHOICES[@]}"; do
+      case "$ENTRY" in
+        "$HOME_DIR") ENTRY='~' ;;
+        "$HOME_DIR"/*) ENTRY="~/${ENTRY#"$HOME_DIR"/}" ;;
+      esac
+      LABELS+=("$ENTRY")
+    done
+    STATUS=0
+    FZF_ARGS=()
+    [[ -z $FILTER ]] || FZF_ARGS+=(--filter "$FILTER")
+    SELECTED=$(printf '%s\n' "${LABELS[@]}" | fzf --no-sort --no-multi --layout=reverse --query='' --prompt='Project> ' ${FZF_ARGS[@]+"${FZF_ARGS[@]}"}) || STATUS=$?
+    case $STATUS in
+      0) [[ -n $SELECTED ]] || exit 0 ;;
+      1|130) exit 0 ;;
+      *) fail "fzf failed (exit $STATUS)" ;;
+    esac
+    FOUND=0
+    for INDEX in "${!LABELS[@]}"; do
+      if [[ ${LABELS[$INDEX]} == "$SELECTED" ]]; then
+        DIR=${CHOICES[$INDEX]}
+        FOUND=1
+        break
+      fi
+    done
+    [[ $FOUND -eq 1 ]] || fail "fzf returned an unknown project"
+  fi
+fi
+[[ -n $TARGET || -n ${TMUX:-} ]] || fail "run inside tmux or specify --target session[:index]"
+
+PANE=$(projects_start_chain "$DIR" "$TARGET" "$NAME" "$RESUME")
+# Persist only after a successful launch, using the same parser as the picker.
+if [[ $SAVE -eq 1 ]]; then
+  "$here/tmux-agents-project-config" save "$projects_read" "$projects_write" "$DIR"
+fi
+printf '%s\n' "$PANE"

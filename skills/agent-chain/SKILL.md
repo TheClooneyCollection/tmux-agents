@@ -44,9 +44,13 @@ New profiles need the installer run for their existing Codex home so they receiv
 
 ## Starting from a shell
 
-`tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--secondary AGENT] [--worker AGENT]` opens a new window in DIR (default `$PWD`), names it after DIR's basename (`root` at the filesystem root) unless `--name NAME` is supplied, and launches the selected main.
+For saved projects, `tmux-agents chain` offers a project picker and `tmux-agents main-sequence` opens configured windows in order. Use `main-sequence list`, `add DIR [name=NAME] [shell] [--at N]`, `set DIR|NAME resume=ID` and `unset DIR|NAME resume` to maintain the shared config. Resolve ambiguous matches with a unique window name. See [Project launchers](../../docs/guide.md#project-launchers) for paths, fallback and scan settings.
+
+`tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--main-resume ID] [--secondary AGENT] [--worker AGENT]` opens a new window in DIR (default `$PWD`), names it after DIR's basename (`root` at the filesystem root) unless `--name NAME` is supplied, and launches the selected main.
 
 Without `--target` it opens and focuses the window in the current session. `--target session[:index]` creates it detached in an existing session; a bare session chooses the next free index. Target mode needs no caller pane or `TMUX` variable when tmux can reach the existing server. Flags can appear in any order. All three role choices are validated before window creation. Success prints exactly the new pane ID and a newline to stdout; errors use stderr and a nonzero exit status. Both window rename options (`automatic-rename` and `allow-rename`) are disabled before agent startup. Chain `--name` names the window, unlike the pane label in `start AGENT --name`. For named servers, select the socket through `TMUX` or a `tmux -L NAME` wrapper; there is no launcher socket flag. See [Starting agents](../../docs/guide.md#starting-agents) for examples.
+
+`--main-resume ID` resumes only the main; members start fresh. Claude receives `/rc` before the chain brief, while Codex receives the brief with `resume ID`. Invalid or unavailable IDs and unsupported executables warn and start a fresh main. See [Starting agents](../../docs/guide.md#starting-agents) for session-store checks and startup recovery.
 
 Claude/Codex receive an initial role snapshot and sources; other executables receive no initial prompt. Shell resolution is explicit flag > nonempty environment > nonempty tmux option > default. The main follows the steps below, preserving explicit choices and applying instruction-file member preferences as above. This convenience command is for starting a new chain from a shell, never for secondary or worker role briefs joining an existing chain.
 

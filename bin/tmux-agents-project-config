@@ -1,0 +1,117 @@
+#!/usr/bin/env perl
+# Shared project records and surgical config edits; never evaluates shell text.
+use strict;
+use warnings;
+use Text::ParseWords qw(shellwords);
+use Cwd qw(abs_path);
+use File::Basename qw(dirname basename);
+use File::Path qw(make_path);
+use File::Temp qw(tempfile);
+my ($mode, $read, $write, @args) = @ARGV;
+die "project config: missing arguments\n" unless defined $write;
+sub canonical {
+    my ($dir) = @_;
+    $dir =~ s{^~(?=/|$)}{$ENV{HOME}};
+    return abs_path($dir) // $dir;
+}
+sub quote_token {
+    my ($s) = @_;
+    return $s if $s =~ m{^[a-zA-Z0-9_~./=:-]+$};
+    $s =~ s/'/'\\''/g;
+    return "'$s'";
+}
+my @lines;
+if (-f $read) {
+    open my $in, '<', $read or die "$read: $!\n";
+    @lines = <$in>;
+    close $in;
+}
+my @records;
+for my $i (0..$#lines) {
+    my $line = $lines[$i];
+    next if $line =~ /^\s*(?:#|$)/;
+    # Split at an unquoted comment, preserving quoted spaces and literal #.
+    my ($body, $comment) = ('', '');
+    pos($line) = 0;
+    while ($line =~ /\G(\s+|(?:"(?:\\.|[^"\\])*"|'[^']*'|\\.|[^\s#'"\\])+)/gc) { $body .= $1; }
+    my $rest = substr($line, pos($line) // 0);
+    if ($rest =~ /^#/) { $comment = $rest; $comment =~ s/\r?\n$//; }
+    elsif ($rest =~ /\S/) { warn "$read:".($i+1).": malformed quoting; ignored\n"; next; }
+    my @tokens = shellwords($body);
+    next unless @tokens;
+    my $dir = canonical(shift @tokens);
+    my $name = basename($dir); $name = 'root' if $dir eq '/';
+    my ($shell, $resume) = (0, '');
+    for my $field (@tokens) {
+        if ($field =~ /^name=(.+)$/s) { $name = $1; }
+        elsif ($field eq 'shell') { $shell = 1; }
+        elsif ($field =~ /^resume=(.*)$/s) { $resume = $1; }
+        else { warn "$read:".($i+1).": unknown field '$field'; ignored\n"; }
+    }
+    push @records, {line=>$i, dir=>$dir, name=>$name, shell=>$shell, resume=>$resume,
+                    tokens=>[shellwords($body)], comment=>$comment};
+}
+if ($mode eq 'list') { die "usage: main-sequence list\n" if @args; print @lines; exit; }
+if ($mode eq 'records') {
+    for my $r (@records) { print join("\0", @$r{qw(dir name shell resume)}), "\0"; }
+    exit;
+}
+if ($mode eq 'add') {
+    my $dir = shift @args;
+    die "usage: main-sequence add DIR [name=NAME] [shell] [resume=ID] [--at N]\n" unless defined $dir && length $dir;
+    my (@fields, $at);
+    while (@args) {
+        my $field = shift @args;
+        if ($field eq '--at') { $at = shift @args; die "--at requires a position\n" unless defined $at; }
+        elsif ($field eq 'shell' || $field =~ /^(?:name|resume)=.+$/s) { push @fields, $field; }
+        else { die "unknown project field '$field'\n"; }
+    }
+    die "project fields cannot contain newlines\n" if grep { /[\r\n]/ } ($dir, @fields);
+    my $position = scalar @lines;
+    if (defined $at) {
+        die "--at must be a project position from 1 to ".(@records+1)."\n"
+            unless $at =~ /^[1-9][0-9]*$/ && $at <= @records+1;
+        $position = $records[$at-1]->{line} if $at <= @records;
+    }
+    my $entry = join(' ', map { quote_token($_) } ($dir, @fields))."\n";
+    $lines[$position-1] .= "\n" if $position && $lines[$position-1] !~ /\n$/;
+    splice @lines, $position, 0, $entry;
+    print $entry;
+} elsif ($mode eq 'save') {
+    my $dir = canonical($args[0]);
+    exit if grep { $_->{dir} eq $dir } @records;
+    my $home = canonical($ENV{HOME});
+    $dir =~ s{^\Q$home\E(?=/|$)}{~};
+    $lines[-1] .= "\n" if @lines && $lines[-1] !~ /\n$/;
+    push @lines, quote_token($dir)."\n";
+} elsif ($mode eq 'set' || $mode eq 'unset') {
+    my ($selector, $field) = @args;
+    die "usage: main-sequence set DIR|NAME resume=ID | unset DIR|NAME resume\n"
+        unless defined $field && @args == 2 &&
+        (($mode eq 'set' && $field =~ /^resume=.+$/s) || ($mode eq 'unset' && $field eq 'resume'));
+    my $dir = canonical($selector);
+    my @matches = grep { $_->{dir} eq $dir || $_->{name} eq $selector } @records;
+    if (@matches != 1) {
+        warn @matches ? "ambiguous project '$selector'; choose a unique name:\n" : "no project matches '$selector'\n";
+        warn sprintf("  line %d: %s", $_->{line}+1, $lines[$_->{line}]) for @matches;
+        exit 1;
+    }
+    my $r = $matches[0];
+    my @tokens = @{$r->{tokens}};
+    my $path = shift @tokens;
+    @tokens = grep { !/^resume=/ } @tokens;
+    push @tokens, $field if $mode eq 'set';
+    my ($indent) = $lines[$r->{line}] =~ /^(\s*)/;
+    my $updated = $indent.join(' ', map { quote_token($_) } ($path, @tokens));
+    $updated .= ' '.$r->{comment} if length $r->{comment};
+    $updated .= "\n";
+    $lines[$r->{line}] = $updated;
+    print $updated;
+} else { die "unknown project config operation '$mode'\n"; }
+# New-path writes preserve legacy data, leaving the fallback file untouched.
+make_path(dirname($write));
+my ($out, $tmp) = tempfile('.projects.XXXXXX', DIR=>dirname($write), UNLINK=>0);
+print {$out} @lines or die "$tmp: $!\n";
+close $out or die "$tmp: $!\n";
+chmod((stat($read))[2] & 0777, $tmp) if -f $read;
+rename $tmp, $write or die "$write: $!\n";
