@@ -6,6 +6,8 @@
 
 - `tmux-agents start chain --main-resume ID` resumes only the main conversation. Claude submits `/rc` before the chain brief; Codex and its profiles resume with the brief. Invalid or unavailable IDs and unsupported agents warn and start a fresh main. Secondary and worker remain fresh.
 
+- **Spawn profile inheritance.** Helpers default to the named caller's recorded Codex profile, even when a shared tool process carries another account's environment. Resume retains the recorded profile or falls back to the parent when no kind was recorded; an explicit agent overrides either default. Plain `codex` uses the default home.
+
 ## v1.19.0 (2026-11-14)
 
 - **Explicit long messages with `tmux-read`.** Combine a positional summary with `tmux-ask --message-file PATH` to keep the file for 7 days and deliver the summary plus `Read the full message here: tmux-read <id>`. Any agent, or the user in a plain shell, can read it with `tmux-read <id>`; it needs no tmux connection. Ordinary messages and file-only sends paste in full without archiving, and automatic long-message truncation is removed. Relays can reuse the original pointer.

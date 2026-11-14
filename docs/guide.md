@@ -172,7 +172,7 @@ tmux-spawn --from ME --name auth-review --message-file "$task_file"
 
 ### Start a helper
 
-Helpers inherit the caller's agent kind and Codex profile. To choose another, put `claude`, `codex`, a configured profile or an executable basename before the options. For other executables, a supplied spawn task is not sent: use the printed full name and resend the actual brief with `tmux-ask` once the agent is at its prompt. See [manual task delivery](agents.md#sending-the-first-task). They open hidden, one window each in a project session such as `agents-api`. Use the full name printed by spawn; [naming rules](#renaming-agents) apply.
+Helpers inherit the named caller's recorded agent kind and Codex profile, ahead of the calling process's environment. Without a recorded kind, the pinned agent or configured `CODEX_HOME` supplies the default. Plain `codex` uses its default home. To choose another, put `claude`, `codex`, a configured profile or an executable basename before the options. For other executables, a supplied spawn task is not sent: use the printed full name and resend the actual brief with `tmux-ask` once the agent is at its prompt. See [manual task delivery](agents.md#sending-the-first-task). They open hidden, one window each in a project session such as `agents-api`. Use the full name printed by spawn; [naming rules](#renaming-agents) apply.
 
 | Spawn option | Effect |
 | --- | --- |
@@ -233,7 +233,7 @@ Parents dismiss finished helpers with `tmux-dismiss --from ME PEER`; users can c
 
 Closed conversations remain listed for [7 days by default](configuration.md). `enter` reopens, `ctrl-o` reopens and jumps, `ctrl-x` forgets. Reopening always uses a hidden window, preserving membership and reconnecting to the original parent if still live; otherwise the [resume rules](design/sub-agents.md#closing-and-telling-the-parent) apply.
 
-`tmux-spawn --from ME --resume PEER` requires a unique closed match. For duplicate names, use `--list-closed`, then `--resume-id ID`. Labels may acquire a suffix if taken. Codex must finish a turn before its conversation can be reopened. Saved messages follow the original identity, never another agent reusing its label. Legacy records migrate automatically; see [recovery instructions](design/state-and-protocol.md#recovery).
+`tmux-spawn --from ME --resume PEER` requires a unique closed match. For duplicate names, use `--list-closed`, then `--resume-id ID`. Resume keeps the recorded agent/profile; records without a kind fall back to the live parent. An explicit agent before the options overrides this choice and is retained for later resumes. Labels may acquire a suffix if taken. Codex must finish a turn before its conversation can be reopened. Saved messages follow the original identity, never another agent reusing its label. Legacy records migrate automatically; see [recovery instructions](design/state-and-protocol.md#recovery).
 
 To resume a closed child in the current shell pane, run `tmux-spawn --resume-id ID --here` from a returned or verified interactive shell. The pane is reused, and its saved parent and membership are restored. A missing parent stays disconnected. The default `--resume` form still opens a hidden window. Claude and Codex print a resume command when their pane returns to the shell; top-level agents use `tmux-agents start`, while sub agents include `--here` to resume in place.
 

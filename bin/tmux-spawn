@@ -20,8 +20,8 @@ By default, starts a sub agent in its own window of the project's hidden session
 (agents-<project>), names it, connects it to this pane, and hands it
 the task (arguments, stdin if none, or --message-file) as a tmux-ask request. It
 replies with tmux-ask --reply when done. The agent defaults to the
-same kind as the caller, in auto mode (Claude --permission-mode auto,
-Codex approvals_reviewer=auto_review). Set @tmux_agents_sub_auto or
+same kind and configured Codex profile as the caller, in auto mode
+(Claude --permission-mode auto, Codex approvals_reviewer=auto_review). Set @tmux_agents_sub_auto or
 TMUX_AGENTS_SUB_AUTO to off to keep the agent's permission defaults.
 Other executable command names on PATH are accepted without agent-specific
 flags or an initial task; send their first task with tmux-ask at their prompt.
@@ -163,6 +163,9 @@ if [ "${1:-}" = "--run" ]; then
   # Bookkeeping only: a ledger error must not keep the agent from starting.
   if [ -n "${7:-}" ]; then request_state delivered "$7" || true; fi
   if [ "$mode" = resume ]; then request_state restore "$TMUX_PANE"; fi
+  # Plain Codex is an explicit/default-home choice, not the tmux server's
+  # inherited account. Configured profiles set their home in the builder.
+  [ "$agent" != codex ] || unset CODEX_HOME
   build_agent_command "$agent" spawn "$sid" "$mode"
   if [ "$split_exit" = shell ]; then
     status=0
@@ -250,6 +253,35 @@ if [ "$here_resume" -eq 1 ]; then
 else
   ensure_agent_ids
 fi
+
+# Session records keep the exact launch profile even when a shared Codex
+# daemon exposes another pane's kind or CODEX_HOME. Unrecorded callers use
+# the pinned environment, refining plain Codex with a configured home.
+inherited_agent() {
+  local pane="$1" aid selected=""
+  if [ -n "$pane" ]; then
+    aid="$(pane_agent_id "$pane")"
+    if valid_agent_id "$aid"; then selected="$(record_get "$aid" kind)"; fi
+  fi
+  if [ -z "$selected" ]; then
+    selected="${TMUX_AGENTS_KIND:-}"
+    if [ -z "$selected" ] && [ -n "${CLAUDECODE:-}" ]; then selected=claude; fi
+    if [ -z "$selected" ] || [ "$selected" = codex ]; then
+      if [ -n "${CODEX_HOME:-}" ]; then
+        selected="$(codex_profile_for_home "$CODEX_HOME" || printf '%s' "$selected")"
+      fi
+    fi
+    if [ -z "$selected" ] && [ -n "$pane" ]; then
+      case "$(pane_command "$pane")" in
+        *claude*) selected=claude ;;
+        *codex*) selected=codex ;;
+      esac
+    fi
+  fi
+  [ -n "$selected" ] || die "can't tell which agent you are; pass an agent command or configured Codex profile"
+  name_kind_for "$selected" >/dev/null || die "unknown inherited agent '$selected': configure its profile or pass an explicit agent"
+  printf '%s\n' "$selected"
+}
 
 # Show a sub agent's pane, connected to its parent ($2, may be empty), and
 # keep its transcript on screen after the agent exits.
@@ -348,7 +380,6 @@ if [ -n "$resume$resume_id" ]; then
   [ "$(record_get "$resume_id" member)" != 1 ] || member=1
   resume="$(record_get "$resume_id" name)"
   kind="$(record_get "$resume_id" kind)" sid="$(record_get "$resume_id" id)"
-  full_agent_kind "$kind" || die "cannot resume '$resume': no conversation adapter for '$kind'"
   dir="$(record_get "$resume_id" dir)" rdepth="$(record_get "$resume_id" depth)"
   [ -n "$sid" ] || die "can't reopen '$resume': its session id was never recorded (Codex records it when its first turn ends)"
   [ -d "$dir" ] || die "can't reopen '$resume': its directory $dir is gone"
@@ -367,6 +398,12 @@ if [ -n "$resume$resume_id" ]; then
     fi
   fi
   [ -z "$parent" ] || require_agent_pane "$parent"
+  # Explicit choices win; otherwise retain the recorded profile, with the
+  # live parent as the fallback for old records that have no kind.
+  if [ -n "$agent" ]; then kind="$agent"
+  elif [ -z "$kind" ]; then kind="$(inherited_agent "$parent")"; fi
+  full_agent_kind "$kind" || die "cannot resume '$resume': no conversation adapter for '$kind'"
+  record_set "$resume_id" kind "$kind"
   resume="$(unique_name "$resume")"
   if [ "$here_resume" -eq 1 ]; then
     pane="$self"
@@ -429,24 +466,8 @@ fi
 
 depth="${TMUX_AGENTS_DEPTH:-0}"
 
-# Default to the caller's own kind of agent. Codex's commands run in a
-# shared daemon without its CODEX_HOME, so Codex started through tmux-spawn
-# or the fish wrappers carries its kind in TMUX_AGENTS_KIND.
-if [ -z "$agent" ]; then
-  if [ -n "${TMUX_AGENTS_KIND:-}" ]; then
-    agent="$TMUX_AGENTS_KIND"
-  elif [ -n "${CLAUDECODE:-}" ]; then
-    agent=claude
-  elif [ -n "${CODEX_HOME:-}" ] && codex_profile_for_home "$CODEX_HOME" >/dev/null; then
-    agent="$(codex_profile_for_home "$CODEX_HOME")"
-  else
-    case "$(pane_command "$self")" in
-      *claude*) agent=claude ;;
-      *codex*) agent=codex ;;
-      *) die "can't tell which agent you are; pass an agent command or configured Codex profile" ;;
-    esac
-  fi
-fi
+# Resolve the named caller, not the shared tool process's stale environment.
+[ -n "$agent" ] || agent="$(inherited_agent "$self")"
 
 # The caller needs a name so the sub agent can reply to it.
 me="$(pane_name "$self")"
