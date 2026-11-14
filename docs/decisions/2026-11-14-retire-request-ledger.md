@@ -28,40 +28,58 @@ The user decided on 2026-11-14:
 
 What counts as a turn start, per agent:
 
+- **Message tokens.** Every delivered paste carries its message's ID in its header, for example `[request from X to Y via tmux-ask · m1a2b3c4d5e6]`. These are the `m…` IDs `tmux-read` already uses, and they let a turn end be matched to an exact message instead of to a sender. The Codex notify parser in `bin/tmux-agent-report` is updated for the new header.
 - **Claude.**
   - `UserPromptSubmit` (`--turn-start`) starts a turn, and `Stop` / `StopFailure` (`--turn-end`) ends it.
   - Claude can also be re-invoked without a prompt submit, for example when a background command or an Agent-tool result returns. So `PreToolUse` (`--tool-start`, already wired) on a tracked `idle` or `done` pane also sets `working`.
+  - A turn start records `@turn_began`, but only when the pane was not already working, and `Stop` clears it. `@turn_start` can't be used for this, because it resets after every permission or message pause.
   - The permission, tool, question and elicitation hooks are otherwise unchanged.
 - **Codex.**
   - Codex has no turn-start hook. Any delivered paste of any kind marks the receiver `working`: request, reply, notice, system notice (rename, bounce), `--any` send, a retried message or one delivered on reopen. It happens at actual delivery, not at send time.
-  - The notify callback ends the turn. A notify whose `input-messages` do not contain the most recently delivered paste's header does not end current work. That paste was delivered after this turn began and has started, or will start, a turn of its own.
+  - Each delivery also records the paste's token in `@last_delivered`.
+  - The notify callback ends the turn, unless its `input-messages` lack the `@last_delivered` token. In that case the paste was delivered after this turn began, and it has started, or will start, a turn of its own.
 - **Progress reports.** A plain `tmux-agent-report "<text>"` still moves `idle` or `done` to `working`. A report can only be sent from inside a running turn, so it is turn evidence, and it covers a Codex agent working on a task typed directly by the user.
-- **Explicit needs you.** `--needs-you` lasts until the next turn start. For Codex that means the next delivered paste or progress report.
-- **Notice-only turns.** A turn triggered only by a notice shows `working` while it runs. An existing `needs you`, explicit or from a hook, survives it, and only a non-notice turn start or a progress report clears it.
+- **Explicit needs you.** `--needs-you` lasts until the next non-notice turn start. For Codex that means the next non-notice paste, or a progress report.
+- **Notice-only turns.** A turn triggered only by a notice changes `idle` or `done` to `working` while it runs. A `needs you`, explicit or from a hook, stays `needs you` for the whole notice turn, and only a non-notice turn start or a progress report clears it.
 - **Background waits are not modelled.** An agent that ends its turn is `idle` or `done`, full stop. This covers CI watches, Claude background commands and "I'll wait for X".
 
 ### "Waiting on whom" is computed live
 
 - When the list and chip are built, an agent shows the working agents it is waiting on. These are its nearest working descendants: walk down its sub agents and members, stopping at each working agent.
-  - A main whose secondary is `done` but whose worker is working shows `waiting on <worker>`.
-  - Agents that show `needs you` are not listed. They already surface themselves.
-- **Rendering.** It is appended to the activity text, for example `idle · waiting on codex-worker` for a top-level agent and `done · waiting on …` for a sub agent. The chip's focus text shows the same suffix.
+  - The walk passes through agents that are not working (`idle`, `done` or `needs you`) to reach working agents below them. A main whose secondary is `done` but whose worker is working shows `waiting on <worker>`.
+  - Agents that show `needs you` are not listed themselves. They already surface on their own.
+- **Rendering.** The suffix is shown only when the agent itself is not working. It is appended to the activity text, for example `idle · waiting on codex-worker` for a top-level agent and `done · waiting on …` for a sub agent. A working agent keeps its own report, which says more about what it is doing. The chip's focus text follows the same rule.
 - **Counting.** The chip counts by each agent's own `@state`, so a parent waiting on a worker counts as idle or done, not working.
 - The input is the same single pane snapshot the list already takes. Nothing is stored, so nothing can go stale.
 
 ### Unanswered-stop notice: one slot per agent
 
-The notice from v1.19.0 stays, without the ledger. Each sub agent keeps one slot: the agent that most recently asked it something, when that was delivered, and whether the sender has been notified.
+The notice from v1.19.0 stays, without the ledger. Each sub agent keeps one slot. It records the agent that most recently asked it something, the message that did so, whether a reply is still owed, and whether the sender has been notified.
 
-- **Storage.** The slot lives in pane options: `@owed_to` (agent ID), `@owed_at` (delivery time) and `@owed_notified`. It doesn't survive a closed pane. On reopen, deliver-on-reopen re-delivers queued messages, and those fill it again.
-- **Filling.** The slot is filled at delivery, not at send time, by a request from an agent, or by a reply from the agent the slot is already owed to. The second case covers a sub agent that asks its requester a clarifying question, which clears the slot: the answer re-arms the original obligation. Notices and system notices never fill the slot, and neither do messages from shell panes.
-- **Clearing.** Any message from the sub agent to `@owed_to` clears the slot: a reply, a notice or a request.
-- **Re-arming.** A new turn start clears `@owed_notified`, so a stall after a nudge is reported again.
-- **Settling.** At turn end, the slot is settled only if it was filled before the turn that is ending began:
-  - Claude: `@owed_at` is earlier than the turn's start, which is recorded by `--turn-start` or `--tool-start` as described above.
-  - Codex: the notify's `input-messages` contain the slot's request header. `bin/tmux-agent-report` already extracts it.
-  - A slot filled mid-turn waits for the turn that handles it.
-- **Firing.** If a settled slot is still owed and not yet notified, the sender gets one notice, for example `worker stopped without replying to your last request`.
+- **Storage.** The slot lives in pane options:
+
+  | Option | Holds |
+  | --- | --- |
+  | `@owed_to` | The sender's agent ID. It is kept after the slot is cleared, so a later reply can be recognised. |
+  | `@owed_msg` | The token of the message that filled the slot |
+  | `@owed_at` | Delivery time |
+  | `@owed` | `1` while a reply is owed |
+  | `@owed_settled` | `1` once a turn end has seen this message |
+  | `@owed_notified` | `1` once the sender has been told |
+
+  The slot doesn't survive a closed pane. On reopen, deliver-on-reopen re-delivers undelivered queued messages, and those fill it again.
+- **Filling.** The slot is filled at delivery, not at send time. Filling sets `@owed_to`, `@owed_msg` and `@owed_at`, sets `@owed`, and clears `@owed_settled` and `@owed_notified`. It is filled by:
+  - a request from any agent
+  - a reply from the agent in `@owed_to`, even after the slot was cleared. This covers a sub agent that asks its requester a clarifying question, which clears the slot: the answer fills it again and the original obligation is back.
+
+  Notices and system notices never fill the slot, and neither do messages from shell panes.
+- **Clearing.** Any message from the sub agent to `@owed_to` clears `@owed`: a reply, a notice or a request. `@owed_to` itself is kept.
+- **Settling.** At turn end, the slot is settled (`@owed_settled`) only when the turn that is ending saw the filling message:
+  - Claude: `@owed_at <= @turn_began`. The comparison is inclusive, because delivery and the hook can land in the same second.
+  - Codex: the notify's `input-messages` contain the `@owed_msg` token.
+  - A slot filled mid-turn waits for the turn that handles it. Once settled, it stays settled, so a later turn end, such as a nudge's notice turn, needs no match.
+- **Firing.** At a turn end where the slot is settled, still owed and not yet notified, the sender gets one notice, for example `worker stopped without replying to your last request`.
+- **Re-arming.** Every turn start, including a notice-only one, clears `@owed_notified`, so a stall after a nudge is reported again.
 - **Scope.** The receiver must be a sub agent, and the sender must be a live agent pane, not a shell pane.
 
 ### Removed
@@ -80,6 +98,10 @@ The notice from v1.19.0 stays, without the ledger. Each sub agent keeps one slot
 - Plain progress reports and `--needs-you`.
 - `@attention_since` for the `needs you` age. It is now set and cleared by the state transition itself instead of by the ledger.
 - Resume. `agent_restore_work` restores to `done` as today. Pending messages delivered on reopen then mark the agent `working` like any other delivery, which replaces the ledger's `restore`.
+
+### New options
+
+`@turn_began`, `@last_delivered` and the `@owed_*` options above are added to `clear_agent`'s reset list (`bin/lib.sh`) and to the option table in `docs/design/state-and-protocol.md`.
 
 ### Worked time
 
@@ -109,7 +131,7 @@ The migration runs once per tmux server and is guarded by a server-level `@tmux_
 
 - **Triggers.**
   - `install.sh` runs it for the server in `$TMUX` when it is run inside tmux. Outside tmux it targets the default socket if a server is running, and otherwise skips.
-  - On any other server it runs lazily from the commands that already write state: `tmux-ask`, `tmux-spawn`, `tmux-agent-report` and `tmux-agents start`.
+  - On any other server it runs lazily from the commands that already write state: `tmux-ask`, `tmux-spawn`, `tmux-agents start`, and `tmux-agent-report` on `--turn-start`, `--turn-end`, notify and plain reports. It never runs on the tool-hook path (`--tool-start`, `--tool-end`, `--perm`), which fires on every tool call and has a fast path.
   - The check never runs on the list or chip paths, which keeps the [list build budget](2026-10-04-list-build-budget.md).
 
 Steps:
@@ -155,7 +177,15 @@ Update these:
   - A Codex notify that lacks the latest paste does not end work.
   - A progress report moves idle to working.
   - Live `waiting on`: nearest working descendants, gone the moment they stop, not counted as working by the chip.
-  - The one-slot notice: fill at delivery, mid-turn delivery not settled early, a reply from the owed agent re-arms, re-arm at turn start, cleared by any message, notices and shells excluded.
+  - The one-slot notice:
+    - fill at delivery
+    - mid-turn delivery not settled early
+    - two requests from one sender are told apart by token
+    - `@turn_began` survives permission and message pauses
+    - a reply from `@owed_to` refills the slot after it was cleared
+    - once settled, a nudge's notice turn fires again
+    - cleared by any message
+    - notices and shells never fill it
   - The deprecated flags behave as listed above.
   - Migration of `waiting for` panes, ledger `needs you`, the options and the directory, on both trigger paths.
   - `tmux-read` of an old `r…` ID, and an old queued meta with `request_id=`.
@@ -170,6 +200,9 @@ The list's single-snapshot and record-read budget must hold, and the list gets c
 - **Background waits are invisible.** An agent waiting on CI or a background command shows idle or done until something starts its next turn. That is intended, because idle with an unfinished task is exactly the case a coordinator should look at. Two consequences:
   - A Claude sub agent waiting on its own background command is `done`, so `tmux-dismiss --done` can close it before the command returns.
   - Claude turns that start without a prompt are caught only once they make a tool call.
+- **A paste that never gets its turn.** If the user clears it, presses Ctrl-C or Codex restarts, the Codex pane stays `working` until the next delivery.
+- **Reopen forgets answered-later requests.** On reopen, the slot is refilled only from undelivered queued messages. A request that was delivered but unanswered when the pane closed is forgotten, where the ledger used to restore it.
+- **Promptless Claude turns settle early.** A Claude turn that starts without a prompt is detected only at its first tool call. A request delivered between that re-invocation and the tool call gets settled by that turn, so it can produce a false stop notice.
 - **Only the latest request is remembered.** If a sub agent receives requests from two senders and answers only the later one, the earlier sender gets no stop notice.
 - **Live waiting covers sub agents and members only.** Requests to unrelated or cross-project agents don't show as waiting.
 
