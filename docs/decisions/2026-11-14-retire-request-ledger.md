@@ -78,7 +78,7 @@ The notice from v1.19.0 stays, without the ledger. Each sub agent keeps one slot
   | `@owed_asked` | `1` while a clarifying question to `@owed_to` is open |
 
   The slot doesn't survive a closed pane. On reopen, deliver-on-reopen re-delivers undelivered queued messages, and those fill it again.
-- **Filling.** The slot is filled at delivery, not at send time. Filling sets `@owed_to`, `@owed_msg` and `@owed_at`, sets `@owed`, and clears `@owed_settled` and `@owed_notified`. It is filled by:
+- **Filling.** The slot is filled at delivery, not at send time. Filling sets `@owed_to`, `@owed_msg` and `@owed_at`, sets `@owed`, and clears `@owed_settled` and `@owed_notified`. Filling by a request also clears `@owed_asked`. It is filled by:
   - a request from any agent
   - a reply from the agent in `@owed_to`, but only when `@owed_asked` is set. Refilling clears `@owed_asked`.
 
@@ -89,7 +89,7 @@ The notice from v1.19.0 stays, without the ledger. Each sub agent keeps one slot
 - **Settling.** At turn end, the slot is settled (`@owed_settled`) only when the turn that is ending saw the filling message:
   - Claude: `@owed_at <= @turn_began`. The comparison is inclusive, because delivery and the hook can land in the same second.
   - Codex: the notify's `input-messages` contain the `@owed_msg` token.
-  - A Claude turn end with `@turn_began` unset, or a Codex notify without a usable token, settles nothing.
+  - A Claude turn end with `@turn_began` unset settles nothing. Neither does a Codex notify without a usable token: no `input-messages`, an empty `@last_delivered`, or an empty `@owed_msg`, which an empty substring match would otherwise satisfy.
   - A slot filled mid-turn waits for the turn that handles it. Once settled, it stays settled, so a later turn end, such as a nudge's notice turn, needs no match.
 - **Firing.** At a turn end where the slot is settled, still owed and not yet notified, the sender gets one notice, for example `worker stopped without replying to your last request`.
 - **Re-arming.** Every turn start, including a notice-only one, clears `@owed_notified`, so a stall after a nudge is reported again.
