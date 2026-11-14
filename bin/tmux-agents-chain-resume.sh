@@ -41,11 +41,25 @@ chain_claude_prompt() {
     [[ $line =~ ^[[:space:]]*❯[[:space:]]+Try[[:space:]] ]]
 }
 
+# /rc on an already connected conversation opens its management dialog.
+# Escape is the dialog's documented Continue action, not a permission choice.
+chain_rc_dialog() {
+  local screen
+  [ "$(tmux display -p -t "$1" '#{pane_in_mode}')" != 1 ] || return 1
+  screen="$(tmux capture-pane -p -t "$1")" || return 1
+  [[ $screen = *'Remote Control'* && $screen = *'Disconnect this session'* &&
+     $screen = *'❯ Continue'* && $screen = *'Enter to select · Esc to continue'* ]]
+}
+
 chain_wait_claude_prompt() {
-  local pane="$1" identity="$2" attempt
+  local pane="$1" identity="$2" allow_rc_dialog="${3:-0}" attempt
   for ((attempt=0; attempt<600; attempt++)); do
     [ "$(pane_agent_id "$pane")" = "$identity" ] || return 1
     if chain_claude_prompt "$pane" "$identity"; then return 0; fi
+    if [ "$allow_rc_dialog" = 1 ] && chain_rc_dialog "$pane"; then
+      tmux send-keys -t "$pane" Escape || return 1
+      allow_rc_dialog=0
+    fi
     sleep .1
   done
   printf 'warning: resumed Claude did not reach an empty prompt; chain prompt was not sent\n' >&2
@@ -62,7 +76,7 @@ chain_resume_deliver() {
   [ "$(pane_agent_id "$pane")" = "$identity" ] || return 1
   tmux send-keys -t "$pane" Enter || return 1
   sleep "$delay"
-  chain_wait_claude_prompt "$pane" "$identity" || return 1
+  chain_wait_claude_prompt "$pane" "$identity" 1 || return 1
   printf '%s' "$prompt" | tmux load-buffer -b "$buffer" - || return 1
   tmux paste-buffer -p -d -b "$buffer" -t "$pane" || return 1
   sleep "$delay"

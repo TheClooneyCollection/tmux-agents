@@ -21,6 +21,13 @@ fi
 printf '❯ '
 while IFS= read -r line; do
   printf '%s\n' "$line" >> "$TEST_LOG/$TMUX_PANE.input"
+  if [ "$line" = /rc ] && [ -f "$TEST_LOG/rc-dialog" ]; then
+    printf 'Remote Control\nDisconnect this session\nEnter to select · Esc to continue\n❯ Continue'
+    IFS= read -r -n 1 key
+    [ "$key" = $'\033' ] || exit 9
+    printf 'dismissed\n' > "$TEST_LOG/$TMUX_PANE.dialog"
+    printf '\n'
+  fi
   printf '❯ '
 done
 STUB
@@ -82,6 +89,23 @@ assert s.count('/rc')==1,s
 PY
 [[ $(tmux display -p -t "$pane" '#{@agent}') = claude-* ]]
 echo 'PASS Claude resumes without prompt argv, waits for readiness, submits /rc before chain prompt'
+# An already-active Remote Control session opens its own Continue dialog.
+: > "$tmp/rc-dialog"
+launch --main-resume "$claude_id" --main claude
+: > "$tmp/$pane.release"
+wait_file "$tmp/$pane.dialog"
+for ((i=0;i<200;i++)); do
+  if [ -f "$tmp/$pane.input" ] && grep -q 'The current agent remains main.' "$tmp/$pane.input"; then break; fi
+  sleep .05
+done
+python3 - "$tmp/$pane.input" <<'PYTEST'
+import sys
+s=open(sys.argv[1]).read()
+assert s.startswith('/rc\nstart the chain.'),repr(s)
+assert 'The current agent remains main.' in s,s
+PYTEST
+rm "$tmp/rc-dialog"
+echo 'PASS already-active Remote Control dialog continues before the chain prompt'
 for main in codex extra; do
   id="$codex_id"; [ "$main" != extra ] || id="$profile_id"
   launch --main "$main" --main-resume "$id"
