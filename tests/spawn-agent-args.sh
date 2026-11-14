@@ -182,13 +182,46 @@ record_set "$profile_id" id test-profile-thread
 profile_pane="$(pane_of codex-project-profile-args)"
 check 'profile resume starts' wait_ready "$profile_pane"
 check 'profile resume home' test "$(cat "$SPAWN_ARGS_LOG/${profile_pane#%}.home")" = "$tmp/profile"
-check 'resume appends args once after resume prefix' python3 - "$(args_file "$profile_pane")" <<'PYARGS'
+check 'resume replaces args after resume prefix' python3 - "$(args_file "$profile_pane")" <<'PYARGS'
 import pathlib, sys
 a=pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")[:-1]
 assert a[0]==b'resume', a
-assert a[-4:]==[b'--model',b'initial-model',b'--model',b'resumed-model'],a
+assert a[-2:]==[b'--model',b'resumed-model'],a
+assert a.count(b'--model')==1 and b'initial-model' not in a,a
 assert a.count(b'test-profile-thread')==1,a
 assert sum(x.startswith(b'notify=') for x in a)==1,a
+PYARGS
+check 'replacement args are persisted' recorded_args_are "$profile_id" --model resumed-model
+for repeat in 1 2; do
+  "$B/tmux-dismiss" --from main codex-project-profile-args
+  "$B/tmux-spawn" --from main --resume-id "$profile_id" -- --model resumed-model </dev/null
+  profile_pane="$(pane_of codex-project-profile-args)"
+  check "repeated replacement $repeat starts" wait_ready "$profile_pane"
+  check "repeated replacement $repeat does not grow" recorded_args_are "$profile_id" --model resumed-model
+  check "repeated launch $repeat has one model flag" python3 - "$(args_file "$profile_pane")" <<'PYARGS'
+import pathlib, sys
+a = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")[:-1]
+assert a.count(b'--model') == 1, a
+PYARGS
+done
+"$B/tmux-dismiss" --from main codex-project-profile-args
+"$B/tmux-spawn" --from main --resume-id "$profile_id" -- </dev/null
+profile_pane="$(pane_of codex-project-profile-args)"
+check 'bare separator resume starts' wait_ready "$profile_pane"
+check 'bare separator clears saved args' recorded_args_are "$profile_id"
+check 'bare separator removes launch args' python3 - "$(args_file "$profile_pane")" <<'PYARGS'
+import pathlib, sys
+a = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")[:-1]
+assert b'--model' not in a and b'resumed-model' not in a, a
+PYARGS
+"$B/tmux-dismiss" --from main codex-project-profile-args
+"$B/tmux-spawn" --from main --resume-id "$profile_id" </dev/null
+profile_pane="$(pane_of codex-project-profile-args)"
+check 'resume after clear starts' wait_ready "$profile_pane"
+check 'cleared args stay cleared on next resume' python3 - "$(args_file "$profile_pane")" <<'PYARGS'
+import pathlib, sys
+a = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")[:-1]
+assert b'--model' not in a and b'resumed-model' not in a, a
 PYARGS
 spawn_agent codex --name explicit-args -- --model explicit-model </dev/null
 explicit_pane="$(pane_of codex-project-explicit-args)"

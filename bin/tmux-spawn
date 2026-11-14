@@ -37,8 +37,8 @@ arguments cannot be reliably distinguished from task text.
                        conflicts with positional task text; stdin is ignored;
                        only for new agents, not --resume or --list-closed
   -- ARGS...     pass every remaining argument unchanged to the agent, after
-                tmux-spawn's own flags; on resume, saved args come first
-                and any new args are appended and saved too
+                tmux-spawn's own flags; resume without -- reuses saved args,
+                -- ARGS replaces them, and bare -- clears them
   --name NAME   short task name, e.g. auth-review, becomes <agent>-<dir>-NAME;
                 an existing prefix is kept; clashes add -2, -3...
                 profiles use codex as <agent>, home uses ~ as <dir>
@@ -214,7 +214,7 @@ if [ "${1:-}" = "--run" ]; then
 fi
 
 agent="" name="" task="" message_file="" FROM_PANE="" resume="" resume_id="" list_closed=0 parent_name="" for_name="" here_resume=0
-agent_args=() requested_agent_args=() agent_args_given=0 args_separator=0
+agent_args=() agent_args_given=0 args_separator=0
 agent_args_encoded=""
 task_arg_given=0
 exact=0 name_given=0 member=0
@@ -268,7 +268,6 @@ while [ $# -gt 0 ]; do
 done
 [ -z "$message_file" ] || [ "$task_arg_given" -eq 0 ] || die "--message-file conflicts with positional task text"
 [ -z "$message_file" ] || { [ -z "$resume$resume_id" ] && [ "$list_closed" -eq 0 ]; } || die "--message-file is only for a new sub agent"
-requested_agent_args=( ${agent_args[@]+"${agent_args[@]}"} )
 if [ -n "$message_file" ]; then
   read_message_file task "$message_file"
 fi
@@ -437,8 +436,6 @@ if [ -n "$resume$resume_id" ]; then
   [ "$(record_get "$resume_id" member)" != 1 ] || member=1
   saved_agent_args_encoded="$(record_get "$resume_id" cli_args)"
   if [ "$agent_args_given" -eq 1 ]; then
-    decode_agent_args "$saved_agent_args_encoded"
-    agent_args+=( ${requested_agent_args[@]+"${requested_agent_args[@]}"} )
     agent_args_encoded="$(encode_agent_args ${agent_args[@]+"${agent_args[@]}"})"
   else
     agent_args_encoded="$saved_agent_args_encoded"
@@ -473,7 +470,7 @@ if [ -n "$resume$resume_id" ]; then
   full_agent_kind "$kind" || die "cannot resume '$resume': no conversation adapter for '$kind'"
   record_set "$resume_id" kind "$kind"
   resume="$(unique_name "$resume")"
-  if [ "$agent_args_given" -eq 1 ] && [ -n "$agent_args_encoded" ]; then
+  if [ "$agent_args_given" -eq 1 ]; then
     record_set "$resume_id" cli_args "$agent_args_encoded"
   fi
   run_command="$(quote_command "$here/tmux-spawn" --run "$kind" '' "$sid" resume "$resume_id" '' '' '' '' '' '' "$agent_args_encoded")"
