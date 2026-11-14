@@ -302,30 +302,54 @@ user_typing() {
     -v w="$idle_secs" '$1 == p && now - $2 < w { f = 1 } END { exit !f }'
 }
 
-# Durable request operations are off the list path and serialized per socket.
-request_state() { /usr/bin/perl "$(dirname "${BASH_SOURCE[0]}")/tmux-request-state" "$@"; }
-new_request_id() { local id; id="$(new_agent_id)"; printf 'r%s\n' "${id#a}"; }
-claude_background() {
-  local pp
-  pp="$(tmux display-message -p -t "$1" '#{pane_pid}' 2>/dev/null)" || { echo 0; return; }
-  ps -A -o pid=,ppid=,comm=,command= 2>/dev/null | awk -v root="$pp" -v me="$$" '
-    { pid[NR] = $1; ppid[NR] = $2; comm[NR] = $3; cmd[NR] = $0; parent[$1] = $2 }
-    END {
-      # The claude process: a descendant of the pane (within 4 levels).
-      for (i = 1; i <= NR; i++) {
-        if (comm[i] !~ /(^|\/)claude$/) continue
-        p = pid[i]; for (d = 0; d < 5 && p != root && p > 1; d++) p = parent[p]
-        if (p == root) { cl = pid[i]; break }
-      }
-      if (!cl) { print 0; exit }
-      for (p = me; p > 1; p = parent[p]) anc[p] = 1
-      n = 0
-      for (i = 1; i <= NR; i++) if (ppid[i] == cl && !(pid[i] in anc) && index(cmd[i], "/.claude/shell-snapshots/")) n++
-      print n
-    }'
+# Paste tokens are independent of retained message files and agent identity.
+new_message_id() { printf 'm%s\n' "$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"; }
+
+# State migration is only called by writers, never display paths or tool hooks.
+# A filesystem lock serializes first writers; the server option is authoritative.
+migrate_turn_state() {
+  [ "$(tmux show-options -sqv @tmux_agents_state_version)" != 1 ] || return 0
+  local dir
+  dir="$(sessions_dir)"; dir="${dir%/sessions}"
+  mkdir -p "$dir"
+  perl -MFcntl=:flock -e '
+    my ($dir, $lib) = @ARGV;
+    open(my $lock, ">>", "$dir/.state-migration.lock") or die "$!";
+    flock($lock, LOCK_EX) or die "$!";
+    system("/bin/bash", "-c", q{. "$1"; _migrate_turn_state_locked}, "migration", $lib);
+    exit($? == -1 ? 1 : $? >> 8);
+  ' "$dir" "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 }
 
-request_finish() { request_state finish "$1"; }
+_migrate_turn_state_locked() {
+  [ "$(tmux show-options -sqv @tmux_agents_state_version)" != 1 ] || return 0
+  local pane tracked state parent perm asking explicit activity terminal key dir
+  while IFS='|' read -r pane tracked state parent perm asking explicit; do
+    [ -n "$pane" ] || continue
+    if [ "$tracked" = 1 ]; then
+      terminal=idle; [ -z "$parent" ] || terminal="done"
+      case "$state" in
+        working)
+          activity="$(tmux show-options -pqv -t "$pane" @activity)"
+          case "$activity" in 'waiting for '*)
+            agent_set_state "$pane" "$terminal"
+            tmux set-option -pu -t "$pane" @activity
+            ;; esac
+          ;;
+        needs_you)
+          if [ -z "$perm$asking$explicit" ]; then agent_set_state "$pane" "$terminal"; fi
+          ;;
+      esac
+    fi
+    for key in awaiting waiting_on request_local_work request_local_done request_notify_digest; do
+      tmux set-option -pu -t "$pane" "@$key"
+    done
+  done < <(tmux list-panes -a -F '#{pane_id}|#{@tracked}|#{@state}|#{@parent}|#{@perm_since}|#{@asking}|#{@explicit_needs_you}')
+  dir="$(sessions_dir)"; dir="${dir%/sessions}/requests"
+  # Only this server's fixed ledger child; never the queue or retained messages.
+  rm -rf -- "$dir"
+  tmux set-option -s @tmux_agents_state_version 1
+}
 
 # Return claude, codex (including a configured profile), or unknown for a
 # tracked receiver. Never infer an agent adapter from its pane command.
@@ -378,7 +402,8 @@ store_message() {
 # Both end with an [end of ...] line: text outside the markers in the same
 # prompt was typed by the user (a draft can get submitted along with it).
 request_body() {
-  local reply_command receiver_kind
+  local reply_command receiver_kind token="${6:-}"
+  [ -n "$token" ] || token="$(new_message_id)"
   receiver_kind="$(request_receiver_kind "${5:-}")"
   case "$receiver_kind" in
     claude)
@@ -392,16 +417,20 @@ request_body() {
       reply_command="$(printf 'send a short reply as a quoted argument: tmux-ask --from %s%s --reply %s "answer".' "$3" "${4:+ $4}" "$1")"
       ;;
   esac
-  printf '[request from %s to %s via tmux-ask]\n%s\n\n(You are %s. When done, %s)\n[end of request from %s to %s]' "$1" "$3" "$2" "$3" "$reply_command" "$1" "$3"
+  printf '[request from %s to %s via tmux-ask · %s]\n%s\n\n(You are %s. When done, %s)\n[end of request from %s to %s]' "$1" "$3" "$token" "$2" "$3" "$reply_command" "$1" "$3"
 }
 
 reply_body() {
-  printf '[reply from %s to %s via tmux-ask]\n%s\n\n(This is a reply. Do not answer it unless you have a new request.)\n[end of reply from %s to %s]' "$1" "$3" "$2" "$1" "$3"
+  local token="${4:-}"
+  [ -n "$token" ] || token="$(new_message_id)"
+  printf '[reply from %s to %s via tmux-ask · %s]\n%s\n\n(This is a reply. Do not answer it unless you have a new request.)\n[end of reply from %s to %s]' "$1" "$3" "$token" "$2" "$1" "$3"
 }
 
 # A notice needs no answer and asks for nothing (e.g. "X connected to you").
 notice_body() {
-  printf '[notice from %s to %s via tmux-ask]\n%s\n\n(This is a notice. No reply or action is needed; carry on with what you were doing.)\n[end of notice from %s to %s]' "$1" "$3" "$2" "$1" "$3"
+  local token="${4:-}"
+  [ -n "$token" ] || token="$(new_message_id)"
+  printf '[notice from %s to %s via tmux-ask · %s]\n%s\n\n(This is a notice. No reply or action is needed; carry on with what you were doing.)\n[end of notice from %s to %s]' "$1" "$3" "$token" "$2" "$1" "$3"
 }
 
 # Give pane $1 the name $2, refusing names another pane already holds.
@@ -715,12 +744,12 @@ _migrate_agent_ids_locked() {
       my ($pane, $key, $value) = @_;
       system("tmux", "set-option", "-p", "-t", $pane, $key, $value) == 0 or die "tmux set $pane $key failed";
     }
-    open(my $ph, "-|", "tmux", "list-panes", "-a", "-F", "#{pane_id}\t\#{\@agent}\t\#{\@agent_id}\t\#{\@awaiting}\t\#{\@closed}\t\#{\@shell}") or die "tmux: $!";
+    open(my $ph, "-|", "tmux", "list-panes", "-a", "-F", "#{pane_id}\t\#{\@agent}\t\#{\@agent_id}\t\#{\@closed}\t\#{\@shell}") or die "tmux: $!";
     my (%panes, %used, %live);
     while (<$ph>) {
-      chomp; my ($p, $name, $id, $awaiting, $closed, $shell) = split /\t/, $_, -1;
+      chomp; my ($p, $name, $id, $closed, $shell) = split /\t/, $_, -1;
       next if $shell eq "1";
-      $panes{$p} = {name=>$name, id=>$id, awaiting=>$awaiting, closed=>$closed};
+      $panes{$p} = {name=>$name, id=>$id, closed=>$closed};
       $used{$id} = 1 if length $id;
       $live{$name} = $p if length $name;
     }
@@ -794,7 +823,7 @@ _migrate_agent_ids_locked() {
       next unless exists $panes{$p};
       my $v = $plan->{panes}{$p};
       tmux_set($p, "\@agent_id", $v->{id}) if length $v->{name};
-      for my $opt (qw(awaiting closed)) {
+      for my $opt (qw(closed)) {
         my %seen; my @ids;
         for my $name (split /\s+/, $v->{$opt}) {
           my $id = $names->{$name} // ($name =~ /^a[0-9a-f]{12}$/ && $used{$name} ? $name : "");
@@ -887,7 +916,7 @@ _agent_work() {
     open(my $lock, ">>", "$dir/.work-$pane.lock") or die "$!";
     flock($lock, LOCK_EX) or die "$!";
     $now = time unless length $now;
-    my @keys = qw(state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored agent_id agent activity);
+    my @keys = qw(state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored agent_id agent attention_since activity);
     my $format = "#{pane_id}\t" . join("\t", map { "\#{\@$_}" } @keys);
     open(my $in, "-|", "tmux", "display-message", "-p", "-t", $pane, $format) or die "$!";
     my $row = do { local $/; <$in> } // ""; close($in); chomp $row;
@@ -924,16 +953,16 @@ _agent_work() {
         $v{state} = $value;
       }
       elsif ($op eq "report") {
-        $v{state} = "working" unless $v{state} eq "done";
+        $v{state} = "working";
         $v{perm_since} = "";
       }
       elsif ($op eq "start") {
-        $v{state} = "working" if $v{state} =~ /^(needs_you|idle)$/;
+        $v{state} = "working" if $v{state} =~ /^(needs_you|idle|done)$/;
         $v{perm_since} = "";
       }
-      elsif ($op eq "end") {
-        $v{state} = $value if length($value) && $v{state} !~ /^(done|idle)$/;
-        $v{perm_since} = "";
+      elsif ($op eq "end" || $op eq "end-attention") {
+        $v{state} = $value if length($value);
+        $v{perm_since} = "" if $op eq "end";
       }
       elsif ($op eq "perm" || $op eq "message") {
         my $key = $op eq "perm" ? "perm_since" : "msg_waiting_since";
@@ -944,6 +973,9 @@ _agent_work() {
       elsif ($op eq "save") { $v{work_closed} = 1 }
       elsif ($op eq "checkpoint") { }
       else { die "unknown accounting operation" }
+      if ($v{state} eq "needs_you") {
+        $v{attention_since} = $now unless $v{attention_since};
+      } else { $v{attention_since} = "" }
       my $new = effective();
       if (number($v{turn_start}) && $new ne "working") {
         my $elapsed = $now - $v{turn_start}; $elapsed = 0 if $elapsed < 0;
@@ -953,7 +985,7 @@ _agent_work() {
         $v{turn_start} = "";
       }
       # A terminal semantic state completes the turn even under an overlay.
-      if ($v{turn_active} && ($v{work_closed} || $v{state} =~ /^(done|idle)$/)) {
+      if ($v{turn_active} && ($op =~ /^end(?:-attention)?$/ || $v{work_closed} || $v{state} =~ /^(done|idle)$/)) {
         $v{last_turn} = number($v{turn_work}) ? $v{turn_work} : 0;
         $v{turns} = (number($v{turns}) ? $v{turns} : 0) + 1;
         $v{turn_work} = $v{turn_active} = "";
@@ -1021,7 +1053,7 @@ clear_agent() {
     [ "$keep_connections" = 1 ] || remove_word "$other" @peers "$pane"
     [ "$(tmux show-options -pqv -t "$other" @parent)" != "$pane" ] || tmux set-option -pu -t "$other" @parent
   done
-  for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored activity awaiting waiting_on attention_since explicit_needs_you asking codex_thread request_local_work request_local_done request_notify_digest resume_shell; do
+  for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored activity attention_since explicit_needs_you asking codex_thread resume_shell turn_began last_delivered owed_to owed_msg owed_at owed owed_settled owed_notified owed_asked; do
     case "$key" in agent|peers|peer_names) [ "$keep_connections" != 1 ] || continue ;; esac
     tmux set-option -pu -t "$pane" "@$key" 2>/dev/null || true
   done
@@ -1583,3 +1615,17 @@ disown_shell_commands() {
     }
   ' "$dir" "$owner"
 }
+
+# Turn-state helpers share the same accounting and identity primitives.
+# Older installations have only the lib.sh symlink until install.sh is rerun.
+# Keep the normal path subprocess-free for the list budget.
+_turn_module="${BASH_SOURCE[0]%/*}/turn-state.sh"
+if [ ! -f "$_turn_module" ] && [ -L "${BASH_SOURCE[0]}" ]; then
+  _turn_lib="$(readlink "${BASH_SOURCE[0]}")"
+  case "$_turn_lib" in /*) ;; *) _turn_lib="${BASH_SOURCE[0]%/*}/$_turn_lib" ;; esac
+  _turn_module="${_turn_lib%/*}/turn-state.sh"
+  unset _turn_lib
+fi
+# shellcheck source=bin/turn-state.sh
+. "$_turn_module"
+unset _turn_module

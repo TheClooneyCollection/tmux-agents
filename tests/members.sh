@@ -108,7 +108,7 @@ else
 fi
 # Explicit main-level dismissal traverses members and their ordinary helpers.
 secondary_id="$(info "$secondary" @agent_id)"
-secondary_request="$(request_state incoming "$secondary")"
+secondary_request="$(info "$secondary" @owed_msg)"
 check 'for brief created a real secondary obligation' test -n "$secondary_request"
 "$B/tmux-dismiss" --from main secondary >"$tmp/cascade"
 for pane in "$secondary" "$worker" "$helper"; do check "cascade closes $pane" gone "$pane"; done
@@ -122,11 +122,11 @@ check 'resume retains member' test "$(info "$secondary" @member)" = 1
 # shellcheck disable=SC2016
 check 'resume retains depth in process' bash -c 'tmux capture-pane -p -S - -t "$1" | grep -q DEPTH=1' _ "$secondary"
 check 'resume reconnects owner' test "$(info "$secondary" @parent)" = %0
-check 'resume preserves unfinished request as working' test "$(info "$secondary" @state)" = working
-check 'resume retains the exact request obligation' test "$(request_state incoming "$secondary")" = "$secondary_request"
-"$B/tmux-ask" --from secondary --reply --request-id "$secondary_request" main 'worker handoff resolved' >/dev/null
-check 'answered resumed member returns to prior idle' test "$(info "$secondary" @state)" = idle
-check 'reply completes resumed obligation' test -z "$(request_state incoming "$secondary")"
+check 'resume forgets delivered request and starts done' test "$(info "$secondary" @state)" = "done"
+check 'resume has no saved owed slot' test -z "$(info "$secondary" @owed)"
+"$B/tmux-ask" --from secondary --reply main 'worker handoff resolved' >/dev/null
+check 'reply does not change resumed member state' test "$(info "$secondary" @state)" = "done"
+check 'reply leaves slot clear' test -z "$(info "$secondary" @owed)"
 # An ordinary ancestor must not make a nested member eligible for --done.
 spawn --exact --name ordinary
 ordinary="$(pane_of ordinary)"
@@ -140,7 +140,6 @@ done
 # Resolve the real --for brief before constructing done cleanup fixtures.
 "$B/tmux-ask" --from ordinary --reply main 'member prepared' >/dev/null
 for pane in "$ordinary" "$protected" "$disposable"; do
-  check 'cleanup fixture has no unanswered requests' test -z "$(request_state incoming "$pane")"
   tmux set -p -t "$pane" @state "done"
 done
 # Run confirmation on a private test-server tty, never the caller's tty.
@@ -199,21 +198,20 @@ check 'profile worker helper is ordinary' test "$(info "$codex_helper" @member)"
 check 'profile worker helper depth two' grep -qx 'depth=2' "$(record_for "$codex_helper")"
 "$B/tmux-agent-report" --from codex-secondary 'processing assigned work' >/dev/null
 "$B/tmux-agent-report" --pane "$secondary_codex" --turn-end </dev/null
-# A reply completes the brief, but idle descendants still need their tasks
-# completed. Exercise both guards without inventing replies to absent requests.
+# Turn end settles the member itself, independent of its descendants.
 "$B/tmux-ask" --from codex-secondary --reply codex-main 'chain prepared' >/dev/null
-check 'Codex member reply preserves unfinished descendants' test "$(info "$secondary_codex" @state)" = working
-check 'Codex member brief itself is answered' test -z "$(request_state incoming "$secondary_codex")"
+check 'Codex member remains done while descendants live' test "$(info "$secondary_codex" @state)" = "done"
+check 'Codex member reply clears its owed slot' test -z "$(info "$secondary_codex" @owed)"
 for child in codex-helper profile-worker; do
-  "$B/tmux-agent-report" --from "$child" --local 'finish setup' >/dev/null
-  "$B/tmux-agent-report" --from "$child" --local-done
-  check 'descendant local setup is complete' test "$(info "$(pane_of "$child")" @state)" = "done"
+  "$B/tmux-agent-report" --from "$child" 'finish setup' >/dev/null
+  "$B/tmux-agent-report" --pane "$(pane_of "$child")" --turn-end </dev/null
+  check 'descendant turn is complete' test "$(info "$(pane_of "$child")" @state)" = "done"
 done
 "$B/tmux-agent-report" --pane "$secondary_codex" --turn-end </dev/null
-check 'Codex member completes after descendants finish' test "$(info "$secondary_codex" @state)" = idle
+check 'Codex member stays done after descendants finish' test "$(info "$secondary_codex" @state)" = "done"
 "$B/tmux-ask" --from codex-main codex-secondary 'new assigned work' >/dev/null
 "$B/tmux-agent-report" --pane "$secondary_codex" --turn-end </dev/null
-check 'Codex member unfinished turn needs owner' test "$(info "$secondary_codex" @state)" = needs_you
+check 'unanswered member turn ends done without inferred attention' test "$(info "$secondary_codex" @state)" = "done"
 "$B/tmux-dismiss" --from codex-main codex-secondary >/dev/null
 for pane in "$secondary_codex" "$profile_worker" "$codex_helper"; do check 'Codex chain dismiss closes descendants' gone "$pane"; done
 [ "$fail" -ne 0 ] || echo "all $count checks passed"

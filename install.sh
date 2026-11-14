@@ -63,9 +63,15 @@ copy() {
   echo "copied $2"
 }
 
+# Remove only our retired command link; do not delete a user's own executable.
+if [ -L "$bin_dir/tmux-request-state" ] && [ "$(readlink "$bin_dir/tmux-request-state")" = "$here/bin/tmux-request-state" ]; then
+  run rm "$bin_dir/tmux-request-state"
+fi
+
 # Includes tmux-read, the socket-free retained-message reader.
 for f in "$here"/bin/tmux-*; do link "$f" "$bin_dir/$(basename "$f")"; done
 link "$here/bin/lib.sh" "$bin_dir/lib.sh"
+link "$here/bin/turn-state.sh" "$bin_dir/turn-state.sh"
 
 link "$here/skills/tmux-agents" "$HOME/.claude/skills/tmux-agents"
 link "$here/skills/tmux-agents-setup" "$HOME/.claude/skills/tmux-agents-setup"
@@ -126,3 +132,9 @@ Almost done. Add these to your own config:
 5. Optional: tell your agents to use tmux-spawn instead of built-in sub agents
    (CLAUDE.md / AGENTS.md); the skill describes it.
 EOF
+
+# Upgrade this server only. Outside tmux, the normal tmux command targets its
+# default server; a missing server is expected and does not start one.
+if [ "$dry" -eq 0 ] && command -v tmux >/dev/null 2>&1 && tmux list-sessions >/dev/null 2>&1; then
+  migrate_turn_state
+fi

@@ -63,9 +63,8 @@ reject_here() {
   if TMUX_PANE="$1" "$B/tmux-spawn" --resume-id "$target_id" --here </dev/null >"$tmp/error" 2>&1; then return 1; fi
   return 0
 }
-target_id=a000000000101 request_id=r000000000101
+target_id=a000000000101
 resume_record "$target_id" resume-child "$parent_id" 1
-request_state create "$request_id" "$parent_id" "$target_id"
 shell_pane="$(tmux new-window -d -P -F '#{pane_id}' -n resume-shell -c "$tmp/project" /bin/sh)"
 check 'fixture is an interactive plain shell' verify_resume_shell "$shell_pane"
 check 'tracked agent pane is rejected before mutation' reject_here %0
@@ -94,8 +93,8 @@ import sys
 args = open(sys.argv[1], 'rb').read().split(b'\0')[:-1]
 assert args[-2:] == [b'--resume', ('conversation-' + sys.argv[2]).encode()], args
 PY
-check 'pending request remains attached to same identity' test "$(request_state incoming "$shell_pane")" = "$request_id"
-check 'pending request restores working state' test "$(info "$shell_pane" @state)" = working
+check 'resume starts with an empty unanswered slot' test -z "$(info "$shell_pane" @owed)"
+check 'resume without queued messages starts done' test "$(info "$shell_pane" @state)" = "done"
 tmux send-keys -t "$shell_pane" STOP Enter
 check 'shell regains prompt after resumed agent exits' wait_for option_equals "$shell_pane" @resume_shell 1
 check 'exit hint includes in-place resume' bash -c 'tmux capture-pane -pJ -S - -t "$1" | grep -Fq "$2"' _ "$shell_pane" "tmux-spawn --resume-id $target_id --here"

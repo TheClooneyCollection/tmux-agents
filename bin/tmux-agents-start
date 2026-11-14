@@ -155,6 +155,7 @@ if [ -n "$name" ] && [ "$name" != "$existing_name" ]; then
   fi
 fi
 ensure_agent_ids
+migrate_turn_state
 export TMUX_AGENTS_DEPTH=0 TMUX_AGENTS_KIND="$kind" TMUX_AGENTS_PINNED=1
 agent_id="$(new_agent_id)"
 # Only clean our identity: a replacement must never be erased by an old exit.
