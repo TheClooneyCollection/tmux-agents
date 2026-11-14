@@ -144,8 +144,12 @@ def staged(sock, receiver, marker, epoch):
     pane = '%1' if receiver == 'one' else '%2'
     aid = 'a000000000002' if receiver == 'one' else 'a000000000003'
     body = queue/sock/f'{epoch}-000001-{pane[1:]}.undelivered'
-    body.write_text('[notice from main to '+receiver+' via tmux-ask]\n'+marker+'\n[end of notice from main to '+receiver+']')
-    body.with_suffix('.meta').write_text(f'from_id=a000000000001\nto_id={aid}\nfrom_name=main\nto_name={receiver}\nto_pane={pane}\nkind=notice\nqueued_at={epoch}\nrequest_id=\n')
+    # Mix old queue metadata with new token-bearing messages across retries.
+    token = f'm{epoch:012x}' if 'contender' in marker else ''
+    suffix = ' · '+token if token else ''
+    body.write_text('[notice from main to '+receiver+' via tmux-ask'+suffix+']\n'+marker+'\n[end of notice from main to '+receiver+']')
+    compatibility = f'message_id={token}\n' if token else 'request_id=r0123456789ab\n'
+    body.with_suffix('.meta').write_text(f'from_id=a000000000001\nto_id={aid}\nfrom_name=main\nto_name={receiver}\nto_pane={pane}\nkind=notice\nqueued_at={epoch}\n'+compatibility)
     return body
 
 def scenario(label, second_socket):

@@ -48,14 +48,14 @@ assert_kind() { f="$(latest)"; grep -q "kind=$1" "${f%.msg}.meta" || fail "kind 
 ask --message-file "$file" < <(printf 'ignored stdin payload'); assert_kind request
 # shellcheck disable=SC2016
 assert_body 'literal $HOME'
-assert_body 'short reply as a quoted argument: tmux-ask --from receiver --request-id '
+assert_body 'short reply as a quoted argument: tmux-ask --from receiver --reply sender'
 assert_body ' --reply sender "answer"'
 if grep -Fq 'ignored stdin payload' "$(latest)"; then fail 'stdin is ignored when a message file is supplied'; fi
 if grep -Fq "<<'MSG'" "$(latest)"; then fail 'request reply command avoids heredoc'; fi
-# Use the generated request id to exercise reply handling.
-rid="$(sed -n 's/^request_id=//p' "$(latest | sed 's/\.msg$/.meta/')")"
+# Replies select message kind without matching a request ID.
+if grep -Fq -- '--request-id' "$(latest)"; then fail 'obsolete reply guidance'; fi
 tmux copy-mode -t %0
-send env TMUX_PANE=%1 "$B/tmux-ask" --from receiver --reply --request-id "$rid" --message-file "$file" sender
+send env TMUX_PANE=%1 "$B/tmux-ask" --from receiver --reply --message-file "$file" sender
 assert_kind reply; assert_body 'line two'
 ask --notice --message-file "$file"; assert_kind notice
 ask --any --message-file "$file"; assert_kind request

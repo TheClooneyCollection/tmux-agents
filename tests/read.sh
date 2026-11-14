@@ -81,36 +81,37 @@ Fourth finding
 Fifth finding'
 ask --message-file "$tmp/long" "$summary"
 f="$(latest)"
-rid="$(pointer "$f")"
-[ -n "$rid" ] || fail pointer
-has "${f%.msg}.meta" "request_id=$rid"
-has "$f" '[request from sender to receiver via tmux-ask]'
+mid="$(pointer "$f")"
+case "$mid" in m????????????) ;; *) fail 'request attachment ID' ;; esac
+has "${f%.msg}.meta" "message_id=$mid"
+has "$f" "[request from sender to receiver via tmux-ask · $mid]"
 has "$f" '[end of request from sender to receiver]'
-has "$f" "--request-id $rid"
+has "$f" '--reply sender "answer"'
+if grep -Fq -- '--request-id' "$f"; then fail 'obsolete reply guidance'; fi
 has "$f" "$summary"
 if grep -q 'detail two' "$f"; then fail 'attached details pasted'; fi
-"$B/tmux-read" "$rid" > "$tmp/read"
+"$B/tmux-read" "$mid" > "$tmp/read"
 cmp "$tmp/read" "$tmp/long" || fail 'message-file original'
 # The source may disappear after send; the stored copy survives delivery.
 cp "$tmp/long" "$tmp/expected"
 rm "$tmp/long"
 tmux send-keys -t %1 -X cancel
 "$B/tmux-ask" --kick %1
-"$B/tmux-read" "$rid" > "$tmp/read"
+"$B/tmux-read" "$mid" > "$tmp/read"
 cmp "$tmp/read" "$tmp/expected" || fail 'original after delivery'
 cp "$tmp/expected" "$tmp/long"
 tmux copy-mode -t %1
 ask --notice --message-file "$tmp/long" 'Notice summary.'
 nid="$(pointer "$(latest)")"
 case "$nid" in m????????????) ;; *) fail 'notice ID' ;; esac
-[ "$nid" != "$rid" ] || fail 'unique notice ID'
+[ "$nid" != "$mid" ] || fail 'unique notice ID'
 "$B/tmux-read" "$nid" > "$tmp/read"
 cmp "$tmp/read" "$tmp/long" || fail 'notice original'
 tmux copy-mode -t %0
-send "$B/tmux-ask" --from receiver --reply --request-id "$rid" --message-file "$tmp/long" sender 'Reply summary.'
+send "$B/tmux-ask" --from receiver --reply --message-file "$tmp/long" sender 'Reply summary.'
 replyid="$(pointer "$(latest)")"
 case "$replyid" in m????????????) ;; *) fail 'reply ID' ;; esac
-[ "$replyid" != "$rid" ] && [ "$replyid" != "$nid" ] || fail 'unique reply ID'
+[ "$replyid" != "$mid" ] && [ "$replyid" != "$nid" ] || fail 'unique reply ID'
 "$B/tmux-read" "$replyid" > "$tmp/read"
 cmp "$tmp/read" "$tmp/long" || fail 'reply original'
 # Even a tiny file is archived when explicitly combined with a summary.
@@ -126,27 +127,37 @@ has "$tmp/error" 'empty message'
 mkdir "$tmp/stubs"
 printf '#!/bin/sh\necho unexpected-tmux >&2\nexit 99\n' > "$tmp/stubs/tmux"
 chmod +x "$tmp/stubs/tmux"
-PATH="$tmp/stubs:$PATH" "$B/tmux-read" "$rid" > "$tmp/read"
+PATH="$tmp/stubs:$PATH" "$B/tmux-read" "$mid" > "$tmp/read"
 cmp "$tmp/read" "$tmp/long" || fail 'offline read'
-TMUX="/tmp/another-read-socket,1,0" "$B/tmux-read" "$rid" >"$tmp/read"
+TMUX="/tmp/another-read-socket,1,0" "$B/tmux-read" "$mid" >"$tmp/read"
 cmp "$tmp/read" "$tmp/long" || fail 'cross socket read'
-env -u TMUX -u TMUX_PANE "$B/tmux-read" "$rid" >"$tmp/read"
+env -u TMUX -u TMUX_PANE "$B/tmux-read" "$mid" >"$tmp/read"
 cmp "$tmp/read" "$tmp/long" || fail 'plain shell read'
 for bad in '../escape' mffffffffffff ''; do
   if "$B/tmux-read" "$bad" >"$tmp/error" 2>&1; then fail "accepted $bad"; fi
 done
+# Retained request-ID attachments from before the upgrade remain readable.
+legacy_id=r0123456789ab
+cp "$tmp/long" "$XDG_STATE_HOME/tmux-agents/$sock/messages/$legacy_id.txt"
+env -u TMUX -u TMUX_PANE "$B/tmux-read" "$legacy_id" > "$tmp/read"
+cmp "$tmp/read" "$tmp/long" || fail 'legacy r-ID original'
+# A header token from an ordinary message does not imply retained content.
+ask --notice 'No attachment for this token.'
+header_id="$(sed -n 's/^message_id=//p' "${last_file%.msg}.meta")"
+case "$header_id" in m????????????) ;; *) fail 'ordinary header token' ;; esac
+if "$B/tmux-read" "$header_id" >"$tmp/error" 2>&1; then fail 'header-only token archived'; fi
 # A duplicate ID is refused rather than silently choosing another original.
 mkdir -p "$XDG_STATE_HOME/tmux-agents/duplicate/messages"
-cp "$XDG_STATE_HOME/tmux-agents/$sock/messages/$rid.txt" "$XDG_STATE_HOME/tmux-agents/duplicate/messages/$rid.txt"
-if "$B/tmux-read" "$rid" >"$tmp/error" 2>&1; then fail 'ambiguous ID accepted'; fi
+cp "$XDG_STATE_HOME/tmux-agents/$sock/messages/$mid.txt" "$XDG_STATE_HOME/tmux-agents/duplicate/messages/$mid.txt"
+if "$B/tmux-read" "$mid" >"$tmp/error" 2>&1; then fail 'ambiguous ID accepted'; fi
 has "$tmp/error" 'ambiguous across sockets'
-rm "$XDG_STATE_HOME/tmux-agents/duplicate/messages/$rid.txt"
+rm "$XDG_STATE_HOME/tmux-agents/duplicate/messages/$mid.txt"
 # Age just one original; a read prunes it without affecting newer originals.
 old="$XDG_STATE_HOME/tmux-agents/$sock/messages/$nid.txt"
 perl -e 'utime(time-8*86400,time-8*86400,$ARGV[0]) or die $!' "$old"
 if "$B/tmux-read" "$nid" >"$tmp/error" 2>&1; then fail 'expired read'; fi
 has "$tmp/error" 'pruned after 7 days'
 [ ! -e "$old" ] || fail 'expired original retained'
-"$B/tmux-read" "$rid" > "$tmp/read"
+"$B/tmux-read" "$mid" > "$tmp/read"
 cmp "$tmp/read" "$tmp/long" || fail 'recent original pruned'
 echo 'PASS: retained messages, pointers, exact originals and socket-free reads'

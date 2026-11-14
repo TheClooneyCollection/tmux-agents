@@ -87,12 +87,18 @@ for state in unset set empty; do
     check "$mode $state agent depth pin" grep -Fq "shell_environment_policy.set.TMUX_AGENTS_DEPTH=\"$depth\"" "$tmp/args-${pane#%}"
     check "$mode $state agent identity pin" grep -Fq 'shell_environment_policy.set.TMUX_AGENTS_PINNED="1"' "$tmp/args-${pane#%}"
     check "$mode $state agent kind pin" grep -Fq 'shell_environment_policy.set.TMUX_AGENTS_KIND="profile"' "$tmp/args-${pane#%}"
+    for key in turn_began last_delivered owed_to owed_msg owed_at owed owed_settled owed_notified owed_asked; do
+      tmux set -p -t "$pane" "@$key" stale
+    done
     tmux send-keys -t "$pane" C-d
     check "$mode $state identity cleared" wait_for cleared "$pane"
     returned="$tmp/returned-${pane#%}"
     tmux send-keys -t "$pane" -l "/usr/bin/perl '$tmp/dump' '$returned'"
     tmux send-keys -t "$pane" Enter
     check "$mode $state returned shell executes" wait_for test -s "$returned"
+    for key in turn_began last_delivered owed_to owed_msg owed_at owed owed_settled owed_notified owed_asked; do
+      check "$mode $state returned shell clears @$key" test -z "$(tmux show-options -pqv -t "$pane" "@$key")"
+    done
     check "$mode $state exact returned PATH" path_matches "$base_path" "$returned"
     for key in $keys; do
       expected="$key:unset"

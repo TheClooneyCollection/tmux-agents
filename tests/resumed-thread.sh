@@ -82,14 +82,14 @@ check 'observed work completes one turn' test "$(info "$current" turns)" = 1
 check 'observed work is banked' test "$(info "$current" worked)" -ge 9
 check 'completed work clears start' test -z "$(info "$current" turn_start)"
 check 'historical record stays closed' test -n "$(record_get "$old_id" closed)"
-# An unfinished explicit local task pauses for the user, without completing it.
-"$B/tmux-agent-report" --from resumed --local 'unfinished resumed task' >/dev/null
+# Ending another turn completes its observed work even if the task continues.
+"$B/tmux-agent-report" --from resumed 'unfinished resumed task' >/dev/null
 tmux set -p -t "$current" @turn_start "$(($(date +%s)-7))"
 launch_notify "$current" resumed-pending
-check 'unfinished task needs user' test "$(info "$current" state)" = needs_you
-check 'paused task is not a completed turn' test "$(info "$current" turns)" = 1
-check 'paused work is banked' test "$(info "$current" worked)" -ge 16
-check 'paused task clears running clock' test -z "$(info "$current" turn_start)"
+check 'unfinished task still ends idle' test "$(info "$current" state)" = idle
+check 'second real turn is completed' test "$(info "$current" turns)" = 2
+check 'second turn work is banked' test "$(info "$current" worked)" -ge 16
+check 'second turn clears running clock' test -z "$(info "$current" turn_start)"
 
 # Fresh isolated identities for each routing conflict. No fake routing functions.
 notify_id() {
