@@ -37,6 +37,7 @@ What counts as a turn start, per agent:
   - The notify callback ends the turn. A notify whose `input-messages` do not contain the most recently delivered paste's header does not end current work. That paste was delivered after this turn began and has started, or will start, a turn of its own.
 - **Progress reports.** A plain `tmux-agent-report "<text>"` still moves `idle` or `done` to `working`. A report can only be sent from inside a running turn, so it is turn evidence, and it covers a Codex agent working on a task typed directly by the user.
 - **Explicit needs you.** `--needs-you` lasts until the next turn start. For Codex that means the next delivered paste or progress report.
+- **Notice-only turns.** A turn triggered only by a notice shows `working` while it runs. An existing `needs you`, explicit or from a hook, survives it, and only a non-notice turn start or a progress report clears it.
 - **Background waits are not modelled.** An agent that ends its turn is `idle` or `done`, full stop. This covers CI watches, Claude background commands and "I'll wait for X".
 
 ### "Waiting on whom" is computed live
@@ -186,10 +187,10 @@ The list's single-snapshot and record-read budget must hold, and the list gets c
 - **Stored "waiting for" with expiry:** it is still stale until it expires, and it needs a timeout setting. The live computation needs neither.
 - **Migrating on `@turn_active`:** it is set for every working pane, including the stale ones, so it cannot tell them apart.
 
-## Open questions for the user
+## Review decisions
 
-These are listed with the defaults this doc assumes:
+The user decided these on 2026-11-14, after the review:
 
-1. **Codex asking the user.** Should a Codex agent asking the user still surface as `needs you` without `--needs-you`? Default: no, and the skill requires `--needs-you` first.
-2. **Notice-only turns.** Should a turn triggered only by a notice change the state? Default: it shows `working` while it runs, but an existing `needs you` (explicit or from a hook) survives it. Only a non-notice turn start or a progress report clears `needs you`.
-3. **Worked time.** Should worked time exclude waiting? Default: yes, as described under Worked time.
+1. **Codex asking the user.** A Codex agent asking the user does not surface as `needs you` on its own. The skill requires `tmux-agent-report --needs-you` before asking.
+2. **Notice-only turns.** A turn triggered only by a notice shows `working` while it runs, but an existing `needs you` (explicit or from a hook) survives it. Only a non-notice turn start or a progress report clears `needs you`.
+3. **Worked time.** Worked time excludes waits, and `turns` counts real turns, as described under Worked time.
