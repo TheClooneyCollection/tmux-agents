@@ -28,16 +28,25 @@ The user decided on 2026-11-14:
 
 What counts as a turn start, per agent:
 
-- **Message tokens.** Every delivered paste carries its message's ID in its header, for example `[request from X to Y via tmux-ask · m1a2b3c4d5e6]`. These are the `m…` IDs `tmux-read` already uses, and they let a turn end be matched to an exact message instead of to a sender. The Codex notify parser in `bin/tmux-agent-report` is updated for the new header.
+- **Message tokens.** Every delivered paste carries a message ID in its header, for example `[request from X to Y via tmux-ask · m1a2b3c4d5e6]`. The token lets a turn end be matched to an exact message instead of to a sender.
+  - It uses the same `m…` format as `tmux-read` IDs, but only a summary sent with `--message-file` is stored. Agents run `tmux-read` only on the ID in a `Read the full message here:` pointer, never on a header token.
+  - During the compatibility window, the Codex notify parser and `prompt_kind` in `bin/tmux-agent-report` accept both the old header and the new one.
+  - The skill's "Markers tell you who wrote what" section shows the new header.
 - **Claude.**
   - `UserPromptSubmit` (`--turn-start`) starts a turn, and `Stop` / `StopFailure` (`--turn-end`) ends it.
   - Claude can also be re-invoked without a prompt submit, for example when a background command or an Agent-tool result returns. So `PreToolUse` (`--tool-start`, already wired) on a tracked `idle` or `done` pane also sets `working`.
-  - A turn start records `@turn_began`, but only when the pane was not already working, and `Stop` clears it. `@turn_start` can't be used for this, because it resets after every permission or message pause.
+  - `@turn_began` records when the current turn began. `@turn_start` can't be used for this, because it resets after every permission or message pause.
+    - `--turn-start` records it when the pane is not working.
+    - `--tool-start` records it only when it is unset, so a tool call after `--needs-you` can't move it forward.
+    - `Stop` and `StopFailure` clear it.
+    - A turn end with `@turn_began` unset settles nothing. That covers a queued or promptless turn that made no tool call.
+  - Implementer check: before writing the settle tests, confirm with a quick hook test whether `UserPromptSubmit` fires when a paste is queued or when it is processed.
   - The permission, tool, question and elicitation hooks are otherwise unchanged.
 - **Codex.**
-  - Codex has no turn-start hook. Any delivered paste of any kind marks the receiver `working`: request, reply, notice, system notice (rename, bounce), `--any` send, a retried message or one delivered on reopen. It happens at actual delivery, not at send time.
+  - Codex has no turn-start hook. Any delivered paste of any kind marks the receiver `working`: request, reply, notice, system notice (rename, bounce), `--any` send, a retried message or one delivered on reopen. It happens at actual delivery, not at send time. The exception is a notice delivered to a `needs you` pane; see Notice-only turns.
   - Each delivery also records the paste's token in `@last_delivered`.
   - The notify callback ends the turn, unless its `input-messages` lack the `@last_delivered` token. In that case the paste was delivered after this turn began, and it has started, or will start, a turn of its own.
+  - If the notify has no `input-messages` field, or `@last_delivered` is empty (for example, a message queued by an older `tmux-ask` without a token), the notify ends the turn and settles nothing.
 - **Progress reports.** A plain `tmux-agent-report "<text>"` still moves `idle` or `done` to `working`. A report can only be sent from inside a running turn, so it is turn evidence, and it covers a Codex agent working on a task typed directly by the user.
 - **Explicit needs you.** `--needs-you` lasts until the next non-notice turn start. For Codex that means the next non-notice paste, or a progress report.
 - **Notice-only turns.** A turn triggered only by a notice changes `idle` or `done` to `working` while it runs. A `needs you`, explicit or from a hook, stays `needs you` for the whole notice turn, and only a non-notice turn start or a progress report clears it.
@@ -66,17 +75,21 @@ The notice from v1.19.0 stays, without the ledger. Each sub agent keeps one slot
   | `@owed` | `1` while a reply is owed |
   | `@owed_settled` | `1` once a turn end has seen this message |
   | `@owed_notified` | `1` once the sender has been told |
+  | `@owed_asked` | `1` while a clarifying question to `@owed_to` is open |
 
   The slot doesn't survive a closed pane. On reopen, deliver-on-reopen re-delivers undelivered queued messages, and those fill it again.
 - **Filling.** The slot is filled at delivery, not at send time. Filling sets `@owed_to`, `@owed_msg` and `@owed_at`, sets `@owed`, and clears `@owed_settled` and `@owed_notified`. It is filled by:
   - a request from any agent
-  - a reply from the agent in `@owed_to`, even after the slot was cleared. This covers a sub agent that asks its requester a clarifying question, which clears the slot: the answer fills it again and the original obligation is back.
+  - a reply from the agent in `@owed_to`, but only when `@owed_asked` is set. Refilling clears `@owed_asked`.
+
+  `@owed_asked` is set when the sub agent sends a request to `@owed_to` while `@owed` is 1, that is, a clarifying question before it has answered. That request clears `@owed`, and the answer fills the slot again, so the original obligation is back. A reply to a follow-up the sub agent sent after it had already answered does not refill the slot.
 
   Notices and system notices never fill the slot, and neither do messages from shell panes.
 - **Clearing.** Any message from the sub agent to `@owed_to` clears `@owed`: a reply, a notice or a request. `@owed_to` itself is kept.
 - **Settling.** At turn end, the slot is settled (`@owed_settled`) only when the turn that is ending saw the filling message:
   - Claude: `@owed_at <= @turn_began`. The comparison is inclusive, because delivery and the hook can land in the same second.
   - Codex: the notify's `input-messages` contain the `@owed_msg` token.
+  - A Claude turn end with `@turn_began` unset, or a Codex notify without a usable token, settles nothing.
   - A slot filled mid-turn waits for the turn that handles it. Once settled, it stays settled, so a later turn end, such as a nudge's notice turn, needs no match.
 - **Firing.** At a turn end where the slot is settled, still owed and not yet notified, the sender gets one notice, for example `worker stopped without replying to your last request`.
 - **Re-arming.** Every turn start, including a notice-only one, clears `@owed_notified`, so a stall after a nudge is reported again.
@@ -182,7 +195,10 @@ Update these:
     - mid-turn delivery not settled early
     - two requests from one sender are told apart by token
     - `@turn_began` survives permission and message pauses
-    - a reply from `@owed_to` refills the slot after it was cleared
+    - a reply from `@owed_to` refills the slot only after a clarifying question (`@owed_asked`), not after a follow-up sent once it had answered
+    - `--tool-start` after `--needs-you` doesn't move `@turn_began`
+    - a Codex notify without `input-messages`, or with an empty `@last_delivered`, ends the turn
+    - old and new headers both parse
     - once settled, a nudge's notice turn fires again
     - cleared by any message
     - notices and shells never fill it
