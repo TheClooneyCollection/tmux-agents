@@ -175,7 +175,7 @@ wait_live_frame() {
   tmux set -p -t "$long" @worked "$((worked + 60))"
   for ((i=0;i<100;i++)); do
     tmux capture-pane -p -t "$ui" >"$tmp/screen"
-    if [ "$(grep 'worked ' "$tmp/screen")" != "$previous" ] && complete_body; then return 0; fi
+    if [ "$(grep 'worked ' "$tmp/screen")" != "$previous" ] && grep -q 'BODY-ROW' "$tmp/screen"; then return 0; fi
     sleep .05
   done
   echo 'FAIL live preview did not tick' >&2
@@ -185,7 +185,7 @@ wait_body_change() {
   local previous="$1" action="$2" i
   for ((i=0;i<100;i++)); do
     tmux capture-pane -p -t "$ui" >"$tmp/screen"
-    if complete_body && [ "$(body_view)" != "$previous" ]; then return 0; fi
+    [ "$(body_view)" = "$previous" ] || return 0
     sleep .05
   done
   printf 'FAIL scroll did not move (%s)\nPrevious:\n%s\n' "$action" "$previous" >&2
@@ -253,6 +253,9 @@ held_first_scroll() {
   # not a hard-coded BODY-ROW number (capture depth varies with tmux version).
   top="$(sed -n '8s/.*\(BODY-ROW-[0-9]*\).*/\1/p' "$tmp/held-result")"
   [ -n "$top" ] || { echo 'FAIL held result missing first body row'; exit 1; }
+  # This held result starts at its first body row and has hundreds of BODY
+  # rows. Unlike follow or a one-line scroll near the tail, it fills the whole
+  # viewport with consecutive BODY rows before we freeze the baseline.
   printf 'release\n' >"$tmp/release"
   for ((i=0;i<100;i++)); do
     tmux capture-pane -p -t "$ui" >"$tmp/screen"
