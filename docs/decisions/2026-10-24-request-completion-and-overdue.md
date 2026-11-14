@@ -38,3 +38,7 @@ A review of the implementation found three groups of problems; the user asked fo
 ## Superseded (2026-11-13)
 
 The user removed reply overdue because it was overcomplicated and often misleading. It fired for agents legitimately waiting on others and for idle chains, and it still required inspecting the pane with `tmux-peek`. Request-ID based completion remains.
+
+## Superseded (2026-11-14)
+
+Proposed for retirement: the user decided to replace request-ID completion with state from turn hooks. See [Retire the request ledger](2026-11-14-retire-request-ledger.md). Until that change ships, request-ID completion remains in effect.
