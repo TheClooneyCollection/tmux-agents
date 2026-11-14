@@ -51,7 +51,7 @@ The launcher forwards explicitly supplied role environment overrides and the res
 
 `chain-config` uses the same resolver without list initialization or identity mutation. The CLI never parses instruction files; the skill passes any applicable role preference as an explicit override. See [the role decision](../decisions/2026-10-13-configurable-chain-roles.md).
 
-Codex main retains identity pins and a stable agent ID for notify even when the initial prompt has no message header. Notify handles turn completion; it does not provide Claude's turn-start hook. Main reports progress at the start of each new user task, and Codex reports `--waiting` explicitly when waiting for background work. Main keeps agent permission defaults; member auto permissions still follow `sub_auto`.
+Codex main retains identity pins and a stable agent ID for notify even when the initial prompt has no message header. Notify handles turn completion; it does not provide Claude's turn-start hook. Main reports progress at the start of each new user task, and an ended turn shows idle or done even while background work continues. Main keeps agent permission defaults; member auto permissions still follow `sub_auto`.
 
 ## Permissions
 

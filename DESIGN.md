@@ -20,6 +20,8 @@ A message is text pasted into the receiver's pane and submitted, exactly as if t
 
 Sub agents are ordinary agents started by `tmux-spawn`, in hidden windows of an `agents-<project>` session by default or in a visible split (`--split`), linked to their owner: whoever spawned them, or the agent named with `--for`. The `prefix + a` switcher lists and opens them, and a second status line (the chip) shows what each one is doing, fed by reports and hooks rather than screen scraping.
 
+State follows running turns: turn end means idle at the top level and done for sub agents. The list computes waiting on nearest working descendants from its pane snapshot. One volatile slot per sub agent warns its latest requester when it stops without an answer; there is no durable request ledger. See [turn state](docs/design/state-and-protocol.md#turn-state).
+
 ## Scripts
 
 | File | Role |
@@ -40,7 +42,7 @@ Sub agents are ordinary agents started by `tmux-spawn`, in hidden windows of an 
 
 - [State and protocol](docs/design/state-and-protocol.md): pane options, links, naming, connecting, message format and delivery, long messages.
 - [Sub agents](docs/design/sub-agents.md): spawning, the switcher, done state and cleanup, closing, the status chip, alerts.
-- [Codex turn-start observability](docs/design/codex-turn-start-proposal.md): proposal for distinguishing model execution from task obligations.
+- [Codex turn-start observability](docs/design/codex-turn-start-proposal.md): superseded proposal and evidence about the missing direct-input start signal.
 - [Environment](docs/design/environment.md): macOS bash 3.2, Codex's sandbox and shared daemon, permissions, install layout.
 - [Pitfalls and testing](docs/design/pitfalls-and-testing.md): traps found while building, how to test without touching the user's server, known limitations.
 - [Performance](docs/performance.md): what made it slow, the measurements, and how shell startup affects popups and spawns.

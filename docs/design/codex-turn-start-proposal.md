@@ -1,6 +1,6 @@
 # Codex turn-start observability
 
-Status: **Proposal**. No behaviour change is approved or implemented here.
+Status: **Superseded proposal**. The [accepted turn-state decision](../decisions/2026-11-14-retire-request-ledger.md) replaces the task-state model discussed below. The evidence and candidates describe the older implementation, not current guidance.
 
 ## Problem and evidence
 
@@ -25,7 +25,7 @@ Source anchors at proposal base `912c53b`:
   Codex completion `notify` with a stable agent ID, without a turn-start hook.
 - [Report handling](../../bin/tmux-agent-report), the `--codex-notify` branch
   and final progress path, handles completion and preserves done summaries.
-- [Request state](../../bin/tmux-request-state), `notify` and `finish`, keeps
+- `bin/tmux-request-state` (removed), `notify` and `finish`, keeps
   obligations separate and refuses to invent an unreported start interval.
 - [Done state and cleanup](sub-agents.md#done-state-and-cleanup) explains
   request reopening, notice semantics and reports after completion.
@@ -78,19 +78,6 @@ needs its own timing at all. Validate reply/notice/direct-input turns, late
 callbacks after resume, interrupted turns and watcher failures on isolated
 servers, while retaining request semantics and the list-build budget.
 
-## Available explicit workaround
+## Current guidance
 
-For known local work that continues beyond one turn, the agent can report:
-
-```sh
-tmux-agent-report --from my-agent --local "reviewing follow-up evidence"
-# When that local work is complete:
-tmux-agent-report --from my-agent --local-done
-```
-
-Use the actual agent name. These commands explicitly start and finish the local
-obligation while preserving independent requests and waits. They are not needed
-to turn a purely informational notice into work. They do not detect model turns,
-reconstruct historical elapsed time, or repair past counters. Completion notify
-alone cannot recover when an unobserved turn began. See
-[local work and turn ends](sub-agents.md#data-not-screen-scraping) for the current integration.
+Use a plain `tmux-agent-report --from ME "reviewing follow-up evidence"` to show directly typed Codex work. Actual message delivery starts work, and notify ends the turn using message tokens. Direct typing still has no automatic start signal. See [turn state](state-and-protocol.md#turn-state) for the current integration.

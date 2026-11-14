@@ -57,7 +57,7 @@ if tmux -L chain-test has-session; then
 fi
 ```
 
-Saying “start the chain” to an existing top-level agent keeps it as main. Role settings affect new chains only. Main keeps its permission defaults; Claude/Codex members use `sub_auto` (default `on`). Codex main has identity pins and turn-end notify, but no turn-start hook, so a direct user task that spans several turns starts with `tmux-agent-report --from ME --local "<task>"` and ends with `--local-done`; a task finished within one turn needs neither.
+Saying “start the chain” to an existing top-level agent keeps it as main. Role settings affect new chains only. Main keeps its permission defaults; Claude/Codex members use `sub_auto` (default `on`). Codex main has identity pins and turn-end notify but no turn-start hook. Use a plain `tmux-agent-report --from ME "<task>"` to show directly typed work before turn end.
 
 ## Project launchers
 
@@ -140,11 +140,11 @@ tmux-ask --from ME PEER --message-file "$message_file"
 
 The file must be one readable regular file, not a symlink, and at most 1 MiB. Its literal text is sent unchanged; empty files use the usual empty-message validation. The option alone pastes the file in full without archiving it. To send a summary with the file as retained full text, use `tmux-ask --from ME PEER --message-file "$message_file" "Review complete; details attached."`. Put options before the summary. The file is copied to state storage and the summary receives a `Read the full message here: tmux-read <id>` line. Both modes ignore stdin without reading it; stdin summaries are not supported. Empty summaries are rejected.
 
-Reply instructions follow the receiving agent: Claude uses the supplied quoted heredoc form; Codex, including configured profiles, uses quoted short arguments or a unique `mktemp` file with `--message-file` as above. Unknown executables receive quoted plain argv for portability. These forms leave request IDs and matching unchanged; preserve the supplied sender, target, `--request-id` and `--any` when present.
+Reply instructions follow the receiving agent: Claude uses the supplied quoted heredoc form; Codex, including configured profiles, uses quoted short arguments or a unique `mktemp` file with `--message-file` as above. Unknown executables receive quoted plain argv for portability. Preserve the supplied sender, target and `--any` when present.
 
 In Codex code mode, `exec_command` is still a shell tool: wrapping it in JavaScript does not bypass shell parsing or sandbox permissions. Prefer quoted arguments or `--message-file` to heredocs. Run one tmux command per tool call, separately from file creation and cleanup, without shell command chains or pipes. Substitute the unique file's actual path if variables do not persist across calls. If a tmux socket permission denial persists with that form, retry only that command with narrowly escalated permissions and a short justification.
 
-Each request has its own ID. Use the supplied reply command, including `--request-id RID`: `tmux-ask --from ME --reply --request-id RID PEER "answer"`. This completes that request even when PEER is not your parent. With the older `--reply PEER` form, a single pending request between the pair is matched automatically; several pending requests are refused with their IDs so you can select the one answered. Legacy messages without tracking remain compatible but cannot complete unrelated tracked requests. Queuing, retry, reopening and renaming preserve request association.
+Answer with `tmux-ask --from ME --reply PEER "answer"` once the work is done. Replies are a message kind, with no request-ID matching. Each delivered header carries an `m…` token to identify that input. Use `tmux-read` only for an explicit `Read the full message here:` pointer; a header token alone has no archived content.
 
 Typing or scrolling delays delivery. `queued` means sent: do not resend. Leaving copy mode or becoming idle allows delivery in order; [configuration](configuration.md) controls idle, copy-mode and attention thresholds. Long waits show `✉`. If the receiver disappears, the message stays saved and the sender is notified; reopening a resumable receiver retries its messages.
 
@@ -215,30 +215,32 @@ Names shorten under project headings. Search parts, such as `claude tmux seconda
 
 | State | Meaning and next action |
 | --- | --- |
-| `⠹ working` | Working or waiting on delegated work, requests or reported background work. |
-| `○ idle` | No task yet, or a top-level turn ended with nothing pending; ready for the next prompt. Pending work keeps top-level agents working. |
-| `✓ done` | All incoming requests are answered and no other work remains. A new request starts work again. |
+| `⠹ working` | A turn is running. |
+| `○ idle` | No task yet, or a top-level turn ended; ready for the next prompt. |
+| `✓ done` | A sub agent ended its turn. Its task or background command may still be unfinished. |
 | `⚠ permission` | Waiting for approval; open its pane. Auto mode is configurable, not a guarantee against prompts. |
-| `◆ needs you` | An agent explicitly requested user attention, a Claude agent is asking you a question or showing an MCP input dialog, or an agent ended its turn with unfinished work and no agent or background wait; inspect its question. When a sub agent stops with another agent's request unanswered, that agent also gets a notice saying so. |
+| `◆ needs you` | Explicit user attention or a Claude question/input dialog; inspect its question. An unanswered request alone does not set this state. |
 | `✉ message waiting` | Delivery has waited past the attention threshold; finish typing/scrolling, do not resend. |
 | `✗ exited` | Process exited; its pane/history remains until closed. |
 | `- untracked` | No turn tracking or worked time; messaging still works. |
 
-For a user question or decision, run `tmux-agent-report --from ME --needs-you "reason"` before asking. Tracked top-level agents also appear in the default list and status chip while they need you. The reason is shown as activity and survives turn end; ordinary progress or turn start clears the explicit attention. Pending requests stay pending.
+For a user question or decision, run `tmux-agent-report --from ME --needs-you "reason"` before asking. Tracked top-level agents also appear in the default list and status chip while they need you. The reason is shown as activity and survives turn end; ordinary progress or a non-notice turn start clears the attention. Notice-only turns preserve existing needs-you attention.
 
 Done agents show their last report as `done · <text>` in list activity and the status chip. With no report, the list keeps `no report yet` and the chip shows `done`. The list truncates the combined text to its activity column; tmux clips the chip to available status-line space. Stored activity and preview text stay unchanged.
 
-Helpers report progress with `tmux-agent-report --from ME "running tests"`. Before ending a turn to wait, use `tmux-agent-report --from ME --waiting "test run"`; a progress notice to your own parent also keeps you working. A normal progress report clears the wait. A new request clears a parent-notice coordination marker but preserves an explicit `--waiting` background wait. A reply completes only its matching request; other requests, parent tasks, local work and background waits remain active. Once all incoming requests are answered and no other work remains, the agent returns to the appropriate done or idle state. Claude detects its own background shell commands at turn end; Codex needs `--waiting`. Neither mechanism knows when arbitrary external work has finished. Never use it to hide a user question. An idle turn does not ask for attention.
+Helpers report progress with `tmux-agent-report --from ME "running tests"`. This starts work from idle or done. Every ended turn returns to idle or done, including a turn waiting for CI, a background command or another agent. A notice-only turn runs as working from idle or done, but preserves existing needs-you attention. Codex has no turn-start hook: directly typed work may show idle until a report or turn-end notification. Codex approval prompts have no permission hook and show working.
 
-A direct user prompt is local work for the turn it starts, and ends with that turn once nothing else is outstanding; no report is needed. For local work that spans turns (you will keep going after this turn without a request, child or background wait to show for it), run `tmux-agent-report --from ME --local "<task>"` at the start and `tmux-agent-report --from ME --local-done` when that work is complete. `--local-done` takes no trailing text and only clears local work; incoming requests, outgoing waits, unfinished children and background waits still prevent completion. Ordinary progress reports within a request do not create an independent local task.
+A non-working parent shows `waiting on <names>` for its nearest working descendants, including members. The walk passes through idle, done and needs-you agents and stops at each working one. Working parents keep their own report. Counts use each agent's own state. Unrelated and cross-project requests do not appear in this suffix. If a member has stopped, inspect its last report or pane and pick up any finished result.
 
-Claude's nonprotocol user turn-start marks local work automatically, and the turn end clears it. Codex has no turn-start hook: for multi-turn direct work, report `--local` when the task begins so peer replies cannot finish it in the meantime. Codex's completion notification also uses its input messages to recognise direct local work, but only at turn end. Use `--local` for each new multi-turn direct task, including repeated identical text: without a turn ID, identical notification payloads cannot be distinguished from retries. `--local` resets notification deduplication. The local completion marker survives resume. Complete explicit local work with `--local-done`; use a normal progress report after a background wait ends.
+A sub agent remembers only its latest requester in a pane-local slot. Once a turn has seen that request, stopping without a message back sends the live requester one notice. Any message to that requester clears the obligation; a clarifying question before answering re-arms it when the answer arrives. A new turn, including a notice nudge, allows another warning if it stops again. This neither marks needs-you nor proves task completion. Earlier senders are forgotten, as are delivered requests when the pane closes. Only undelivered queued messages refill the slot on reopen. See [notice details and limits](design/state-and-protocol.md#unanswered-stop-notice).
 
-`4m · worked 1h5m` means current-state age and total active working time. Permission, needs-you and message waits pause the same turn; idle/done complete it. Pauses do not count. Reopening retains saved work; abrupt removal can lose the uncheckpointed interval. See [accounting](design/state-and-protocol.md#working-time-accounting) and [preview details](design/sub-agents.md#browsing-tmux-agents).
+Compatibility accepts old `--request-id` arguments but ignores their values with a note. Old report `--waiting` and `--local` forms become plain progress; `--local-done` is a successful no-op. Existing archived `r…` IDs remain readable until expiry. This deprecation window lasts at least through the following release; removing the flags needs a separate decision.
+
+`4m · worked 1h5m` means current-state age and total active working time. Permission, needs-you and message waits pause the same turn; idle/done complete it. Pauses and waits after turn end do not count; `turns` counts actual turns. Reopening retains saved work; abrupt removal can lose the uncheckpointed interval. See [accounting](design/state-and-protocol.md#working-time-accounting) and [preview details](design/sub-agents.md#browsing-tmux-agents).
 
 ### Close and reopen
 
-Parents dismiss finished helpers with `tmux-dismiss --from ME PEER`; users can close any agent. Dismissal closes descendants first, retaining records. `--keep-children` leaves direct children unowned. `--done` skips members and any subtree containing members or unfinished work. Parents see closures in `tmux-peers`, without interruption.
+Parents dismiss finished helpers with `tmux-dismiss --from ME PEER`; users can close any agent. Dismissal closes descendants first, retaining records. `--keep-children` leaves direct children unowned. `--done` skips members and any subtree containing members or unfinished work. A done helper may still be waiting for its own background command, so inspect its result before cleanup. Parents see closures in `tmux-peers`, without interruption.
 
 Closed conversations remain listed for [7 days by default](configuration.md). `enter` reopens, `ctrl-o` reopens and jumps, `ctrl-x` forgets. Reopening always uses a hidden window, preserving membership and reconnecting to the original parent if still live; otherwise the [resume rules](design/sub-agents.md#closing-and-telling-the-parent) apply.
 
@@ -292,7 +294,7 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 | `tmux-rename --from ME PEER NAME [--exact]` | Rename yourself or a descendant. |
 | `tmux-disconnect [name]` | User unlinks one peer or all. |
 | `tmux-peers --from ME [--ids]` | Show identity and connections. |
-| `tmux-ask --from ME [--any] [--reply\|--notice] [--request-id RID] PEER [msg...]` or `--message-file FILE` | Send request, answer or notice; a file alone is the full message, a file plus positional text delivers a summary and retained-file pointer. Accepts stdin only without a message file. `--any` permits unlinked targets. |
+| `tmux-ask --from ME [--any] [--reply\|--notice] PEER [msg...]` or `--message-file FILE` | Send request, answer or notice; a file alone is the full message, a file plus positional text delivers a summary and retained-file pointer. Accepts stdin only without a message file. `--any` permits unlinked targets. |
 | `tmux-read ID` | Read any retained message by ID (7-day retention; no tmux connection needed). |
 | `tmux-ask --pending` | Inspect queued/undelivered messages. |
 | `tmux-ask --retry [--to PEER]` | Retry saved messages. |
@@ -301,8 +303,7 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 | `tmux-spawn [AGENT] --from ME [--member] [task]` or `--message-file FILE` | Spawn; accepts stdin when no task file is supplied, `--name`, `--split` and `--for`. |
 | `tmux-spawn --list-closed` | List saved conversations. |
 | `tmux-spawn --from ME --resume PEER` / `--resume-id ID [--here]` | Reopen a conversation, optionally in the current shell pane. |
-| `tmux-agent-report --from ME [--waiting\|--local\|--needs-you] "text"` | Report progress, a work wait, multi-turn local work or user attention. |
-| `tmux-agent-report --from ME --local-done` | Complete `--local` work only; takes no trailing text. |
+| `tmux-agent-report --from ME [--needs-you] "text"` | Report progress or user attention. |
 | `tmux-agents` | Open the agent list. |
 | `tmux-dismiss --from ME PEER` | Close a descendant and its subtree. |
 

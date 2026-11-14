@@ -37,7 +37,7 @@ set -g @tmux_agents_name_format exact
 
 `TMUX_AGENTS_CODEX_HOMES` also keeps its tmux global-environment fallback when neither a local override nor the option is set. Settings are read once per command; restart an existing picker or chip daemon to apply changes to its cached settings. Set overrides after sourcing `tmux-agents.conf`, which installs the chip FPS default, except for `@tmux_agents_shell_key` and `@tmux_agents_command_key`: set them before sourcing, because their bindings are installed at source time. Internal pane state and test hooks are not user settings.
 
-`resume_days` controls closed-agent list retention. Request records have a separate fixed seven-day retention after answering or cancellation; pending requests and records referenced by queued messages do not expire by age. See [request completion](design/state-and-protocol.md#request-completion) for cleanup triggers and notification deduplication.
+`resume_days` controls closed-agent list retention. Explicit summary attachments have a separate fixed seven-day retention; queued messages remain available for delivery. See [long messages](design/state-and-protocol.md#long-messages).
 
 With `sub_auto` on, `tmux-spawn` adds Claude's `--permission-mode auto` or Codex's `-c approvals_reviewer="auto_review"`. With it off, neither flag is added. The setting applies to new and resumed Claude/Codex agents, including members. Other executables keep their own permission behavior; no permission flags or rules are added.
 
@@ -141,7 +141,7 @@ set -g @tmux_agents_chain_worker codex-2nd
 
 Rerun `./install.sh` from your installation checkout after adding a profile so its home receives the skills and rules. Merely setting `CODEX_HOME` does not install them.
 
-The main keeps its agent permission defaults. Claude/Codex secondary and worker members use `sub_auto`, which defaults to `on`. Codex main uses identity pins and notify tracking, but has no turn-start hook: the main uses `--local` at the start of each direct user task and `--local-done` when that local work finishes. See [Starting agents](guide.md#starting-agents).
+The main keeps its agent permission defaults. Claude/Codex secondary and worker members use `sub_auto`, which defaults to `on`. Codex main uses identity pins and notify tracking, but has no turn-start hook: the main uses a plain progress report to show directly typed work before turn end. Ended turns show idle even if the task continues later. See [Starting agents](guide.md#starting-agents).
 
 Message length is not a setting. `tmux-ask` always pastes ordinary messages in full. Explicit summary text combined with `--message-file` creates a retained attachment for `tmux-read`; retention is fixed at 7 days. See [message delivery](guide.md#how-messages-flow).
 

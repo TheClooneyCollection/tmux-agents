@@ -158,6 +158,8 @@ Closed sub agents and members stay in a `closed` section at the bottom for 7 day
 
 Status: `⠹` working · `○` idle (waiting for a task or the next user prompt) · `✓` done · `⚠` waiting for permission (red) · `◆` needs you (amber) · `✉` message waiting for you to stop typing or scrolling · `✗` exited · `-` untracked (no worked time; messaging still works)
 
+States describe turns: idle or done means the turn stopped, even if the task continues later. Non-working parents show live `waiting on` descendants. Replies need no request ID. See [states and worked time](docs/guide.md#states-and-worked-time).
+
 ## Commands
 
 Agents run these for you; each takes `--help`.
