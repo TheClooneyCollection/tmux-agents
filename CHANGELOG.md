@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.21.1 (2026-11-14)
 
 - Write relative install links when both paths are under HOME, preserving existing correct links and absolute targets outside HOME.
 
