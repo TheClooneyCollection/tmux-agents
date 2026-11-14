@@ -380,6 +380,10 @@ if [ -n "$resume$resume_id" ]; then
   [ "$(record_get "$resume_id" member)" != 1 ] || member=1
   resume="$(record_get "$resume_id" name)"
   kind="$(record_get "$resume_id" kind)" sid="$(record_get "$resume_id" id)"
+  kind="${agent:-$kind}"
+  if [ -n "$kind" ]; then
+    full_agent_kind "$kind" || die "cannot resume '$resume': no conversation adapter for '$kind'"
+  fi
   dir="$(record_get "$resume_id" dir)" rdepth="$(record_get "$resume_id" depth)"
   [ -n "$sid" ] || die "can't reopen '$resume': its session id was never recorded (Codex records it when its first turn ends)"
   [ -d "$dir" ] || die "can't reopen '$resume': its directory $dir is gone"
@@ -400,8 +404,7 @@ if [ -n "$resume$resume_id" ]; then
   [ -z "$parent" ] || require_agent_pane "$parent"
   # Explicit choices win; otherwise retain the recorded profile, with the
   # live parent as the fallback for old records that have no kind.
-  if [ -n "$agent" ]; then kind="$agent"
-  elif [ -z "$kind" ]; then kind="$(inherited_agent "$parent")"; fi
+  [ -n "$kind" ] || kind="$(inherited_agent "$parent")"
   full_agent_kind "$kind" || die "cannot resume '$resume': no conversation adapter for '$kind'"
   record_set "$resume_id" kind "$kind"
   resume="$(unique_name "$resume")"
