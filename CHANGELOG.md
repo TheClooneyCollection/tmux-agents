@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.19.0 (2026-11-13)
+## v1.19.0 (2026-11-14)
 
 - **Explicit long messages with `tmux-read`.** Combine a positional summary with `tmux-ask --message-file PATH` to keep the file for 7 days and deliver the summary plus `Read the full message here: tmux-read <id>`. Any agent, or the user in a plain shell, can read it with `tmux-read <id>`; it needs no tmux connection. Ordinary messages and file-only sends paste in full without archiving, and automatic long-message truncation is removed. Relays can reuse the original pointer.
 - **Message files for requests and tasks.** `tmux-ask` and `tmux-spawn` accept `--message-file PATH` for literal message text from a readable regular file up to 1 MiB. Symlinks are rejected and stdin is ignored without being read. Positional task text still conflicts with the option in `tmux-spawn`; `tmux-ask` uses it as an explicit summary. `tmux-spawn` does not allow it with resume or list-closed operations.
