@@ -9,6 +9,7 @@ Notes for AI agents working on tmux-agents.
 - Clean up with `tmux -L <testname> kill-server` only. Never run a bare `tmux kill-server`. Suites use `tests/helpers/cleanup.sh` to stop their delivery workers and remove only their own queue directory before deleting temporary state; never remove `default/` or shared flat-root messages.
 - Test servers use `set -g default-shell /bin/sh`, so the user's shell config doesn't run in test panes.
 - Stub both agents: point `TMUX_SPAWN_BIN` at a directory with `claude` and `codex` scripts that print a marker and `exec cat`, and check the marker before going on. In `tmux-spawn`, the agent type comes before the options.
+- **Tests and probes use the stub agents.** A real `claude` or `codex` session uses the user's account and quota, so ask the user first: say what it verifies and roughly how many turns it takes. Afterwards delete the session records (for Claude, under `~/.claude/projects/`) and temp files it left. The one exception is the pre-release `ci/codex-probe.sh` in the release steps, which the release approval covers.
 - Run every suite before a release; each file's header says what it covers:
 
   ```sh
