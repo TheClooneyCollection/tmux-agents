@@ -112,6 +112,8 @@ printf '%s\n' '{"prompt":"perform the task"}' | "$B/tmux-agent-report" --pane "$
 check 'real turn-start wakes idle launcher' test "$(info "$new" state)" = working
 check 'real turn-start starts clock' test -n "$(info "$new" turn_start)"
 aid="$(info "$new" agent_id)"
+# Notice turns now contribute real elapsed time; preserve their accrued total.
+prior_work="$(info "$new" worked)"
 tmux set-option -p -t "$new" @turn_start 100
 agent_save_work "$new" 105
 add_peer %0 "$new"
@@ -133,7 +135,7 @@ done
 check 'exit removes peer relationship' test -z "$(info %0 peers)"
 check 'exit detaches children from reused shell pane' test -z "$(info %0 parent)"
 check 'exit clears reply-slot and attention markers' test -z "$(info "$new" owed_to)$(info "$new" attention_since)"
-check 'record retains worked time' test "$(record_get "$aid" worked)" = 5
+check 'record retains worked time' test "$(record_get "$aid" worked)" = "$((prior_work + 5))"
 check 'record closed' test -n "$(record_get "$aid" closed)"
 check 'record tagged top-level' test "$(record_get "$aid" launcher)" = 1
 check 'top-level omitted from resumable subagents' bash -c '! "$1/tmux-spawn" --list-closed | grep -q "$2"' _ "$B" "$aid"
