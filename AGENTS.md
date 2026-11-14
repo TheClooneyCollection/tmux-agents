@@ -67,4 +67,10 @@ Notes for AI agents working on tmux-agents.
 - After a Codex CLI upgrade and before each release, run `ci/codex-probe.sh` against the installed Codex homes and rules; it needs real Codex authentication and is intentionally outside CI.
 - Reply as soon as the release is out; send follow-ups (syncs, announcements) as notices.
 - Never move or delete a published tag. If something missed a release, ship a follow-up patch.
-- After releasing, update your installed copy as your local setup describes (maintainers: see your dotfiles' instructions). Develop only in this repo, never in an installed copy. When a task says not to release or update, don't, and say in your reply what's left.
+- After releasing, update your installed copy (the author: see [Author only](#author-only)). Develop only in this repo, never in an installed copy. When a task says not to release or update, don't, and say in your reply what's left.
+
+## Author only
+
+Steps for the repo's author; contributors skip them.
+
+- After each release, read the "tmux-agents install" section of `~/AGENTS.md` and follow every step it lists, including the blog timeline entry. Read the file itself: Claude loads it as an ancestor instruction file, but Codex in this repo never does, and its steps change. Don't copy them here.
