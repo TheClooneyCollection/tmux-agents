@@ -123,6 +123,48 @@ echo 'ok real fzf follow keeps name, timing and separator above the final captur
 # Check exact visible rows, including screen line numbers: an offset drift can
 # still show old BODY rows, so merely checking that LIVE-TICK is absent is weak.
 body_view() { grep -n -o 'BODY-ROW-[0-9]*' "$tmp/screen"; }
+# Derive the viewport from its borders and the seven fixed header lines, not
+# the number of BODY matches: even the initial tail can be partly painted.
+body_first="$(awk '/╭.*╮/ { print NR + 8; exit }' "$tmp/screen")"
+body_bottom="$(awk '/╰.*╯/ { print NR - 1; exit }' "$tmp/screen")"
+[ -n "$body_first" ] && [ -n "$body_bottom" ]
+body_lines="$((body_bottom - body_first + 1))"
+[ "$body_lines" -gt 8 ]
+complete_body() {
+  body_view | awk -F: -v first="$body_first" -v lines="$body_lines" -v top="${1:-}" '
+    {
+      row = substr($2, 10) + 0
+      if ($1 != first + NR - 1 || (NR > 1 && row != previous + 1) ||
+          (NR == 1 && top != "" && $2 != top)) invalid = 1
+      previous = row
+    }
+    END { exit (invalid || NR != lines) }
+  '
+}
+frame_failure() {
+  printf 'frame: body_first=%s body_lines=%s polls=%s actions=%s paused=%s\n' \
+    "$body_first" "$body_lines" "$(wc -l <"$tmp/polls")" "$(wc -l <"$tmp/actions")" \
+    "$(cat "$(cat "$tmp/state-dir")/paused" 2>/dev/null || true)" >&2
+  tmux display -p -t "$ui" 'pane=#{pane_id} size=#{pane_width}x#{pane_height} dead=#{pane_dead} command=#{pane_current_command}' >&2
+  cat "$tmp/screen" >&2
+}
+# Reproduce the CI capture: new top rows 020..027 followed by old tail rows
+# 322..336. Seeing BODY-ROW-020 alone used to accept this torn baseline.
+cp "$tmp/screen" "$tmp/initial-frame"
+awk -v first="$body_first" -v last="$body_bottom" 'NR >= first && NR <= last { n++; $0 = sprintf("BODY-ROW-%03d", n <= 8 ? 19+n : 313+n) } { print }' \
+  "$tmp/initial-frame" >"$tmp/screen"
+if complete_body BODY-ROW-020; then echo 'FAIL mixed redraw accepted'; exit 1; fi
+awk -v first="$body_first" -v last="$body_bottom" 'NR >= first && NR <= last { n++; $0 = sprintf("BODY-ROW-%03d", 19+n) } { print }' \
+  "$tmp/initial-frame" >"$tmp/screen"
+complete_body BODY-ROW-020 || { echo 'FAIL complete redraw rejected'; exit 1; }
+# Even a contiguous prefix is incomplete until the whole viewport is painted.
+head -n "$((body_first + 7))" "$tmp/screen" >"$tmp/partial-frame"
+cp "$tmp/partial-frame" "$tmp/screen"
+if complete_body BODY-ROW-020; then echo 'FAIL partial redraw accepted'; exit 1; fi
+: >"$tmp/screen"
+if complete_body; then echo 'FAIL empty redraw accepted'; exit 1; fi
+cp "$tmp/initial-frame" "$tmp/screen"
+echo 'ok frame readiness rejects mixed, partial and empty redraws'
 # A ticking header proves live refresh works, not that all results drained.
 wait_live_frame() {
   local previous i worked
@@ -133,7 +175,7 @@ wait_live_frame() {
   tmux set -p -t "$long" @worked "$((worked + 60))"
   for ((i=0;i<100;i++)); do
     tmux capture-pane -p -t "$ui" >"$tmp/screen"
-    if [ "$(grep 'worked ' "$tmp/screen")" != "$previous" ] && grep -q 'BODY-ROW' "$tmp/screen"; then return 0; fi
+    if [ "$(grep 'worked ' "$tmp/screen")" != "$previous" ] && complete_body; then return 0; fi
     sleep .05
   done
   echo 'FAIL live preview did not tick' >&2
@@ -143,11 +185,11 @@ wait_body_change() {
   local previous="$1" action="$2" i
   for ((i=0;i<100;i++)); do
     tmux capture-pane -p -t "$ui" >"$tmp/screen"
-    [ "$(body_view)" = "$previous" ] || return 0
+    if complete_body && [ "$(body_view)" != "$previous" ]; then return 0; fi
     sleep .05
   done
   printf 'FAIL scroll did not move (%s)\nPrevious:\n%s\n' "$action" "$previous" >&2
-  cat "$tmp/screen" >&2
+  frame_failure
   return 1
 }
 wait_polls() {
@@ -171,8 +213,8 @@ assert_stable() {
   wait_polls "$((before+3))"
   tmux capture-pane -p -t "$ui" >"$tmp/screen"
   actual="$(body_view)"
-  [ "$actual" = "$expected" ] || { printf 'FAIL exact preview offset drift\nBefore:\n%s\nAfter:\n%s\n' "$expected" "$actual"; exit 1; }
-  cmp "$tmp/frozen" "$tmp/screen" || { echo 'FAIL paused preview changed'; exit 1; }
+  [ "$actual" = "$expected" ] || { printf 'FAIL exact preview offset drift\nBefore:\n%s\nAfter:\n%s\n' "$expected" "$actual"; frame_failure; exit 1; }
+  cmp "$tmp/frozen" "$tmp/screen" || { echo 'FAIL paused preview changed'; frame_failure; exit 1; }
   [ "$(wc -l <"$tmp/actions")" -eq "$actions" ] || { echo 'FAIL paused preview launched a shell'; exit 1; }
 }
 # Exercise the accepted in-flight first-scroll reset deterministically. Pause
@@ -214,13 +256,13 @@ held_first_scroll() {
   printf 'release\n' >"$tmp/release"
   for ((i=0;i<100;i++)); do
     tmux capture-pane -p -t "$ui" >"$tmp/screen"
-    [ "$(grep -o 'BODY-ROW-[0-9]*' "$tmp/screen" | head -1)" != "$top" ] || break
+    if complete_body "$top" && ! grep -q 'Loading \.\.' "$tmp/screen"; then break; fi
     sleep .05
   done
-  [ "$(grep -o 'BODY-ROW-[0-9]*' "$tmp/screen" | head -1)" = "$top" ] || {
+  if ! complete_body "$top" || grep -q 'Loading \.\.' "$tmp/screen"; then
     echo "FAIL released first-scroll result did not reach top ($action, $top)"
-    cat "$tmp/screen"; exit 1
-  }
+    frame_failure; exit 1
+  fi
   rm "$tmp/release"
   echo "ok held result after first $action reaches actual top boundary $top"
 }
