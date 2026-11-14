@@ -160,6 +160,7 @@ check 'other executable receives exact args' suffix_is "$external_pane" "${exter
 # the detectable single multi-word case warns, passes through, and sends no task.
 spawn_agent claude --name old-separator -- 'Review src/auth.ts' </dev/null >"$tmp/old-separator" 2>"$tmp/old-separator-error"
 old_pane="$(pane_of claude-project-old-separator)"
+check 'old separator stub is ready' wait_ready "$old_pane"
 check 'old -- task form gives an actionable warning' grep -Fq 'arguments after -- go to the agent' "$tmp/old-separator-error"
 check 'old -- task string is passed unchanged as an arg' suffix_is "$old_pane" 'Review src/auth.ts'
 check 'old -- task string does not become a prompt' test "$(tmux show-options -pqv -t "$old_pane" @state)" = idle
