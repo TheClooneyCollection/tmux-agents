@@ -1,10 +1,10 @@
 # Changelog
 
-## Unreleased
+## v1.21.0 (2026-11-14)
 
 - **Turn state replaces the request ledger.** Running turns show working; ended turns show idle at the top level or done for sub agents, including background waits. Parents show live nearest-working-descendant `waiting on` text without accruing work. Replies need no request ID, and a one-slot stop notice remembers only the latest requester. Notice-only turns preserve existing needs-you attention. Codex agents explicitly report needs-you before asking the user. Old request-ID and wait/local flags remain accepted with deprecation notes; installation migrates stale ledger state. Message headers carry delivery tokens distinct from archived-message pointers.
-
 - **Pass agent CLI arguments through `tmux-spawn`.** Put arguments after `--`; they follow tmux-agents' injected flags, are saved with the sub-agent session and return on resume. This changes `--`: it no longer introduces task text. Task input keeps its positional, stdin and `--message-file` forms; use stdin or a message file when combining a task with agent args. A lone multi-word value after `--` warns because it commonly meant a task; arbitrary arguments cannot be reliably distinguished from task text.
+- **Re-run `./install.sh` after updating.** It links `turn-state.sh`, removes the retired `tmux-request-state` link and, when run inside tmux, migrates that server's ledger state to turn state. Claude settings, Codex rules and the tmux configuration are unchanged. Restart running agents, or start new ones, to pick up the updated `tmux-agents` and `agent-chain` skills.
 
 ## v1.20.0 (2026-11-14)
 
