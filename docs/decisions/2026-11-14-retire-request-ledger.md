@@ -1,6 +1,6 @@
 # Retire the request ledger for turn state
 
-Status: proposed on 2026-11-14 and revised after review the same day. It awaits the user's approval, and nothing is implemented until then.
+Status: accepted on 2026-11-14. The user approved it after three review passes. Not yet implemented.
 
 ## Context
 

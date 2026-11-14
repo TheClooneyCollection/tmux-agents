@@ -41,4 +41,4 @@ The user removed reply overdue because it was overcomplicated and often misleadi
 
 ## Superseded (2026-11-14)
 
-Proposed for retirement: the user decided to replace request-ID completion with state from turn hooks. See [Retire the request ledger](2026-11-14-retire-request-ledger.md). Until that change ships, request-ID completion remains in effect.
+The user decided to replace request-ID completion with state from turn hooks. See [Retire the request ledger](2026-11-14-retire-request-ledger.md). Until that change ships, request-ID completion remains in effect.
