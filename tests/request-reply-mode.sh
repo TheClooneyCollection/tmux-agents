@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Receiver-aware request instructions, with isolated tmux and request state.
+# Receiver-aware request instructions, with isolated tmux.
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 B="$here/bin"
@@ -43,7 +43,7 @@ for i in "${!targets[@]}"; do
   record_set "$aid" kind "${kinds[$i]}"
 done
 
-flags=("" "--request-id r0123456789ab" "--any" "--any --request-id r0123456789ab")
+flags=("" "--any")
 expected=(claude codex codex unknown)
 for i in "${!targets[@]}"; do
   aid="$(pane_agent_id "${p[$i]}")"
@@ -81,33 +81,9 @@ for i in "${!targets[@]}"; do
   done
 done
 
-# Exercise the real parser and ledger completion with the Claude heredoc form.
-sender_id="$(pane_agent_id %0)"
-claude_pane="${p[0]}"
-claude_id="$(pane_agent_id "$claude_pane")"
-set_peers %0 "$claude_pane"
-set_peers "$claude_pane" %0
-tmux copy-mode -t "$claude_pane"
-TMUX_PANE=%0 "$B/tmux-ask" --from sender --any claude 'reply mode integration request' >/dev/null
-queue="/tmp/tmux-agents-$(id -u)/queue/$(basename "${TMUX%%,*}")"
-body_file=""
-for f in "$queue"/*.msg; do
-  [ -f "$f" ] || continue
-  if grep -Fq 'reply mode integration request' "$f"; then body_file="$f"; break; fi
-done
-[ -n "$body_file" ] || fail 'real request body queued'
-meta="${body_file%.msg}.meta"
-rid="$(sed -n 's/^request_id=//p' "$meta")"
-[ -n "$rid" ] || fail 'real request ID recorded'
-grep -Fq -- "--any --request-id $rid" "$body_file" || fail 'real Claude trailer preserves any and request ID'
-
-tmux send-keys -t "$claude_pane" -X cancel
-TMUX_PANE="$claude_pane" "$B/tmux-ask" --from claude --any --reply --request-id "$rid" sender <<'MSG' >/dev/null
-heredoc reply resolves this request
-MSG
-ledger="$(dirname "$(sessions_dir)")/requests/$rid.record"
-grep -Fxq 'status=answered' "$ledger" || fail 'heredoc reply completes the matching request'
-[ "$(pane_agent_id "$claude_pane")" = "$claude_id" ] || fail 'receiver identity remains stable'
-[ "$(pane_agent_id %0)" = "$sender_id" ] || fail 'requester identity remains stable'
-
-printf 'ok: receiver-aware reply instructions and request completion (%s checks)\n' "$count"
+# Reply kind is formatting only; sending a reply requires no prior request.
+body="$(reply_body sender 'answer' codex m123456789abc)"
+check 'reply carries a delivery token' contains "$body" '[reply from sender to codex via tmux-ask · m123456789abc]'
+check 'reply keeps matching end marker' contains "$body" '[end of reply from sender to codex]'
+check 'request reply guidance omits retired ID' test "${body#*--request-id}" = "$body"
+printf 'ok: receiver-aware reply formatting (%s checks)\n' "$count"

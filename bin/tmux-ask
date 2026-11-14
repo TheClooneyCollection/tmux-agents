@@ -6,7 +6,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 
 # Migration and first naming take exclusive locks, before any shared lock.
 if [ "${TMUX_ASK_IDENTITY_LOCKED:-}" != 1 ]; then
-  case "${1:-}" in -h|--help) ;; *) ensure_agent_ids ;; esac
+  case "${1:-}" in -h|--help) ;; *) ensure_agent_ids; migrate_turn_state ;; esac
 fi
 case "${1:-}" in
   --deliver|--retry|--kick|--pending|-h|--help) ;;
@@ -76,17 +76,17 @@ queue_info() {
   local body="$1" meta header key value
   meta="${body%.msg.sending}"; meta="${meta%.*}.meta"
   case "$body" in *.msg.sending) meta="${body%.msg.sending}.meta" ;; esac
-  from_id="" to_id="" from_pane="" from_name="" to_pane="" to_name="" kind="" queued_at="" request_id=""
+  from_id="" to_id="" from_pane="" from_name="" to_pane="" to_name="" kind="" queued_at="" message_id=""
   if [ -f "$meta" ]; then
     while IFS='=' read -r key value; do
       case "$key" in
-        from_id|to_id|from_pane|from_name|to_pane|to_name|kind|queued_at|request_id) printf -v "$key" '%s' "$value" ;;
+        from_id|to_id|from_pane|from_name|to_pane|to_name|kind|queued_at|message_id) printf -v "$key" '%s' "$value" ;;
       esac
     done < "$meta"
   fi
   header="$(head -n 1 "$body" 2>/dev/null || true)"
-  [ -n "$from_name" ] || from_name="$(printf '%s\n' "$header" | sed -n 's/^\[.* from \([^ ]*\) to .* via tmux-ask].*/\1/p')"
-  [ -n "$to_name" ] || to_name="$(printf '%s\n' "$header" | sed -n 's/^\[.* to \([^ ]*\) via tmux-ask].*/\1/p')"
+  [ -n "$from_name" ] || from_name="$(printf '%s\n' "$header" | sed -n 's/^\[.* from \([^ ]*\) to .* via tmux-ask[^]]*].*/\1/p')"
+  [ -n "$to_name" ] || to_name="$(printf '%s\n' "$header" | sed -n 's/^\[.* to \([^ ]*\) via tmux-ask[^]]*].*/\1/p')"
   [ -n "$kind" ] || kind="$(printf '%s\n' "$header" | sed -n 's/^\[\([^ ]*\) from .*/\1/p')"
   [ -n "$queued_at" ] || { queued_at="$(basename "$body")"; queued_at="${queued_at%%-*}"; }
 }
@@ -94,7 +94,7 @@ queue_info() {
 write_meta() {
   printf 'from_id=%s\nto_id=%s\nfrom_pane=%s\nfrom_name=%s\nto_pane=%s\nto_name=%s\nkind=%s\nqueued_at=%s\n' \
     "$from_id" "$to_id" "$from_pane" "$from_name" "$to_pane" "$to_name" "$kind" "$queued_at" > "$1"
-  printf 'request_id=%s\n' "${request_id:-}" >> "$1"
+  printf 'message_id=%s\n' "${message_id:-}" >> "$1"
 }
 
 queue_files() {
@@ -172,7 +172,7 @@ start_deliverer() {
 # Publish metadata before the body, so readers never see a partial message.
 # Keep the documented epoch-pid-pane filename, including batch retries.
 publish() {
-  local body="$1" retry="${2:-}" stamp
+  local body="$1" stamp
   mkdir -p "$QUEUE_DIR"
   while :; do
     stamp="$(date +%s)"
@@ -182,17 +182,7 @@ publish() {
   done
   write_meta "${file%.msg}.meta" || return 1
   printf '%s' "$body" > "$file.tmp" || return 1
-  if [ "$retry" = retry ]; then
-    mv "$file.tmp" "$file" || return 1
-  elif [ "${kind:-}" = request ] && [ -n "${request_id:-}" ]; then
-    # A rejected request leaves no orphan pair behind for --pending or retry.
-    request_state publish-create "$request_id" "$from_id" "$to_id" "$file" ||
-      { rm -f "$file.tmp" "${file%.msg}.meta"; return 1; }
-  elif [ "${kind:-}" = reply ] && [ -n "${request_id:-}" ]; then
-    request_state publish-answer "$request_id" "$from_id" "$to_id" "$file"
-  else
-    mv "$file.tmp" "$file" || return 1
-  fi
+  mv "$file.tmp" "$file" || return 1
 }
 
 bounce() {
@@ -206,15 +196,12 @@ bounce() {
   reopen=""
   if valid_agent_id "$to_id"; then reopen="$(record_get "$to_id" id)"; fi
   if [ -n "$reopen" ]; then text="$text It will be delivered if $to_name is reopened; you needn't resend it."
-  elif [ "${kind:-}" = request ] && [ -n "${request_id:-}" ]; then
-    # Nobody can ever answer this request; stop the sender waiting for it.
-    request_state cancel "$request_id" || true
   fi
   if [ -n "$sender" ] && [ "$from_name" != tmux-ask ] &&
       [ "$(tmux show-options -pqv -t "$sender" @shell)" != 1 ]; then
     # A bounce is an ordinary durable notice, with no request-state effects.
-    to_id="$from_id" from_id="" to_pane="$sender" to_name="$(pane_name "$sender")" from_pane="" from_name=tmux-ask kind=notice request_id="" queued_at="$(date +%s)"
-    publish "$(notice_body tmux-ask "$text" "$to_name")" || { printf 'bounce could not be queued; original retained at %s\n' "$kept" >&2; return 1; }
+    to_id="$from_id" from_id="" to_pane="$sender" to_name="$(pane_name "$sender")" from_pane="" from_name=tmux-ask kind=notice message_id="$(new_message_id)" queued_at="$(date +%s)"
+    publish "$(notice_body tmux-ask "$text" "$to_name" "$message_id")" || { printf 'bounce could not be queued; original retained at %s\n' "$kept" >&2; return 1; }
     start_deliverer "$to_pane" "$file" || printf 'notice retained at %s\n' "$file" >&2
   else
     for c in $(tmux list-clients -F '#{client_name}'); do
@@ -258,8 +245,7 @@ try_delivery_locked() {
   if ! mv "$source" "$sending"; then return 1; fi
   if deliver "$peer" "$(cat "$sending")"; then
     rm -f "$sending" "${source%.msg}.meta"
-    # The paste happened: a ledger hiccup must never re-queue the message.
-    if [ "$kind" = request ] && [ -n "$request_id" ]; then request_state delivered "$request_id" || true; fi
+    turn_message_delivered "$peer" "$from_id" "$kind" "$message_id" || true
     active_file=""
     refresh_waiting "$peer"
     return 0
@@ -280,8 +266,8 @@ if [ "${1:-}" = --system-notice ]; then
   to_pane="$(resolve_pane "$2")" to_name="$(pane_name "$2")"
   require_agent_pane "$to_pane"
   to_id="$(pane_agent_id "$to_pane")" from_id=""
-  from_pane="" from_name="$sender" kind=notice queued_at="$(date +%s)"
-  publish "$(notice_body "$sender" "$3" "$to_name")"
+  from_pane="" from_name="$sender" kind=notice message_id="$(new_message_id)" queued_at="$(date +%s)"
+  publish "$(notice_body "$sender" "$3" "$to_name" "$message_id")"
   if ! try_delivery "$to_pane" "$file"; then
     start_deliverer "$to_pane" "$file" || printf 'notice retained at %s\n' "$file" >&2
   fi
@@ -362,16 +348,8 @@ if [ "${1:-}" = --retry-locked ]; then
     # Keep the source durable until its replacement is published.
     [ -f "$source" ] || continue
     to_pane="$receiver"
-    publish "$(cat "$source")" retry
+    publish "$(cat "$source")"
     rm -f "$source" "${source%.undelivered}.meta"
-    # Reapply receiver state without attributing this retry to its caller.
-    if [ -n "$request_id" ]; then
-      request_state sync
-    elif [ "$kind" = request ]; then
-      [ "$(tmux show-options -pqv -t "$receiver" @tracked)" != 1 ] || agent_set_state "$receiver" working
-    elif [ "$kind" = reply ]; then
-      remove_word "$receiver" @awaiting "$from_id"
-    fi
 
     if try_delivery "$receiver" "$file"; then
       printf 'retried: %s\n' "$source"
@@ -434,7 +412,7 @@ marked as needing no response, which stops endless back-and-forth.
 --pending: list queued and undelivered messages, including legacy files
 --retry [--to NAME]: retry undelivered messages by receiver name
 
---request-id ID: resolve this exact request with --reply; required for ambiguous pairs
+--request-id ID: deprecated; accepted and ignored
 --message-file PATH: use a readable regular text file (max 1 MiB; no symlinks)
               alone: paste the full file as the message, without archiving it
               with positional message text: that text is the summary; retain
@@ -450,7 +428,7 @@ marked as needing no response, which stops endless back-and-forth.
 
 Messages are never truncated or split. Choose a summary plus --message-file
 when the full text would flood the receiver. Otherwise send it in full.
-Replies resolve requests by identity; completion preserves other outstanding work.
+Replies change message formatting; turn hooks determine completion.
 If the user is typing or scrolling in the receiver's pane, the message
 is queued and sent once they stop typing or leave copy mode. A pane
 left in copy mode with no keys for TMUX_ASK_COPY_IDLE_SECS is taken out
@@ -465,11 +443,11 @@ Settings (environment overrides option):
 EOF
 }
 
-target="" reply=0 notice=0 any=0 msg="" full_message="" FROM_PANE="" request_id="" message_file="" message_file_given=0 positional_message=0
+target="" reply=0 notice=0 any=0 msg="" full_message="" FROM_PANE="" message_file="" message_file_given=0 positional_message=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
-    --request-id) [ "$#" -ge 2 ] || die "--request-id needs an ID"; request_id="$2"; shift 2 ;;
+    --request-id) [ "$#" -ge 2 ] || die "--request-id needs an ID"; printf "%s\n" "tmux-ask: --request-id is no longer needed" >&2; shift 2 ;;
     --message-file) [ "$#" -ge 2 ] || die "--message-file needs a path"; [ "$message_file_given" -eq 0 ] || die "--message-file may only be used once"; message_file="$2"; message_file_given=1; shift 2 ;;
     --reply) reply=1; shift ;;
     --notice) notice=1; shift ;;
@@ -523,32 +501,22 @@ else
 fi
 
 from_id="$(pane_agent_id "$self")" to_id="$(pane_agent_id "$peer")"
-if [ "$reply" -eq 1 ]; then
-  request_id="$(request_state resolve "$from_id" "$to_id" "$request_id")" || exit 1
-elif [ -n "$request_id" ]; then
-  die '--request-id requires --reply'
-elif [ "$notice" -eq 0 ]; then
-  request_id="$(new_request_id)"
-fi
+message_id="$(new_message_id)"
 
 # Only an explicit positional summary plus a file creates a retained original.
 # File-only sends still ignore stdin and paste the entire file.
 if [ "$message_file_given" -eq 1 ] && [ "$positional_message" -eq 1 ]; then
-  message_id="$request_id"
-  if [ "$reply" -eq 1 ] || [ "$notice" -eq 1 ]; then
-    message_id="$(new_agent_id)"; message_id="m${message_id#a}"
-  fi
   store_message "$full_message" "$message_id"
   msg="$msg
 Read the full message here: tmux-read $message_id"
 fi
 
 if [ "$notice" -eq 1 ]; then
-  body="$(notice_body "$me" "$msg" "$(pane_name "$peer")")"
+  body="$(notice_body "$me" "$msg" "$(pane_name "$peer")" "$message_id")"
 elif [ "$reply" -eq 1 ]; then
-  body="$(reply_body "$me" "$msg" "$(pane_name "$peer")")"
+  body="$(reply_body "$me" "$msg" "$(pane_name "$peer")" "$message_id")"
 else
-  body="$(request_body "$me" "$msg" "$(pane_name "$peer")" "$([ "$any" -eq 1 ] && printf '%s' '--any ')--request-id $request_id" "$to_id")"
+  body="$(request_body "$me" "$msg" "$(pane_name "$peer")" "$([ "$any" -eq 1 ] && printf '%s' '--any ')" "$to_id" "$message_id")"
 fi
 
 # Persist even immediate sends, so a failed paste cannot lose the body.
@@ -558,40 +526,13 @@ kind=request
 from_id="$(pane_agent_id "$self")" to_id="$(pane_agent_id "$peer")"
 from_pane="$self" from_name="$me" to_pane="$peer" to_name="$(pane_name "$peer")" queued_at="$(date +%s)"
 publish "$body"
+turn_message_sent "$self" "$to_id" "$kind"
 queued=0
 if ! try_delivery "$peer" "$file"; then
   start_deliverer "$peer" "$file" || printf 'delivery worker could not start; message retained at %s\n' "$file" >&2
   queued=1
 fi
 
-# Track sub agent state: replying to your parent means done; a new request
-# means the receiver is working again. @awaiting lists who a pane is
-# waiting to hear back from, so ending a turn to wait for them isn't
-# mistaken for needing the user (tmux-agent-report --turn-end).
-if [ "$notice" -eq 1 ]; then
-  # A sub agent may end its turn after an FYI to its own parent. Keep
-  # that pause distinct from needing the user; other notices imply no wait.
-  if [ "$(tmux display-message -p -t "$self" '#{@parent}')" = "$peer" ] && [ -z "$(tmux show -pqv -t "$self" @waiting_on)" ]; then
-    tmux set-option -p -t "$self" @waiting_on "$(pane_name "$peer") (after a notice)"
-  fi
-elif [ "$reply" -eq 1 ]; then
-  if [ -n "$request_id" ]; then
-    request_finish "$self" || true
-  else
-    # Compatibility for pre-ledger conversations, never finish tracked work.
-    if [ -z "$(request_state incoming "$self")" ] && [ "$(tmux display-message -p -t "$self" '#{@parent}')" = "$peer" ]; then
-      request_state legacy-finish "$self" || true
-    fi
-    remove_word "$peer" @awaiting "$from_id"
-  fi
-else
-  : # Request context and aggregate waits were recorded before delivery.
-
-fi
-
-kind=request
-[ "$reply" -eq 0 ] || kind=reply
-[ "$notice" -eq 0 ] || kind=notice
 if [ "$queued" -eq 1 ]; then
   printf 'queued %s to %s: the user is typing or scrolling there; it will be delivered once they stop\n' "$kind" "$(label "$peer")"
 else

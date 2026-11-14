@@ -7,44 +7,14 @@ usage() {
   cat <<'USAGE'
 usage: tmux-agent-report [--from ME] "what you're doing now"
        tmux-agent-report [--from ME] --needs-you "reason"
-       tmux-agent-report [--from ME] --local "new local work"
-       tmux-agent-report [--from ME] --local-done
-       tmux-agent-report [--from ME] --waiting "what you're waiting for"
-                     (background or another agent's work, never the user)
-       tmux-agent-report --pane PANE --perm on|off   (Claude hooks)
-       tmux-agent-report --pane PANE --tool-start|--tool-end|--asking   (Claude hooks)
-       tmux-agent-report --pane PANE --turn-start|--turn-end   (Claude hooks)
-       tmux-agent-report [--agent-id ID] --codex-notify JSON (Codex notify)
+       tmux-agent-report --pane PANE --perm on|off
+       tmux-agent-report --pane PANE --tool-start|--tool-end|--asking
+       tmux-agent-report --pane PANE --turn-start|--turn-end
+       tmux-agent-report [--agent-id ID] --codex-notify JSON
 
-Agents call it when they start a task and at each major step, with a
-short phrase ("reading map loader", "running import tests"). A user prompt
-is local work for the turn it starts; it ends with that turn. Use --local
-for user work that spans turns and --local-done, with no text, when it
-finishes. Ordinary progress reports do not start an independent local
-task. The chip above the status bar shows it next to the agent's name.
-
-Use --needs-you with a reason to request user attention for any tracked
-agent, including a top-level agent. It preserves pending requests and the
-reason through turn end. The next turn start or progress report clears it.
-Untracked agents must first be launched with tracking or receive a turn hook.
-
-Hooks call --perm on when the agent is waiting for a permission answer;
-the chip turns that agent red. --tool-start (PreToolUse, tool JSON on
-stdin) and --tool-end (PostToolUse, PostToolUseFailure) clear it: any new
-tool call proves the dialog closed, even after a denial. --tool-start for
-AskUserQuestion, and --asking (an MCP elicitation dialog), mark the agent
-needs_you until the answer's --tool-end.
---perm off clears permission only, for agents launched before these hooks.
-Codex sub agents get no hooks: they run with auto_review, so their
-permission requests go to a review model, never to the user. When one
-does need the user, it ends its turn without replying. --turn-end
-catches that: a sub agent that ends a turn neither done, idle, nor
-waiting on its own sub agents, requests, or its parent after a notice
-is marked needs_you. Codex reports turn ends through notify. Launchers
-pass the stable identity with internal --agent-id; older notify commands
-resolve a known thread or a request header in the first message
-("[request from X to NAME via tmux-ask]"). The thread id is stored on
-the pane (@codex_thread) for later turns.
+Progress reports start work. Turn ends show idle (top level) or done (sub
+agent). --needs-you preserves attention until a non-notice turn or report.
+Legacy --waiting and --local are progress reports; --local-done is a no-op.
 USAGE
 }
 
@@ -80,6 +50,14 @@ if [ $((local_work + local_done + waiting + needs_you)) -gt 1 ] ||
   usage >&2; exit 1
 fi
 
+if [ "$local_done" -eq 1 ]; then
+  [ "$#" -eq 0 ] || { usage >&2; exit 1; }
+  echo 'tmux-agent-report: --local-done is no longer needed' >&2
+  exit 0
+fi
+if [ "$local_work" -eq 1 ]; then echo 'tmux-agent-report: --local is deprecated; reporting progress' >&2; fi
+if [ "$waiting" -eq 1 ]; then echo 'tmux-agent-report: --waiting is deprecated; reporting progress' >&2; fi
+
 # Tool hooks fire on every tool call: settle the common case (nothing to
 # clear) with one tmux call, before identity checks or the accounting lock.
 if [ -n "$tool" ]; then
@@ -97,11 +75,22 @@ if [ -n "$tool" ]; then
         [ "${rest%%\"*}" != AskUserQuestion ] || asking=1 ;;
     esac
   fi
-  marks="$(tmux display-message -p -t "$pane" '#{@perm_since}|#{@asking}|#{@state}' 2>/dev/null)" || exit 0
+  marks="$(tmux display-message -p -t "$pane" '#{@perm_since}|#{@asking}|#{@state}|#{@tracked}|#{@turn_began}' 2>/dev/null)" || exit 0
   # Not a tab: read would merge empty whitespace-separated fields.
-  IFS='|' read -r perm_since was_asking state <<< "$marks" || true
+  IFS='|' read -r perm_since was_asking state tracked turn_began <<< "$marks" || true
+  if [ "$tool" = start ] && [ "$tracked" = 1 ] &&
+      { [ "$state" = idle ] || [ "$state" = "done" ] || [ -z "$turn_began" ]; }; then
+    turn_begin "$pane" message tool
+  fi
   [ "$asking" -eq 1 ] || [ -n "$perm_since$was_asking" ] || exit 0
-  [ -z "$perm_since" ] || agent_set_wait "$pane" perm ""
+  if [ -n "$perm_since" ]; then
+    agent_set_wait "$pane" perm ""
+    if [ "$state" = needs_you ] && [ "$was_asking" != 1 ] &&
+        [ "$(tmux show-option -pqv -t "$pane" @explicit_needs_you)" != 1 ]; then
+      agent_set_state "$pane" working
+      state=working
+    fi
+  fi
   if [ "$asking" -eq 1 ]; then
     # A question or elicitation blocks on the user like a permission dialog. Mark that this
     # hook set needs_you, so only the answer undoes it, never earlier attention.
@@ -109,8 +98,10 @@ if [ -n "$tool" ]; then
     tmux set-option -p -t "$pane" @asking 1 \; set-option -p -t "$pane" @attention_since "$(date +%s)"
     agent_set_state "$pane" needs_you
   elif [ "$was_asking" = 1 ]; then
-    tmux set-option -pu -t "$pane" @asking \; set-option -pu -t "$pane" @attention_since
-    [ "$state" != needs_you ] || agent_set_state "$pane" working
+    tmux set-option -pu -t "$pane" @asking
+    if [ "$state" = needs_you ] && [ "$(tmux show-option -pqv -t "$pane" @explicit_needs_you)" != 1 ]; then
+      agent_set_state "$pane" working
+    fi
   fi
   exit 0
 fi
@@ -137,7 +128,7 @@ prompt_kind() {
       $p =~ s/\A\s+|\s+\z//g;
       if (!length $p) { $kind="local"; last; }
       while (length $p) {
-        if ($p =~ s/\A\[(request|reply|notice) from (\S+) to (\S+) via tmux-ask\]\r?\n.*?\[end of \1 from \2 to \3\]\s*//s) {
+        if ($p =~ s/\A\[(request|reply|notice) from (\S+) to (\S+) via tmux-ask(?: \x{b7} m[0-9a-f]{12})?\]\r?\n.*?\[end of \1 from \2 to \3\]\s*//s) {
           $kind="message" if $1 ne "notice";
         } else { $kind="local"; last; }
       }
@@ -147,23 +138,21 @@ prompt_kind() {
   '
 }
 
-# The turn-end decision (completion, waits, needs you) runs as one ledger
-# operation under the request lock: tmux-request-state turn-end.
-
 [ -z "$notify_json" ] || { tmux list-sessions >/dev/null 2>&1 || exit 0; }
 ensure_agent_ids
+[ -n "$perm" ] || migrate_turn_state
 
 # Codex notify: find the pane from the turn's messages, or by thread id.
 if [ -n "$notify_json" ]; then
   tmux list-sessions >/dev/null 2>&1 || exit 0
-  # One pass over the payload: routing fields, dedup digest, prompt kind
+  # One pass over the payload: routing fields
   # and the log excerpt. Unit separators keep empty fields in place.
-  fields="$(printf '%s' "$notify_json" | /usr/bin/perl -MJSON::PP -MDigest::SHA=sha256_hex -e '
+  fields="$(printf '%s' "$notify_json" | /usr/bin/perl -MJSON::PP -e '
     local $/; my $raw = <STDIN>; my $j = eval { decode_json($raw) } || {};
     my $to = "";
     my @inputs = @{ $j->{"input-messages"} || [] };
     for my $m (@inputs) {
-      if ($m =~ /\[(?:request|reply) from \S+ to (\S+) via tmux-ask\]/) { $to = $1; last }
+      if ($m =~ /\[(?:request|reply|notice) from \S+ to (\S+) via tmux-ask(?: \x{b7} m[0-9a-f]{12})?\]/) { $to = $1; last }
     }
     # Codex names a new session in a side thread whose whole answer is
     # {"title": ...}; that is not the agent ending a turn.
@@ -171,26 +160,10 @@ if [ -n "$notify_json" ]; then
     my $t = $last =~ /^\s*\{/ ? eval { JSON::PP->new->decode($last) } : undef;
     my $type = $j->{type} // "";
     $type = "title" if ref $t eq "HASH" && exists $t->{title} && keys %$t == 1;
-    my $key = $j->{"turn-id"} // $j->{turn_id};
-    my $digest = sha256_hex(defined($key) ? ($j->{"thread-id"} // "")."\0".$key : JSON::PP->new->canonical->encode($j));
-    # Classify complete protocol messages, never just their first line.
-    my $kind = "notice";
-    for my $p (@inputs) {
-      $p =~ s/\A\s+|\s+\z//g;
-      if ($p =~ /\A<pasted_content id="([^"\r\n]+)">(.*?)<\/pasted_content id="\1">\z/s) { $p = $2; }
-      $p =~ s/\A\s+|\s+\z//g;
-      if (!length $p) { $kind = "local"; last; }
-      while (length $p) {
-        if ($p =~ s/\A\[(request|reply|notice) from (\S+) to (\S+) via tmux-ask\]\r?\n.*?\[end of \1 from \2 to \3\]\s*//s) {
-          $kind = "message" if $1 ne "notice";
-        } else { $kind = "local"; last; }
-      }
-      last if $kind eq "local";
-    }
     (my $words = $last) =~ s/\s+/ /g;
-    print join("\x1f", $type, $j->{"thread-id"} // "", $to, $digest, $kind, substr($words, 0, 80));
+    print join("\x1f", $type, $j->{"thread-id"} // "", $to, substr($words, 0, 80));
   ' 2>/dev/null)" || exit 0
-  IFS=$'\x1f' read -r type thread to notify_digest local_prompt last_words <<EOF
+  IFS=$'\x1f' read -r type thread to last_words <<EOF
 $fields
 EOF
   [ "$type" = agent-turn-complete ] && [ -n "$thread" ] || exit 0
@@ -269,7 +242,7 @@ if [ "$needs_you" -eq 1 ]; then
     }
   text="$(printf '%s' "$*" | tr '\n\t' '  ' | cut -c1-60)"
   [ -n "${text//[[:space:]]/}" ] || { usage >&2; exit 1; }
-  request_state needs-you "$pane" "$text"
+  turn_needs_you "$pane" "$text"
   # A top-level agent may be the first pane requiring a chip on this server.
   "$(dirname "$0")/tmux-agents" --chip-layout on >/dev/null 2>&1 || true
   echo "needs you: $text"
@@ -281,43 +254,23 @@ fi
 [ "$save_work" -eq 0 ] || { agent_save_work "$pane"; exit 0; }
 
 # Turn hooks prove tracking even when configured outside the launcher.
-# A turn boundary also ends any question the turn was asking.
-[ -z "$turn" ] || tmux set-option -p -t "$pane" @tracked 1 \; set-option -pu -t "$pane" @asking
+# Notice turns preserve question provenance until an answer or non-notice start.
+[ -z "$turn" ] || tmux set-option -p -t "$pane" @tracked 1
 
 case "$turn" in
   end)
-    if [ -n "$notify_json" ]; then
-      stopped="$(request_state turn-end "$pane" "$notify_digest" "$local_prompt")"
-    else
-      stopped="$(request_state turn-end "$pane")"
-    fi
-    # The ledger lists requesters to tell, once per request until new work.
-    # A notice is not a request: it opens no obligation and gets no answer.
+    stopped="$(turn_end "$pane" "$notify_json")"
     if [ -n "$stopped" ]; then
       me="$(pane_name "$pane")" doing="$(tmux show-option -pqv -t "$pane" @activity)"
-      while IFS=$'\t' read -r requester rid; do
-        "$(dirname "$0")/tmux-ask" --system-notice "$requester" \
-          "${me:-$pane} stopped without replying to your request $rid: ${doing:-no report yet}" tmux-agents \
-          </dev/null >/dev/null 2>&1 || true
-      done <<< "$stopped"
+      "$(dirname "$0")/tmux-ask" --system-notice "$stopped" \
+        "${me:-$pane} stopped without replying to your last request: ${doing:-no report yet}" tmux-agents \
+        </dev/null >/dev/null 2>&1 || true
     fi
     exit 0 ;;
-
   start)
-    # A notice asks for nothing and normally preserves inferred attention.
-    # An explicit attention report lasts only until the next turn start.
-    # Claude passes the prompt to the hook as JSON on stdin.
-    if [ ! -t 0 ]; then
-      prompt="$(prompt_kind)"
-      [ "$prompt" != notice ] || [ "$(tmux show-option -pqv -t "$pane" @explicit_needs_you)" = 1 ] || exit 0
-    fi
-    request_state progress "$pane"
-    [ "${prompt:-local}" != local ] || request_state local "$pane"
-    if [ "$(tmux show-options -pqv -t "$pane" @state)" = needs_you ]; then
-      tmux set-option -pu -t "$pane" @attention_since 2>/dev/null || true
-    fi
-    agent_turn_state "$pane" start
-    if [ "${prompt:-local}" = local ]; then request_state wait "$pane" ""; fi
+    prompt=local
+    if [ ! -t 0 ]; then prompt="$(prompt_kind)"; fi
+    turn_begin "$pane" "$prompt" prompt
     exit 0 ;;
 esac
 
@@ -326,30 +279,19 @@ case "$perm" in
     agent_set_wait "$pane" perm "$(date +%s)"
     exit 0 ;;
   off)
+    perm_since="$(tmux show-option -pqv -t "$pane" @perm_since)"
     agent_set_wait "$pane" perm ""
+    if [ -n "$perm_since" ] && [ "$(tmux show-option -pqv -t "$pane" @state)" = needs_you ] &&
+        [ "$(tmux show-option -pqv -t "$pane" @explicit_needs_you)" != 1 ] &&
+        [ "$(tmux show-option -pqv -t "$pane" @asking)" != 1 ]; then
+      agent_set_state "$pane" working
+    fi
     exit 0 ;;
 esac
 
-if [ "$local_done" -eq 1 ]; then
-  request_state local-done "$pane"
-  request_finish "$pane" || true
-  exit 0
-fi
-request_state progress "$pane"
-if [ "$local_work" -eq 1 ]; then request_state local "$pane" explicit; agent_set_state "$pane" working; fi
 text="$*"
 [ -n "$text" ] || { usage >&2; exit 1; }
 text="$(printf '%s' "$text" | tr '\n\t' '  ' | cut -c1-60)"
-if [ "$waiting" -eq 1 ]; then
-  # Ending the turn to wait for background work: not a "needs you".
-  request_state wait "$pane" "$text"
-  text="waiting for $text"
-else
-  request_state wait "$pane" ""
-fi
 tmux set-option -p -t "$pane" @activity "$text"
-# A report after replying ("delivered abc123") is a summary, not new work:
-# a done agent stays done. A request or explicit --local starts new work.
-agent_report_state "$pane"
-tmux set-option -pu -t "$pane" @attention_since 2>/dev/null || true
+turn_progress "$pane"
 echo "reported: $text"
