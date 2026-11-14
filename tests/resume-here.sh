@@ -39,6 +39,8 @@ wait_for() { local i; for ((i=0;i<160;i++)); do if "$@"; then return 0; fi; slee
 ready() { tmux capture-pane -pJ -S - -t "$1" | grep -Fq "conversation-$2"; }
 # shellcheck disable=SC2329
 option_equals() { [ "$(info "$1" "$2")" = "$3" ]; }
+# shellcheck disable=SC2329
+pane_runs_cat() { [ "$(info "$1" pane_current_command)" = cat ]; }
 resume_here() {
   tmux send-keys -t "$1" -l "$B/tmux-spawn --resume-id $2 --here"
   tmux send-keys -t "$1" Enter
@@ -69,6 +71,7 @@ check 'fixture is an interactive plain shell' verify_resume_shell "$shell_pane"
 check 'tracked agent pane is rejected before mutation' reject_here %0
 check 'tracked agent identity is unchanged' test "$(info %0 @agent_id)" = "$parent_id"
 cat_pane="$(tmux new-window -d -P -F '#{pane_id}' -n non-shell -c "$tmp/project" cat)"
+check 'non-shell fixture has started cat' wait_for pane_runs_cat "$cat_pane"
 cat_before="$(tmux show-options -pq -t "$cat_pane")"
 check 'non-shell process pane is rejected' reject_here "$cat_pane"
 check 'non-shell rejection leaves pane options unchanged' test "$(tmux show-options -pq -t "$cat_pane")" = "$cat_before"
