@@ -70,7 +70,7 @@ shell_pane="$(tmux new-window -d -P -F '#{pane_id}' -n resume-shell -c "$tmp/pro
 check 'fixture is an interactive plain shell' verify_resume_shell "$shell_pane"
 check 'tracked agent pane is rejected before mutation' reject_here %0
 check 'tracked agent identity is unchanged' test "$(info %0 @agent_id)" = "$parent_id"
-cat_pane="$(tmux new-window -d -P -F '#{pane_id}' -n non-shell -c "$tmp/project" cat)"
+cat_pane="$(tmux new-window -d -P -F '#{pane_id}' -n non-shell -c "$tmp/project" 'exec cat')"
 check 'non-shell fixture has started cat' wait_for pane_runs_cat "$cat_pane"
 cat_before="$(tmux show-options -pq -t "$cat_pane")"
 check 'non-shell process pane is rejected' reject_here "$cat_pane"
