@@ -237,7 +237,7 @@ short_task() {
 # per-project counts. Agents waiting for permission take over the focus and turn red; past
 # TMUX_AGENTS_BLINK_SECS (default 60) unanswered, they blink.
 chip() {
-  local now frames spin rows id name dead st session since activity state act attention waiting _member_flag tracked blink_secs
+  local now frames spin rows id name dead st session since activity state act attention waiting _member_flag tracked _shell_flag live_waiting blink_secs
   settings_get AGENTS_PREFIX TMUX_AGENTS_PREFIX @tmux_agents_session_prefix agents
   settings_get blink_secs TMUX_AGENTS_BLINK_SECS @tmux_agents_blink_secs 60
   local -a ids names states acts projs sinces
@@ -245,16 +245,14 @@ chip() {
   frames=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
   # CHIP_SPIN lets the chip daemon put a placeholder here and animate it.
   spin="${CHIP_SPIN:-${frames[$((now % 10))]}}"
-  rows="$(tmux list-panes -a -F '#{pane_id}	#{?@agent,#{@agent},-}	#{pane_dead}	#{?@state,#{@state},-}	#{session_name}	#{?@perm_since,#{@perm_since},-}	#{?@activity,#{@activity},-}	#{?@parent,1,0}	#{?@attention_since,#{@attention_since},-}	#{?@msg_waiting_since,#{@msg_waiting_since},-}	#{?@member,#{@member},0}	#{?@tracked,#{@tracked},0}' \
-    | awk -F '\t' '{ if ((($8 == 1 && $2 != "-") || ($2 != "-" && $3 != 1 && $12 == 1 && $4 == "needs_you") || $10 != "-") && ($11 != 1 || ($3 != 1 && ($6 != "-" || ($12 == 1 && $4 == "needs_you") || $10 != "-"))) && !seen[$1]++) print }')"
+  rows="$(tmux list-panes -a -F '#{pane_id}	#{?@agent,#{@agent},-}	#{pane_dead}	#{?@state,#{@state},-}	#{session_name}	#{?@perm_since,#{@perm_since},-}	#{?@activity,#{@activity},-}	#{?@parent,#{@parent},-}	#{?@attention_since,#{@attention_since},-}	#{?@msg_waiting_since,#{@msg_waiting_since},-}	#{?@member,#{@member},0}	#{?@tracked,#{@tracked},0}	#{?@shell,#{@shell},0}' \
+    | LIST_CHIP=1 LC_ALL=C awk -f "$here/tmux-agents-list.awk")"
   if [ -z "$rows" ]; then
     [ "$(tmux show-options -gv status)" != 2 ] || tmux run-shell -b "'$here/tmux-agents' --chip-layout off"
     return 0
   fi
-  # State comes from what agents report: tmux-agent-report sets @activity,
-  # Claude's permission hook sets @perm_since, a reply to the parent sets
-  # done, and a turn that ends without either sets needs_you.
-  while IFS="$(printf '\t')" read -r id name dead st session since activity _ attention waiting _member_flag tracked; do
+  # Counts use each pane's own turn state; live descendants only add focus text.
+  while IFS="$(printf '\t')" read -r id name dead st session since activity _ attention waiting _member_flag tracked _shell_flag live_waiting; do
     [ "$name" != - ] || name="$id"
     if [ "$dead" = 1 ]; then
       state=exited act="exited"
@@ -277,6 +275,7 @@ chip() {
       state=work act="$activity"
       [ "$act" != - ] || act="starting"
     fi
+    [ "$live_waiting" = - ] || act="$act · waiting on $live_waiting"
     ids+=("$id"); names+=("$name"); states+=("$state"); acts+=("$act"); projs+=("$(short_project "$session")"); sinces+=("$since")
   done <<EOF
 $rows

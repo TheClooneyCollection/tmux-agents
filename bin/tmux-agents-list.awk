@@ -13,6 +13,16 @@ ENVIRON["LIST_PREVIEW"]=="1" {
     } else preview_activity=preview_activity "\n" $0
     next
 }
+# Chip rows use the same live graph, before membership/attention filtering.
+ENVIRON["LIST_CHIP"]=="1" {
+    p=$1
+    if (p in name) next
+    order[++np]=p; chiprow[p]=$0
+    name[p]=$2; dead[p]=$3; state[p]=$4; session[p]=$5; perm[p]=$6
+    activity[p]=$7; parent[p]=$8; attention[p]=$9; waiting[p]=$10
+    ismember[p]=($11==1); tracked[p]=($12==1); isshell[p]=($13==1)
+    next
+}
 $1 == "P" {
     p = $2
     if (p in name) next
@@ -33,6 +43,27 @@ $1 == "P" {
 $1 == "R" { record[$2]=1; rid[$2]=$3; closed[$2]=$4; owner[$2]=$5; dir[$2]=$6; label[$2]=$7; parentlabel[$2]=$8; saved_since[$2]=$9; saved_worked[$2]=$10; saved_last[$2]=$11; saved_turns[$2]=$12; saved_start[$2]=$14; recordmember[$2]=($15==1); launcher[$2]=($16==1); next }
 $1 == "C" { commands[$2]=1; commandpane[$2]=$3; commandcreated[$2]=$4; commandowner[$2]=$5; commanddir[$2]=$6; commandname[$2]=$7; commandparent[$2]=$8; commandwindow[$2]=$9; commandtext[$2]=$10; commandstatus[$2]=$11; next }
 $1 == "D" { project[$2]=$3; next }
+# Propagate each working node up through nonworking ancestors. Stopping at
+# another working node produces the nearest working descendants in pane order.
+# Only the current snapshot participates; stale/dead/shell rows cannot wait.
+function live_waits( i, child, ancestor, visited) {
+    for (i=1;i<=np;i++) {
+        child=order[i]
+        if (dead[child]==1 || isshell[child] || name[child]=="-" || !tracked[child] || state[child]!="working") continue
+        ancestor=parent[child]; visited="|" child "|"
+        while ((ancestor in name) && !index(visited,"|" ancestor "|")) {
+            if (dead[ancestor]==1 || isshell[ancestor] || state[ancestor]=="working") break
+            visited=visited "|" ancestor "|"
+            livewaiting[ancestor]=livewaiting[ancestor] (livewaiting[ancestor]!="" ? ", " : "") name[child]
+            ancestor=parent[ancestor]
+        }
+    }
+}
+function waiting_report(p, report) {
+    if (livewaiting[p]=="") return report
+    if (report=="" || report=="-") report=state[p]=="needs_you" ? "needs you" : state[p]
+    return report " · waiting on " livewaiting[p]
+}
 # Walk to the first visible live ancestor, with the original pane as fallback.
 function visible(p, original, visited) {
     original=p
@@ -190,6 +221,16 @@ END {
         printf "\033[0m\n"
         exit
     }
+    live_waits()
+    if (ENVIRON["LIST_CHIP"]=="1") {
+        for (i=1;i<=np;i++) {
+            p=order[i]
+            if (((parent[p]!="-" && name[p]!="-") || (name[p]!="-" && dead[p]!=1 && tracked[p] && state[p]=="needs_you") || waiting[p]!="-") &&
+                (!ismember[p] || (dead[p]!=1 && (perm[p]!="-" || (tracked[p] && state[p]=="needs_you") || waiting[p]!="-"))))
+                print chiprow[p], (livewaiting[p]!="" ? livewaiting[p] : "-")
+        }
+        exit
+    }
     target=ENVIRON["LIST_WINDOW"]
     if (target=="") target=window[ENVIRON["TMUX_PANE"]]
     scope=ENVIRON["LIST_SCOPE"]; mode=ENVIRON["LIST_MODE"]
@@ -216,6 +257,7 @@ END {
         rowproject=section
         report=(command_id[p]!="" && command_id[p]!="-" ? command_text[p] : activity[p])
         if (status=="✓ done" && report!="" && report!="-") report="done · " report
+        report=waiting_report(p,report)
         if (dead[p]!=1 && (waiting[p]!="-" || (parent[p]!="-" && perm[p]!="-") || (tracked[p] && state[p]=="needs_you"))) {
             since=perm[p]!="-" ? perm[p] : (waiting[p]!="-" ? waiting[p] : attention[p])
             if (since !~ /^[0-9]+$/) since=now

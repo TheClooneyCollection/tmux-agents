@@ -38,9 +38,9 @@ other="$(tmux new-session -d -s agents-project-b -c "$tmp" -P -F '#{pane_id}' ca
 need="$(tmux new-window -d -t agents-project-b -c "$tmp" -P -F '#{pane_id}' cat)"; agent "$need" needs-b "$other"
 perm="$(tmux new-window -d -t agents-project-b -c "$tmp" -P -F '#{pane_id}' cat)"; agent "$perm" permission-b "$main_b"
 now="$(date +%s)"
-tmux set -p -t "$need" @tracked 1; tmux set -p -t "$need" @state needs_you; tmux set -p -t "$need" @attention_since "$((now-300))"
+"$B/tmux-agent-report" --from needs-b --needs-you "waiting for a decision" >/dev/null
+tmux set -p -t "$need" @attention_since "$((now-300))"
 tmux set -p -t "$perm" @perm_since "$((now-100))"
-tmux set -p -t "$need" @activity 'waiting for a decision'
 # A real client supplies its active window, while reloads run in a hidden pane.
 mkfifo "$tmp/input"
 exec 9<>"$tmp/input"

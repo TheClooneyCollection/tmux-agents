@@ -36,6 +36,7 @@ for ((i=1; i<=49; i++)); do
     0) tmux set -p -t "$p" @tracked 1; tmux set -p -t "$p" @state needs_you; tmux set -p -t "$p" @attention_since "$((now-i*10))" ;;
     1) tmux set -p -t "$p" @msg_waiting_since "$((now-i*10))" ;;
     2) tmux set -p -t "$p" @tracked 1; tmux set -p -t "$p" @state idle ;;
+    3) tmux set -p -t "$p" @tracked 1; tmux set -p -t "$p" @state working ;;
   esac
 done
 records="$XDG_STATE_HOME/tmux-agents/${S##*/}/sessions"
@@ -118,7 +119,7 @@ for tool in tmux perl awk git basename sed date stat dirname tr column sort cut 
 done
 export PATH="$tmp/count:$PATH" BENCH_RECEIVED="$tmp/received" BENCH_EXECUTED="$tmp/executed" BENCH_EXEC_CALLS="$tmp/exec-calls"
 mkdir "$tmp/installed"
-for file in "$here"/bin/tmux-* "$here/bin/lib.sh"; do ln -s "$file" "$tmp/installed/${file##*/}"; done
+for file in "$here"/bin/tmux-* "$here/bin/lib.sh" "$here/bin/turn-state.sh"; do ln -s "$file" "$tmp/installed/${file##*/}"; done
 python3 - "$before" "$tmp/installed/tmux-agents" "$client" <<'PY'
 import collections, os, statistics, subprocess, sys, time
 before, after, client = sys.argv[1:]
@@ -160,6 +161,7 @@ for label, script in [('before', before), ('after', after)]:
                 exec_counts.append(sum(c != 'snapshot' for c in open(env['BENCH_EXEC_CALLS']).read().splitlines()))
             else:
                 assert b'message waiting' in result.stdout and b'closed-100' in result.stdout
+                assert b'waiting on agent-' in result.stdout
                 if label == 'before': old[mode] = result.stdout
                 elif mode in old:
                     assert result.stdout == old[mode], f'{mode}: output changed'
