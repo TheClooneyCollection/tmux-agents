@@ -28,7 +28,7 @@ step=setup
 # shellcheck disable=SC2329
 diagnostics() {
   echo "step=$step child=${child:-unset}" >&2
-  tmux list-panes -a -F '#{pane_id} name=#{@agent} size=#{pane_width}x#{pane_height} dead=#{pane_dead} status=#{pane_dead_status} command=#{pane_current_command}' >&2 || true
+  tmux list-panes -a -F '#{pane_id} name=#{@agent} size=#{pane_width}x#{pane_height} dead=#{pane_dead} status=#{pane_dead_status} signal=#{pane_dead_signal} dead_time=#{pane_dead_time} command=#{pane_current_command}' >&2 || true
   if [ -n "${child:-}" ]; then
     tmux display-message -p -t "$child" 'state=#{@state} worked=#{@worked} turn_start=#{@turn_start} turn_active=#{@turn_active} work_closed=#{@work_closed}' >&2 || true
     if [ -n "${id:-}" ]; then
@@ -67,6 +67,31 @@ started() { tmux capture-pane -p -J -S - -t "$1" | grep -Fqx "FAKE $2"; }
 cleared() { [ -z "$(info "$1" @agent_id)" ]; }
 # shellcheck disable=SC2329
 dead() { [ "$(info "$1" pane_dead)" = 1 ]; }
+# shellcheck disable=SC2329
+reaped() { [ -n "$(info "$1" pane_dead_status)$(info "$1" pane_dead_signal)" ]; }
+# Called indirectly by check.
+# shellcheck disable=SC2329
+wait_dead() {
+  local version major minor socket_path server_pid
+  wait_for dead "$1" || return 1
+  version="$(tmux -V)"; version="${version#tmux }"
+  major="${version%%.*}"; minor="${version#*.}"; minor="${minor%%[!0-9]*}"
+  case "$major:$minor" in *[!0-9:]*|:*|*:) return 1 ;; esac
+  if { [ "$major" -lt 3 ] || { [ "$major" -eq 3 ] && [ "$minor" -lt 6 ]; }; } && ! reaped "$1"; then
+    # Before 3.6, utempter can lose SIGCHLD after closing the PTY. Reproduce
+    # upstream's wakeup only on our private server; the real pane-died hook
+    # must still save the work. No direct save or replacement hook here.
+    # https://github.com/tmux/tmux/issues/4559
+    # https://github.com/tmux/tmux/commit/fa5f3cef3d651b0eb9abfa77fc37ccade81679b5
+    socket_path="$(tmux -L "$sock" display -p '#{socket_path}')"
+    [ -n "$socket_path" ] && [ "$socket_path" = "$S" ] && [ "${socket_path##*/}" = "$sock" ] || return 1
+    case "$socket_path" in */default) return 1 ;; esac
+    server_pid="$(tmux -L "$sock" display -p '#{pid}')"
+    case "$server_pid" in ''|*[!0-9]*|0|1) return 1 ;; esac
+    kill -CHLD "$server_pid" || return 1
+  fi
+  wait_for reaped "$1"
+}
 # shellcheck disable=SC2329
 shell_ready() {
   local marker="$tmp/shell-ready-${1#%}"
@@ -136,18 +161,18 @@ child="$(tmux list-panes -a -F '#{pane_id} #{@agent_id}' | awk -v id="$id" '$2 =
 check 'resume starts Claude stub' wait_for started "$child" claude
 check 'resume returns in hidden session' test "$(info "$child" session_name)" != work
 tmux send-keys -t "$child" C-d
-check 'resumed shell split retains dead pane' wait_for dead "$child"
+check 'resumed shell split retains dead pane' wait_dead "$child"
 spawn codex hidden-child
 seed_work
 tmux send-keys -t "$child" C-d
-check 'hidden default remains dead' wait_for dead "$child"
+check 'hidden default remains dead' wait_dead "$child"
 check 'hidden hook saves worked time' wait_for saved "$id"
 check 'hidden identity retained' test "$(pane_agent_id "$child")" = "$id"
 tmux set -g @tmux_agents_sub_exit keep
 spawn claude keep-child --split main
 seed_work
 tmux send-keys -t "$child" C-d
-check 'keep split remains dead' wait_for dead "$child"
+check 'keep split remains dead' wait_dead "$child"
 check 'keep hook saves worked time' wait_for saved "$id"
 check 'keep split retains agent identity' test "$(pane_agent_id "$child")" = "$id"
 TMUX_AGENTS_SUB_EXIT=shell spawn codex env-shell --split main
@@ -167,7 +192,7 @@ check 'old exit preserves replacement options' test "$(info "$child" @activity)"
 tmux kill-pane -t "$child"
 TMUX_AGENTS_SUB_EXIT=keep spawn claude env-keep --split main
 tmux send-keys -t "$child" C-d
-check 'environment keep overrides option shell' wait_for dead "$child"
+check 'environment keep overrides option shell' wait_dead "$child"
 before="$(tmux list-panes -a -F '#{pane_id}')"
 if TMUX_AGENTS_SUB_EXIT=invalid TMUX_PANE=%0 "$B/tmux-spawn" claude --from main --split main </dev/null > "$tmp/error" 2>&1; then
   echo 'FAIL invalid environment accepted'; fail=1

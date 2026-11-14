@@ -6,6 +6,8 @@ Part of the [design notes](../../DESIGN.md).
 
 ### tmux
 
+- **Older tmux builds with utempter can leave dead panes unreaped.** Without [fa5f3cef](https://github.com/tmux/tmux/commit/fa5f3cef3d651b0eb9abfa77fc37ccade81679b5) (for example Ubuntu tmux 3.4), `pane-died` and its worked-time save can wait until the server receives another SIGCHLD; see [#4559](https://github.com/tmux/tmux/issues/4559).
+
 - **`display-popup` doesn't expand `#{...}` in its command.** A literal `#{pane_id}` reached `sh`, where `#` starts a comment, so the command silently lost its arguments. Wrap it in `run-shell`, which does expand formats. Use `-b` so the command queue isn't blocked while the popup waits for input.
 - **`display-message -t %99 '#{pane_id}'` exits 0 with empty output for a closed pane.** `pane_alive` checks `list-panes -a` instead.
 - **Grouped sessions** duplicate panes in `list-panes -a`. Dedupe by id.
