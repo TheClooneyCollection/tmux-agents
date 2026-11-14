@@ -47,7 +47,28 @@ link() {
       fi
       run mv "$2" "$backup"
     fi
-    run ln -sfn "$1" "$2"
+    local target home_root link_dir part up
+    target="$1"
+    home_root="$HOME"
+    while [ "${home_root%/}" != "$home_root" ]; do home_root="${home_root%/}"; done
+    # Count directories below HOME, preserving spaces and supporting Bash 3.2.
+    # Keep the existing -ef check above: correct links are never rewritten.
+    case "$1" in "$home_root/"*)
+      case "$2" in "$home_root/"*)
+        link_dir="${2%/*}"
+        link_dir="${link_dir#"$home_root"}"
+        up=''
+        while [ -n "$link_dir" ]; do
+          part="${link_dir%%/*}"
+          case "$link_dir" in */*) link_dir="${link_dir#*/}" ;; *) link_dir='' ;; esac
+          [ -z "$part" ] || up="../$up"
+        done
+        target="$up${1#"$home_root/"}"
+        ;;
+      esac
+      ;;
+    esac
+    run ln -sfn "$target" "$2"
     echo "linked $2"
   else
     echo "skipped $2: exists and isn't a link (use --force)" >&2

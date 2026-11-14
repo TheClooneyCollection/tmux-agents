@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Write relative install links when both paths are under HOME, preserving existing correct links and absolute targets outside HOME.
+
 ## v1.21.0 (2026-11-14)
 
 - **Turn state replaces the request ledger.** Running turns show working; ended turns show idle at the top level or done for sub agents, including background waits. Parents show live nearest-working-descendant `waiting on` text without accruing work. Replies need no request ID, and a one-slot stop notice remembers only the latest requester. Notice-only turns preserve existing needs-you attention. Codex agents explicitly report needs-you before asking the user. Old request-ID and wait/local flags remain accepted with deprecation notes; installation migrates stale ledger state. Message headers carry delivery tokens distinct from archived-message pointers.

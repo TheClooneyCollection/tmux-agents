@@ -97,6 +97,43 @@ if install --force; then check 'backup collision fails' false; else check 'backu
 check 'collision keeps original' contains "$file" 'new original'
 check 'collision keeps existing backup' contains "$file.bak.20261004010203" 'old backup'
 rm "$file"
+# A checkout under HOME should produce portable links without changing correct
+# existing links. Exercise the installer, not its internal link helper.
+internal_home="$tmp/portable home"
+checkout="$internal_home/.local/share/tmux-agents"
+mkdir -p "$checkout" "$internal_home/.codex" "$internal_home/selected home"
+internal_home="$(cd "$internal_home" && pwd)"
+checkout="$(cd "$checkout" && pwd)"
+cp -R "$here/bin" "$here/skills" "$here/integrations" "$checkout/"
+cp "$here/install.sh" "$checkout/"
+internal_install() {
+  HOME="${1:-$internal_home}" CODEX_HOME="$internal_home/selected home" BIN_DIR="$internal_home" \
+    /bin/bash "$checkout/install.sh" >"$tmp/internal-output" 2>&1
+}
+internal_install "$internal_home/"
+for skill_home in .claude .codex 'selected home'; do
+  skill_link="$internal_home/$skill_home/skills/tmux-agents"
+  check "fresh $skill_home skill uses relative target" test "$(readlink "$skill_link")" = ../../.local/share/tmux-agents/skills/tmux-agents
+  check "fresh $skill_home skill resolves to checkout" test "$skill_link" -ef "$checkout/skills/tmux-agents"
+done
+check 'link directly under HOME uses relative target' test "$(readlink "$internal_home/tmux-ask")" = .local/share/tmux-agents/bin/tmux-ask
+check 'link directly under HOME resolves' test "$internal_home/tmux-ask" -ef "$checkout/bin/tmux-ask"
+# Replace one correct relative link with a correct absolute one, and one with
+# a broken link. A second install preserves the former and repairs the latter.
+ln -sfn "$checkout/skills/agent-chain" "$internal_home/.codex/skills/agent-chain"
+ln -sfn "$tmp/missing" "$internal_home/.codex/skills/tmux-agents-setup"
+internal_install
+check 'existing relative skill target kept' test "$(readlink "$internal_home/.codex/skills/tmux-agents")" = ../../.local/share/tmux-agents/skills/tmux-agents
+check 'existing relative skill reported kept' contains "$tmp/internal-output" "kept $internal_home/.codex/skills/tmux-agents"
+check 'existing absolute skill target kept' test "$(readlink "$internal_home/.codex/skills/agent-chain")" = "$checkout/skills/agent-chain"
+check 'existing absolute skill reported kept' contains "$tmp/internal-output" "kept $internal_home/.codex/skills/agent-chain"
+check 'wrong HOME-internal link replaced with relative target' test "$(readlink "$internal_home/.codex/skills/tmux-agents-setup")" = ../../.local/share/tmux-agents/skills/tmux-agents-setup
+check 'repaired relative skill resolves' test "$internal_home/.codex/skills/tmux-agents-setup" -ef "$checkout/skills/tmux-agents-setup"
+check 'target outside HOME stays absolute' test "$(readlink "$HOME/.codex/skills/tmux-agents")" = "$here/skills/tmux-agents"
+# A destination outside HOME must also keep its absolute target.
+HOME="$internal_home" CODEX_HOME="$internal_home/.codex" BIN_DIR="$tmp/external-bin" \
+  /bin/bash "$checkout/install.sh" >"$tmp/internal-output" 2>&1
+check 'link outside HOME stays absolute' test "$(readlink "$tmp/external-bin/tmux-ask")" = "$checkout/bin/tmux-ask"
 # Direct calls must not print, must keep settings cache, and work without tmux.
 . "$here/bin/lib.sh"
 result=''
