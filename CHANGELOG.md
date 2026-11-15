@@ -1,8 +1,6 @@
 # Changelog
 
-## Unreleased
-
-### Fixed
+## v1.21.2 (2026-11-15)
 
 - Hide stale closed-by-user hints in `tmux-peers` when a connected live agent reuses the closed agent's name, while preserving its saved conversation.
 - Mark and order the caller's window correctly in `tmux-connect --list` and the picker when sessions share linked windows.
