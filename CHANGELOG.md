@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.23.4 (2026-11-15)
+
+- Clearing a session by hand is supported: after Codex `/new`, a turn end reported with the agent's verified id adopts the new thread for the pane and its record, so tracking and `tmux-spawn --resume` follow the newest conversation instead of leaving the pane working forever. The first turn end after such a switch counts even when its inputs omit the previous delivery token; the owed reply slot is left as is.
+- The "stopped without replying" reminder is not sent while a descendant is still working; it fires at a later turn end if the reply is still owed. A new prompt or delivered message clears the previous progress label, so reminders and the agent list no longer show a report from hours ago.
+- `tmux-peers` and `tmux-connect --list` show the recorded agent (claude, codex or the Codex profile) for tracked panes, with `(exited)` when that executable is gone from the pane's process tree, instead of the shell that started it. The `claude`/`codex` type shortcuts in `tmux-connect` use the same source.
+
 ## v1.23.3 (2026-11-15)
 
 - Spawned Codex helpers and profiles waiting at the startup folder trust confirmation now show permission attention, pause work timing, and notify their parent once. Trust remains a manual user choice.
