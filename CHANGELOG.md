@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.23.3 (2026-11-15)
 
 - Spawned Codex helpers and profiles waiting at the startup folder trust confirmation now show permission attention, pause work timing, and notify their parent once. Trust remains a manual user choice.
 
