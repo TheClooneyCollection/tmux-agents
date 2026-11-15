@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.23.1 (2026-11-15)
+
+- `tmux-clear-context` treats Claude and Codex dim prompt suggestions and placeholders as an empty prompt, so an idle agent showing a gray history suggestion or `Ask Codex to do anything` can be cleared; non-dim drafts and a cursor past the input start are still refused.
+- A refusal after the command was typed erases it again when the pane still shows exactly that input; otherwise the input is left as is and the error says so. Working refusals show the age of the recorded state.
+
 ## v1.23.0 (2026-11-15)
 
 - `tmux-clear-context --from ME PEER` clears a stopped Claude or Codex descendant in place (`/clear` or `/new`), refusing working agents, copy mode, recent typing, queued messages and nonempty prompts; it keeps the pane, names and connections and rebinds the Codex thread on its next turn.
