@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.23.0 (2026-11-15)
+
+- `tmux-clear-context --from ME PEER` clears a stopped Claude or Codex descendant in place (`/clear` or `/new`), refusing working agents, copy mode, recent typing, queued messages and nonempty prompts; it keeps the pane, names and connections and rebinds the Codex thread on its next turn.
+- Claude records its new session id on each turn start, so `tmux-spawn --resume` reopens the conversation that followed a `/clear`.
+- New `chain-reset` skill: after the user clears the main, `/chain-reset` collects unfinished work, clears and re-briefs the secondary and worker, and reports the three names and carried work.
+
 ## v1.22.0 (2026-11-15)
 
 - Project sequences accept `command=CMD` rows and command-field edits. Commands run in the configured shell at the project directory, then leave an interactive shell even after failure; plain windows ignore resume with a warning.
