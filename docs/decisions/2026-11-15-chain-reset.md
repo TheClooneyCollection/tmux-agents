@@ -10,4 +10,6 @@ Main asks secondary for unfinished tasks, commits, CI and worker state before cl
 
 `tmux-ask` wraps messages as requests, so sending `/clear` through it does not submit a native slash command. Raw skill-level `send-keys` would bypass ownership, readiness and queue checks. A dedicated guarded command owns that operation; the short skill owns the handoff and re-briefing sequence.
 
-Claude uses the existing cursor-row prompt check, including its idle `❯ Try ...` placeholder. Rejecting that placeholder would block the normal stopped-turn reset. A draft literally starting with `Try ` is an accepted risk, mitigated by the recent-user-input guard; other nonempty input is refused. Codex requires an empty `›` prompt row.
+Claude and Codex use the same cursor-row check with their respective prompt glyphs. ANSI dim history suggestions and placeholders are empty input only while the cursor remains just after the glyph and its space. The parser handles the no-break space explicitly, independently of locale. Non-dim drafts, including text starting with `Try `, and cursors past the input start are refused.
+
+If readiness changes after typing the native command, remove it with one Backspace per character only when the same pane identity remains outside copy mode and its non-dim input and cursor still exactly match that command. Otherwise send no further keys and report that the input was left as is. Working refusals include the age of the recorded state so stale activity is visible.

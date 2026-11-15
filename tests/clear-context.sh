@@ -14,7 +14,16 @@ glyph='❯'; [ "${0##*/}" != codex ] || glyph='›'
 printf '%s ' "$glyph"
 while IFS= read -r line; do
   printf '%s\n' "$line" >> "$TEST_LOG/$TMUX_PANE.input"
-  if [ "$line" = show-placeholder ]; then printf '%s Try an example' "$glyph"
+  hint=""
+  case "$line" in
+    show-placeholder) hint='Try an example' ;;
+    show-ghost) hint=/clear ;;
+    show-codex-ghost) hint='Ask Codex to do anything' ;;
+  esac
+  if [ "$line" = show-codex-ghost ]; then
+    printf '\033[1m›\033[0m \033[48;2;72;76;92m \033[2mAsk Codex to do anything\033[0m \033[48;2;72;76;92m\r\033[2C'
+  elif [ -n "$hint" ]; then
+    printf '%s\302\240\033[2m%s\033[0m\033[%sD' "$glyph" "$hint" "${#hint}"
   else printf '%s ' "$glyph"; fi
 done
 STUB
@@ -42,7 +51,7 @@ wait_input() {
   for ((i=0; i<100; i++)); do
     if [ -f "$tmp/$1.input" ] && grep -Fxq -- "$2" "$tmp/$1.input"; then return 0; fi
     sleep .05
- done
+  done
   echo "FAIL missing input $2 in $1" >&2; return 1
 }
 new_agent() {
@@ -56,7 +65,7 @@ new_agent() {
   for ((i=0; i<100; i++)); do
     if tmux capture-pane -p -t "$pane" | grep -q "FAKE $kind"; then break; fi
     sleep .05
- done
+  done
   tmux capture-pane -p -t "$pane" | grep -q "FAKE $kind"
 }
 refuse() {
@@ -78,7 +87,8 @@ refuse 'not your descendant' child
 tmux set -p -t "$claude_pane" @parent %0
 tmux set -p -t "$claude_pane" @state working
 tmux set -p -t "$claude_pane" @activity 'testing unfinished work'
-refuse 'child is working: testing unfinished work' child
+tmux set -p -t "$claude_pane" @state_since "$(( $(date +%s) - 2520 ))"
+refuse 'child is working (since 42m): testing unfinished work' child
 tmux set -p -t "$claude_pane" @state idle
 tmux copy-mode -t "$claude_pane"
 refuse 'in copy mode' child
@@ -114,11 +124,16 @@ CLIENT
 chmod +x "$tmp/client-bin/tmux"
 export REAL_TMUX="$real_tmux" BUSY_PANE="$claude_pane"
 PATH="$tmp/client-bin:$PATH" TMUX_ASK_IDLE_SECS=8 refuse 'recent user input' child
-# Nonempty input must not receive a slash command.
-tmux send-keys -t "$claude_pane" -l 'hello unfinished draft'
-refuse 'did not reach an empty prompt' child
-[ ! -e "$tmp/$claude_pane.input" ]
-tmux send-keys -t "$claude_pane" C-u
+# Neither ordinary drafts nor text matching the old placeholder are empty.
+for draft_name in child coder; do
+  draft_pane="$claude_pane"; [ "$draft_name" != coder ] || draft_pane="$codex_pane"
+  for draft in 'hello unfinished draft' 'Try my unfinished draft'; do
+    tmux send-keys -t "$draft_pane" -l "$draft"
+    refuse 'did not reach an empty prompt' "$draft_name"
+    [ ! -e "$tmp/$draft_pane.input" ]
+    tmux send-keys -t "$draft_pane" C-u
+  done
+done
 for key in owed_to owed_msg owed_at owed owed_settled owed_notified owed_asked; do
   tmux set -p -t "$claude_pane" "@$key" old
 done
@@ -153,33 +168,103 @@ record_set "$codex_id" kind extra
 grep -Fxq 'cleared coder (/new)' "$tmp/out"
 [ "$(pane_agent_id %0)" = "$owner_id" ]
 echo 'PASS Codex profile supports clearing; caller identity remains unchanged'
-# The idle Claude placeholder is rendered output, not editable input.
-new_agent claude placeholder
-placeholder_pane="$pane"
-tmux send-keys -t "$placeholder_pane" show-placeholder Enter
-for ((i=0; i<100; i++)); do
-  if tmux capture-pane -p -t "$placeholder_pane" | grep -q '❯ Try an example'; then break; fi
-  sleep .05
+# Ghost text is dim output with an NBSP separator and the cursor restored to
+# the input start. Test C locale explicitly as well as the inherited locale.
+for ghost_case in placeholder history codex; do
+  kind=claude show='show-placeholder' command=/clear
+  if [ "$ghost_case" = history ]; then show='show-ghost'; fi
+  if [ "$ghost_case" = codex ]; then kind=codex; show='show-codex-ghost'; command=/new; fi
+  new_agent "$kind" "$ghost_case"
+  ghost_pane="$pane"
+  tmux send-keys -t "$ghost_pane" "$show" Enter
+  for ((i=0; i<100; i++)); do
+    if tmux capture-pane -p -e -t "$ghost_pane" | grep -Fq $'\033[2m'; then break; fi
+    sleep .05
+  done
+  tmux capture-pane -p -e -t "$ghost_pane" | grep -Fq $'\033[2m'
+  [ "$(tmux display -p -t "$ghost_pane" '#{cursor_x}')" = 2 ]
+  if [ "$ghost_case" = history ]; then
+    LC_ALL=C "$B/tmux-clear-context" --from owner "$ghost_case" > "$tmp/out"
+  else "$B/tmux-clear-context" --from owner "$ghost_case" > "$tmp/out"; fi
+  grep -Fxq "cleared $ghost_case ($command)" "$tmp/out"
+  wait_input "$ghost_pane" "$command"
+  echo "PASS $ghost_case dim suggestion accepts the native command"
 done
-tmux capture-pane -p -t "$placeholder_pane" | grep -q '❯ Try an example'
-"$B/tmux-clear-context" --from owner placeholder > "$tmp/out"
-grep -Fxq 'cleared placeholder (/clear)' "$tmp/out"
-wait_input "$placeholder_pane" /clear
-echo 'PASS Claude idle placeholder accepts the native clear command'
-# Replace the identity after literal input, before Enter, through a test-only
-# tmux wrapper. The replacement must never receive a submitted command.
-new_agent claude replacement
-replacement_pane="$pane" replacement_id="$identity"
-cat > "$tmp/client-bin/tmux" <<'REPLACE'
+# Change readiness immediately after literal input, with explicit events
+# instead of sleeps. Record every Backspace sent to the private test pane.
+cat > "$tmp/client-bin/tmux" <<'AFTER'
 #!/usr/bin/env bash
-"$REAL_TMUX" "$@" || exit $?
-if [ "$1" = send-keys ] && [ "${5:-}" = /clear ]; then
-  "$REAL_TMUX" set -p -t "$3" @agent_id a000000000099
+if [ "$1" = send-keys ]; then
+  for arg in "$@"; do
+    if [ "$arg" = BSpace ]; then printf 'BSpace\n' >> "$KEY_TRACE"; fi
+  done
 fi
-REPLACE
-PATH="$tmp/client-bin:$PATH" refuse 'identity changed' replacement
-[ ! -e "$tmp/$replacement_pane.input" ]
-tmux set -p -t "$replacement_pane" @agent_id "$replacement_id"
-tmux send-keys -t "$replacement_pane" C-u
-echo 'PASS identity replacement between literal input and Enter is refused'
+"$REAL_TMUX" "$@" || exit $?
+if [ "$1" = send-keys ] && [ "${4:-}" = -l ]; then
+  case "${5:-}" in /clear|/new)
+    case "$AFTER_TYPING" in
+      working) "$REAL_TMUX" set -p -t "$3" @state working ;;
+      queued) printf 'queued request\n' > "$POST_QUEUE_FILE" ;;
+      replace) "$REAL_TMUX" set -p -t "$3" @agent_id a000000000099 ;;
+      draft)
+        "$REAL_TMUX" send-keys -t "$3" -l ' mine'
+        "$REAL_TMUX" set -p -t "$3" @state working ;;
+      copy) "$REAL_TMUX" copy-mode -t "$3" ;;
+    esac ;;
+  esac
+fi
+AFTER
+export KEY_TRACE="$tmp/keys" POST_QUEUE_FILE="$queue/post-typing.msg" AFTER_TYPING=""
+for kind in claude codex; do
+  command=/clear; [ "$kind" != codex ] || command=/new
+  for event in working queued; do
+    name="$kind-$event"
+    new_agent "$kind" "$name"
+    post_pane="$pane"
+    POST_QUEUE_FILE="$queue/2-2-${post_pane#%}.msg"
+    : > "$KEY_TRACE"
+    AFTER_TYPING="$event" PATH="$tmp/client-bin:$PATH" refuse "erased input: $command" "$name"
+    [ "$(wc -l < "$KEY_TRACE" | tr -d ' ')" = "${#command}" ]
+    [ ! -e "$tmp/$post_pane.input" ]
+    # Enter logs the actual canonical input buffer, not merely the rendering.
+    tmux send-keys -t "$post_pane" Enter
+    wait_input "$post_pane" ''
+    [ "$(cat "$tmp/$post_pane.input")" = '' ]
+    rm -f "$POST_QUEUE_FILE"
+    echo "PASS $kind $event refusal erases exactly the command before exiting"
+  done
+done
+for event in replace draft copy; do
+  name="unsafe-$event"
+  new_agent claude "$name"
+  post_pane="$pane" post_id="$identity"
+  : > "$KEY_TRACE"
+  AFTER_TYPING="$event" PATH="$tmp/client-bin:$PATH" refuse 'input left as is: /clear' "$name"
+  [ ! -s "$KEY_TRACE" ]
+  [ ! -e "$tmp/$post_pane.input" ]
+  if [ "$event" = replace ]; then tmux set -p -t "$post_pane" @agent_id "$post_id"; fi
+  if [ "$event" = copy ]; then tmux send-keys -t "$post_pane" -X cancel; fi
+  tmux send-keys -t "$post_pane" Enter
+  expected=/clear; [ "$event" != draft ] || expected='/clear mine'
+  wait_input "$post_pane" "$expected"
+  echo "PASS $event refusal sends no Backspace and preserves the input"
+done
+# Introduce a draft only on the second prompt capture, just before typing.
+new_agent claude late-draft
+late_pane="$pane"
+export CAPTURE_COUNT="$tmp/capture-count"
+cat > "$tmp/client-bin/tmux" <<'BEFORE'
+#!/usr/bin/env bash
+if [ "$1" = capture-pane ]; then
+  count=0; [ ! -f "$CAPTURE_COUNT" ] || read -r count < "$CAPTURE_COUNT"
+  count=$((count+1)); printf '%s\n' "$count" > "$CAPTURE_COUNT"
+  if [ "$count" = 2 ]; then "$REAL_TMUX" send-keys -t "${5}" -l 'late draft'; fi
+fi
+exec "$REAL_TMUX" "$@"
+BEFORE
+PATH="$tmp/client-bin:$PATH" refuse 'no longer has an empty prompt' late-draft
+[ ! -e "$tmp/$late_pane.input" ]
+tmux send-keys -t "$late_pane" Enter
+wait_input "$late_pane" 'late draft'
+echo 'PASS prompt is rechecked immediately before literal input'
 echo 'PASS clear-context'

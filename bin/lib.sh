@@ -1667,24 +1667,81 @@ pane_has_queued_messages() {
 # Check the cursor's input line, not old prompts in scrollback. A resumed
 # transcript may contain arbitrary prompt-looking output. Never submit into
 # a startup/trust dialog, a replacement pane, or tmux copy mode.
-chain_claude_prompt() {
-  local pane="$1" identity="$2" row screen line
-  [ "$(pane_agent_id "$pane")" = "$identity" ] || return 1
-  [ "$(tmux display -p -t "$pane" '#{pane_in_mode}')" != 1 ] || return 1
-  row="$(tmux display -p -t "$pane" '#{cursor_y}')" || return 1
-  screen="$(tmux capture-pane -p -t "$pane")" || return 1
-  line="$(printf '%s\n' "$screen" | sed -n "$((row + 1))p")"
-  [[ $line =~ ^[[:space:]]*❯[[:space:]]*$ ]] ||
-    [[ $line =~ ^[[:space:]]*❯[[:space:]]+Try[[:space:]] ]]
+chain_prompt_input() {
+  local pane="$1" identity="$2" glyph="$3" expected="${4:-}" position row column screen
+  [ -n "$identity" ] && [ "$(pane_agent_id "$pane")" = "$identity" ] || return 1
+  position="$(tmux display -p -t "$pane" '#{pane_in_mode}:#{cursor_y}:#{cursor_x}')" || return 1
+  case "$position" in 0:*:*) ;; *) return 1 ;; esac
+  position="${position#*:}"
+  row="${position%%:*}"; column="${position#*:}"
+  screen="$(tmux capture-pane -p -e -t "$pane")" || return 1
+  printf '%s\n' "$screen" | perl -MEncode=decode,FB_CROAK -e '
+    use strict;
+    use warnings;
+    my ($row, $column, $glyph, $expected) = @ARGV;
+    exit 1 unless $row =~ /\A[0-9]+\z/ && $column =~ /\A[0-9]+\z/;
+    $glyph = decode("UTF-8", $glyph, FB_CROAK);
+    $expected = decode("UTF-8", $expected, FB_CROAK);
+    my $dim = 0;
+    my (@chars, @dim);
+    while (my $line = <STDIN>) {
+      $line = decode("UTF-8", $line, FB_CROAK);
+      chomp $line;
+      while (length $line) {
+        if ($line =~ s/\A\e\[([0-9;:]*)m//) {
+          my @params = split /;/, $1, -1;
+          @params = (0) unless @params;
+          while (@params) {
+            my $param = shift @params;
+            # Colon color subparameters are one attribute, never dim/reset.
+            my ($code) = split /:/, $param, -1;
+            $code = 0 if !defined($code) || $code eq "";
+            if ($code == 38 || $code == 48 || $code == 58) {
+              if ($param !~ /:/) {
+                my $mode = shift @params;
+                exit 1 unless defined $mode;
+                my $count = $mode eq "5" ? 1 : $mode eq "2" ? 3 : -1;
+                exit 1 if $count < 0 || @params < $count;
+                splice @params, 0, $count;
+              }
+            } elsif ($code == 0 || $code == 22) { $dim = 0; }
+            elsif ($code == 2) { $dim = 1; }
+          }
+        } else {
+          my $char = substr($line, 0, 1, "");
+          exit 1 if $char =~ /[\x00-\x1f\x7f]/;
+          if ($. == $row + 1) { push @chars, $char; push @dim, $dim; }
+        }
+      }
+      last if $. == $row + 1;
+    }
+    my $text = join "", @chars;
+    # Match U+00A0 explicitly: locale must not change prompt recognition.
+    exit 1 unless $text =~ /\A([ \x{a0}]*)\Q$glyph\E/;
+    my $start = length($1) + 2;
+    my $separator = $chars[$start - 1];
+    exit 1 if defined($separator) && $separator ne " " && $separator ne "\x{a0}";
+    # capture-pane trims trailing blanks, so a bare glyph can be empty input.
+    exit 1 unless $column == $start + length($expected);
+    my $input = "";
+    for (my $i = $start; $i < @chars; $i++) {
+      if ($i < $start + length($expected)) {
+        exit 1 if $dim[$i];
+        $input .= $chars[$i];
+      } else {
+        # Cursor cells and padding may have a background but no dim attribute.
+        exit 1 unless $dim[$i] || $chars[$i] eq " " || $chars[$i] eq "\x{a0}";
+      }
+    }
+    exit($input eq $expected ? 0 : 1);
+  ' "$row" "$column" "$glyph" "$expected"
 }
 
-# Codex input uses a different glyph; accept only an empty cursor row.
+chain_claude_prompt() {
+  chain_prompt_input "$1" "$2" ❯
+}
+
+# Codex shares the same input and cursor checks with its own prompt glyph.
 chain_codex_prompt() {
-  local pane="$1" identity="$2" row screen line
-  [ "$(pane_agent_id "$pane")" = "$identity" ] || return 1
-  [ "$(tmux display -p -t "$pane" '#{pane_in_mode}')" != 1 ] || return 1
-  row="$(tmux display -p -t "$pane" '#{cursor_y}')" || return 1
-  screen="$(tmux capture-pane -p -t "$pane")" || return 1
-  line="$(printf '%s\n' "$screen" | sed -n "$((row + 1))p")"
-  [[ $line =~ ^[[:space:]]*›[[:space:]]*$ ]]
+  chain_prompt_input "$1" "$2" ›
 }

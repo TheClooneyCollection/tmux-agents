@@ -28,8 +28,8 @@ identity="$(pane_agent_id "$pane")"
 kind="$(record_get "$identity" kind)"
 resolve_codex_homes codex_homes
 full_agent_kind "$kind" || die "'$target' is not a Claude or Codex agent"
-command=/new
-[ "$kind" != claude ] || command=/clear
+command=/new glyph=›
+if [ "$kind" = claude ]; then command=/clear; glyph=❯; fi
 QUEUE_DIR="$(message_queue_dir)"
 
 # Re-enter under the same kernel lock as queued deliveries. Pin the stable
@@ -42,21 +42,49 @@ if [ -z "${TMUX_CLEAR_CONTEXT_ID:-}" ]; then
   [ "$status" != 75 ] || die "$target has a message delivery in progress"
   exit "$status"
 fi
+typed=0
+# Backspace only our exact input, never a replacement agent or a user draft.
+refuse_clear() {
+  local reason="$1" n keys=()
+  if [ "$typed" = 1 ]; then
+    for ((n=0; n<${#command}; n++)); do keys+=(BSpace); done
+    if chain_prompt_input "$pane" "$TMUX_CLEAR_CONTEXT_ID" "$glyph" "$command" &&
+        tmux send-keys -t "$pane" "${keys[@]}"; then
+      reason="$reason; erased input: $command"
+    else
+      reason="$reason; input left as is: $command"
+    fi
+  fi
+  die "$reason"
+}
+working_reason() {
+  local since elapsed age=unknown activity
+  since="$(tmux show-option -pqv -t "$pane" @state_since)"
+  if [[ $since =~ ^[0-9]+$ ]] && [ "${#since}" -le 10 ]; then
+    elapsed=$(( $(date +%s) - 10#$since ))
+    [ "$elapsed" -ge 0 ] || elapsed=0
+    if [ "$elapsed" -ge 86400 ]; then age="$((elapsed / 86400))d"
+    elif [ "$elapsed" -ge 3600 ]; then age="$((elapsed / 3600))h"
+    elif [ "$elapsed" -ge 60 ]; then age="$((elapsed / 60))m"
+    else age="${elapsed}s"; fi
+  fi
+  activity="$(tmux show-option -pqv -t "$pane" @activity)"
+  activity="${activity//$'\n'/ }"; activity="${activity//$'\r'/ }"
+  printf '%s is working (since %s): %s' "$target" "$age" "$activity"
+}
 check_ready() {
   [ "$(pane_agent_id "$pane")" = "$TMUX_CLEAR_CONTEXT_ID" ] &&
-    [ "$(pane_agent_id "$owner")" = "$TMUX_CLEAR_CONTEXT_OWNER" ] || die "$target identity changed"
-  pane_is_descendant "$pane" "$owner" || die "$target is no longer your descendant"
-  [ "$(tmux show-option -pqv -t "$pane" @state)" != working ] ||
-    die "$target is working: $(tmux show-option -pqv -t "$pane" @activity)"
-  [ "$(tmux display -p -t "$pane" '#{pane_in_mode}')" != 1 ] || die "$target is in copy mode"
-  if user_busy "$pane"; then die "$target has recent user input"; fi
-  if pane_has_queued_messages "$QUEUE_DIR" "$pane"; then die "$target has queued messages"; fi
+    [ "$(pane_agent_id "$owner")" = "$TMUX_CLEAR_CONTEXT_OWNER" ] || refuse_clear "$target identity changed"
+  pane_is_descendant "$pane" "$owner" || refuse_clear "$target is no longer your descendant"
+  [ "$(tmux show-option -pqv -t "$pane" @state)" != working ] || refuse_clear "$(working_reason)"
+  [ "$(tmux display -p -t "$pane" '#{pane_in_mode}')" != 1 ] || refuse_clear "$target is in copy mode"
+  if user_busy "$pane"; then refuse_clear "$target has recent user input"; fi
+  if pane_has_queued_messages "$QUEUE_DIR" "$pane"; then refuse_clear "$target has queued messages"; fi
 }
 ready=0
 for ((attempt=0; attempt<30; attempt++)); do
   check_ready
-  if { [ "$kind" = claude ] && chain_claude_prompt "$pane" "$identity"; } ||
-     { [ "$kind" != claude ] && chain_codex_prompt "$pane" "$identity"; }; then
+  if chain_prompt_input "$pane" "$identity" "$glyph"; then
     ready=1; break
   fi
   sleep .1
@@ -67,7 +95,9 @@ if [ "$kind" != claude ]; then
   tmux set-option -pu -t "$pane" @codex_thread
   record_set "$identity" id ""
 fi
+chain_prompt_input "$pane" "$identity" "$glyph" || refuse_clear "$target no longer has an empty prompt"
 tmux send-keys -t "$pane" -l "$command"
+typed=1
 settings_get ask_enter_delay TMUX_ASK_ENTER_DELAY @tmux_agents_ask_enter_delay 0.5
 # settings_get assigns this variable by name.
 # shellcheck disable=SC2154
