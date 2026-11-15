@@ -98,6 +98,7 @@ link "$here/skills/tmux-agents" "$HOME/.claude/skills/tmux-agents"
 link "$here/skills/tmux-agents-setup" "$HOME/.claude/skills/tmux-agents-setup"
 link "$here/skills/tmux-agents-perf" "$HOME/.claude/skills/tmux-agents-perf"
 link "$here/skills/agent-chain" "$HOME/.claude/skills/agent-chain"
+link "$here/skills/chain-reset" "$HOME/.claude/skills/chain-reset"
 
 # Always cover the standard home as well as an explicitly selected account.
 codex_map=''

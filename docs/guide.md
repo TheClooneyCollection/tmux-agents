@@ -158,6 +158,8 @@ Message markers separate agent text from any user draft submitted with it. Agent
 
 ## Sub agents
 
+After clearing your main conversation yourself, ask it to use [chain-reset](../skills/chain-reset/SKILL.md) to recover the existing chain. It collects unfinished work before using `tmux-clear-context --from ME PEER` and re-briefing each member through its owner. The command requires `--from` and a live Claude/Codex descendant (including configured Codex profiles); it refuses working agents, copy mode, typing, queued messages and nonempty prompts. It sends `/clear` for Claude or `/new` for Codex, clears stale activity and owed state, and resets Codex thread metadata while preserving names, panes and connections.
+
 Agents use `tmux-spawn` instead of built-in sub agents so each helper has a real pane and readable history:
 
 ```sh
@@ -309,6 +311,7 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 | `tmux-spawn --from ME --resume PEER` / `--resume-id ID [--here]` | Reopen a conversation, optionally in the current shell pane. |
 | `tmux-agent-report --from ME [--needs-you] "text"` | Report progress or user attention. |
 | `tmux-agents` | Open the agent list. |
+| `tmux-clear-context --from ME PEER` | Clear a ready Claude/Codex descendant, preserving its pane and connections. |
 | `tmux-dismiss --from ME PEER` | Close a descendant and its subtree. |
 
 ### Standard input by command
