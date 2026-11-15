@@ -14,7 +14,7 @@ turn_event() {
 turn_message_delivered() { turn_event "$1" delivered "$2" "$3" "${4:-}"; }
 turn_message_sent() { turn_event "$1" sent "$2" "$3"; }
 turn_begin() { turn_event "$1" start "${2:-message}" "${3:-prompt}"; }
-turn_end() { turn_event "$1" end "${2:-}"; }
+turn_end() { turn_event "$1" end "${2:-}" "${3:-}"; }
 turn_progress() { turn_event "$1" progress; }
 turn_needs_you() { turn_event "$1" attention "$2"; }
 
@@ -24,6 +24,7 @@ _turn_begin() {
   local kind="$1" source="$2" state began
   state="$(_turn_get state)"; began="$(_turn_get turn_began)"
   _turn_unset owed_notified
+  case "$source" in prompt|delivery) _turn_unset activity ;; esac
   if { [ "$source" = tool ] && [ -z "$began" ]; } ||
       { [ "$source" = prompt ] && [ "$state" != working ]; }; then
     tmux set-option -p -t "$turn_pane" @turn_began "$(date +%s)"
@@ -83,16 +84,22 @@ _turn_event() {
         token="$(_turn_get last_delivered)"
         matches="$(printf '%s' "$1" | perl -MJSON::PP -e '
           local $/; my $j=eval {decode_json(<STDIN>)} || {};
-          my ($latest,$owed)=@ARGV; my $in=$j->{"input-messages"};
-          if (ref($in) ne "ARRAY" || !length($latest)) { print "0"; exit }
+          my ($latest,$owed,$rebound)=@ARGV; my $in=$j->{"input-messages"};
+          if (ref($in) ne "ARRAY" || !length($latest)) { print length($latest) && $rebound eq "rebound" ? "stale" : "0"; exit }
           my %seen; for (@$in) { while (/\[(?:request|reply|notice) from \S+ to \S+ via tmux-ask \x{b7} (m[0-9a-f]{12})\]/g) { $seen{$1}=1 } }
           print !$seen{$latest} ? "stale" : length($owed) && $seen{$owed} ? "1" : "0";
-        ' "$token" "$(_turn_get owed_msg)")"
-        [ "$matches" != stale ] || return 0
+        ' "$token" "$(_turn_get owed_msg)" "${2:-}")"
+        if [ "$matches" = stale ]; then
+          [ "${2:-}" = rebound ] || return 0
+          _turn_unset last_delivered
+        fi
       else
         now="$(_turn_get turn_began)"; token="$(_turn_get owed_at)"
         if [ -n "$now" ] && [ -n "$token" ] && [ "$token" -le "$now" ]; then matches=1; fi
       fi
+      # A verified thread switch finishes this turn but carries no evidence
+      # that an obligation spanning the old conversation was answered.
+      [ "${2:-}" != rebound ] || matches=0
       _turn_unset turn_began
       [ "$matches" != 1 ] || tmux set-option -p -t "$turn_pane" @owed_settled 1
       state="$(_turn_get state)"
@@ -105,8 +112,10 @@ _turn_event() {
       else
         agent_turn_state "$turn_pane" end "$state"
       fi
+      [ "${2:-}" != rebound ] || return 0
       if [ -n "$(_turn_get parent)" ] && [ "$(_turn_get owed)" = 1 ] &&
           [ "$(_turn_get owed_settled)" = 1 ] && [ "$(_turn_get owed_notified)" != 1 ]; then
+        pane_has_working_descendant "$turn_pane" && return 0
         requester="$(find_pane_by_id "$(_turn_get owed_to)")"
         if [ -n "$requester" ] && [ "$(tmux show-options -pqv -t "$requester" @shell)" != 1 ]; then
           tmux set-option -p -t "$turn_pane" @owed_notified 1

@@ -1,5 +1,7 @@
 # Resumed Codex conversations bind to the current live identity
 
+The verified-ID conflict refusals below are superseded by [manual-clear tracking](2026-11-15-manual-clear-tracking.md). Legacy notifications without a verified ID keep their existing guards.
+
 A conversation resumed with `tmux-agents start codex -- resume` gets a new
 agent identity. A closed record may still contain its Codex thread ID.
 Previously that historical record discarded completion notifications before

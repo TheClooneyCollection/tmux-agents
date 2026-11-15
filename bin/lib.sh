@@ -98,6 +98,42 @@ pane_command() {
   tmux display-message -p -t "$1" '#{pane_current_command}' 2>/dev/null
 }
 
+# A launcher can remain the foreground shell while its agent runs below it.
+# This is for peers/connect, not the budgeted tmux-agents list build.
+pane_agent_command() {
+  local snapshot id pid dead tracked shell raw kind executable processes codex_homes
+  snapshot="$(tmux display-message -p -t "$1" '#{@agent_id}|#{pane_pid}|#{pane_dead}|#{@tracked}|#{@shell}|#{pane_current_command}')" || return 1
+  IFS='|' read -r id pid dead tracked shell raw <<< "$snapshot"
+  if [ "$tracked" != 1 ] || [ "$shell" = 1 ]; then printf '%s\n' "$raw"; return; fi
+  kind="$(record_get "$id" kind)"
+  case "$kind" in
+    claude|codex) executable="$kind" ;;
+    '') printf '%s\n' "$raw"; return ;;
+    *) resolve_codex_homes codex_homes
+       if codex_home_for "$kind" >/dev/null; then executable=codex
+       else printf '%s\n' "$raw"; return; fi ;;
+  esac
+  if [ "$dead" != 1 ]; then
+    processes="$(ps -axo pid=,ppid=,comm=)" || return 1
+    if printf '%s\n' "$processes" | awk -v root="$pid" -v executable="$executable" '
+      { parent[$1]=$2; command[$1]=$0
+        sub(/^[[:space:]]*[0-9]+[[:space:]]+[0-9]+[[:space:]]+/, "", command[$1])
+        sub(/^.*\//, "", command[$1]) }
+      END {
+        for (pid in parent) {
+          if (command[pid] != executable) continue
+          cursor=pid; visited="|"
+          while ((cursor in parent) && !index(visited, "|" cursor "|")) {
+            if (cursor == root) exit 0
+            visited=visited cursor "|"; cursor=parent[cursor]
+          }
+        }
+        exit 1
+      }'; then printf '%s\n' "$kind"; return; fi
+  fi
+  printf '%s (exited)\n' "$kind"
+}
+
 # Full adapters retain priority over same-named PATH executables.
 full_agent_kind() {
   case "$1" in claude|codex) return 0 ;; esac
@@ -1154,6 +1190,25 @@ pane_is_descendant() {
     cursor="$(tmux show-options -pqv -t "$cursor" @parent)" || return 1
   done
   return "$found"
+}
+
+# Match live-waiting ancestry exclusions with one snapshot and in-memory walks.
+pane_has_working_descendant() {
+  tmux list-panes -a -F '#{pane_id}|#{@parent}|#{pane_dead}|#{@shell}|#{@tracked}|#{@state}|#{@agent}' |
+    awk -F '|' -v root="$1" '
+      { parent[$1]=$2; dead[$1]=$3; shell[$1]=$4; tracked[$1]=$5; state[$1]=$6; name[$1]=$7 }
+      END {
+        for (child in parent) {
+          if (child == root || dead[child] == 1 || shell[child] == 1 || tracked[child] != 1 || name[child] == "" || state[child] != "working") continue
+          ancestor=parent[child]; visited="|" child "|"
+          while ((ancestor in parent) && !index(visited, "|" ancestor "|")) {
+            if (dead[ancestor] == 1 || shell[ancestor] == 1) break
+            if (ancestor == root) exit 0
+            visited=visited ancestor "|"; ancestor=parent[ancestor]
+          }
+        }
+        exit 1
+      }'
 }
 
 # Snapshot the live ownership graph and print the root's subtree deepest

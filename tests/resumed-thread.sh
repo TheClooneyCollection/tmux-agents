@@ -127,14 +127,55 @@ for scenario in unknown closed missing live-record live-pane pane-mismatch recor
     record-mismatch) record_set "$target_id" id other-thread ;;
   esac
   notify_id "$target_id" "$thread"
+  check "$scenario accepts verified live ID" test "$(info "$target" codex_thread)" = "$thread"
+  check "$scenario records incoming thread" test "$(record_get "$target_id" id)" = "$thread"
+  check "$scenario processes completion" test "$(info "$target" state)" = idle
   case "$scenario" in
-    unknown|closed)
-      check "$scenario accepts verified live ID" test "$(info "$target" codex_thread)" = "$thread"
-      check "$scenario processes completion" test "$(info "$target" state)" = idle ;;
+    live-record|live-pane)
+      check "$scenario leaves other owner binding unchanged" test "$(record_get "$owner_id" id)" = "$thread" ;;
+  esac
+done
+# Manual /new on a running stub retains identity and completes the new thread.
+manual_thread="manual-new-$$"
+"$B/tmux-agent-report" --from resumed 'working after /new' >/dev/null
+notify_id "$current_id" "$manual_thread"
+check 'manual /new keeps stable identity' test "$(pane_agent_id "$current")" = "$current_id"
+check 'manual /new binds pane' test "$(info "$current" codex_thread)" = "$manual_thread"
+check 'manual /new records thread' test "$(record_get "$current_id" id)" = "$manual_thread"
+check 'manual /new completes launcher turn' test "$(info "$current" state)" = idle
+check 'manual /new logs old binding and normal context' grep -Fq "$manual_thread to=- done rebound from resumed-thread" "/tmp/tmux-agents-$(id -u)/notify.log"
+
+# A duplicate on an earlier pane must not redirect a verified callback.
+"$B/tmux-agent-report" --from resumed 'other owner still working' >/dev/null
+new_identity duplicate-target
+notify_id "$target_id" "$manual_thread"
+check 'duplicate thread binds verified pane' test "$(info "$target" codex_thread)" = "$manual_thread"
+check 'duplicate thread records verified identity' test "$(record_get "$target_id" id)" = "$manual_thread"
+check 'duplicate thread completes verified pane' test "$(info "$target" state)" = idle
+check 'duplicate thread leaves earlier pane working' test "$(info "$current" state)" = working
+
+# Without an explicit ID, the existing thread and record routing remains authoritative.
+for scenario in pane-mismatch record-mismatch live-pane live-record missing; do
+  new_identity "legacy-$scenario"
+  thread="legacy-$scenario-$$"
+  case "$scenario" in
+    pane-mismatch) tmux set -p -t "$target" @codex_thread other-thread ;;
+    record-mismatch) record_set "$target_id" id other-thread ;;
     *)
-      check "$scenario does not bind incoming thread" test "$(info "$target" codex_thread)" != "$thread"
-      check "$scenario rejects completion" test "$(info "$target" state)" = working
-      check "$scenario does not overwrite record" test "$(record_get "$target_id" id)" != "$thread" ;;
+      owner="$(tmux new-window -d -P -F '#{pane_id}' cat)"
+      set_name "$owner" "legacy-owner-$scenario"
+      record_set "$(pane_agent_id "$owner")" id "$thread"
+      "$B/tmux-agent-report" --from "legacy-owner-$scenario" work >/dev/null
+      case "$scenario" in
+        live-pane) tmux set -p -t "$owner" @codex_thread "$thread" ;;
+        missing) tmux kill-pane -t "$owner" ;;
+      esac ;;
+  esac
+  "$B/tmux-agent-report" --codex-notify "{\"type\":\"agent-turn-complete\",\"thread-id\":\"$thread\",\"input-messages\":[\"[request from boss to legacy-$scenario via tmux-ask]\"],\"last-assistant-message\":\"done\"}"
+  check "legacy $scenario does not bind header target" test "$(info "$target" codex_thread)" != "$thread"
+  check "legacy $scenario leaves header target working" test "$(info "$target" state)" = working
+  case "$scenario" in
+    live-pane|live-record) check "legacy $scenario completes existing owner" test "$(info "$owner" state)" = idle ;;
   esac
 done
 # Even after takeover, a callback carrying the old closed identity cannot

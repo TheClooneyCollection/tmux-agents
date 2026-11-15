@@ -126,6 +126,8 @@ Or tell your agent “connect codex and ask it to review this diff”. It runs `
 
 For another window, use `codex@stone-age` (project name or part), `claude@2` (window) or `claude@work:2` (session and window). `tmux-connect --from ME --list` lists candidates when the description is less specific. Cross-window connections send the other agent a notice. Type and `kind@window` shortcuts are Claude/Codex only; connect other agents by exact name or pane ID.
 
+The COMMAND column in `tmux-peers` and `tmux-connect --list` shows the recorded agent kind or Codex profile for tracked agents, rather than a launcher shell. It adds `(exited)` when that executable is absent from the pane process tree. Untracked and shell panes retain the raw foreground command. Type shortcuts use the same agent identity.
+
 Borders show `name ⇄ peers`. Links are one-to-one: A↔B and B↔C do not link A↔C. See [naming](#renaming-agents) for generated labels.
 
 ## How messages flow
@@ -231,6 +233,8 @@ Names shorten under project headings. Search parts, such as `claude tmux seconda
 For a user question or decision, run `tmux-agent-report --from ME --needs-you "reason"` before asking. Tracked top-level agents also appear in the default list and status chip while they need you. The reason is shown as activity and survives turn end; ordinary progress or a non-notice turn start clears the attention. Notice-only turns preserve existing needs-you attention.
 
 Done agents show their last report as `done · <text>` in list activity and the status chip. With no report, the list keeps `no report yet` and the chip shows `done`. The list truncates the combined text to its activity column; tmux clips the chip to available status-line space. Stored activity and preview text stay unchanged.
+
+Manual clearing with Claude `/clear` or Codex `/new` is supported. Tracking and `tmux-spawn --resume` follow the newest conversation when its hooks report it. Only a verified Codex thread switch treats its first turn end as current, drops an absent prior delivery token, and leaves any cross-conversation reply obligation unchanged without sending a stop reminder; later notifications retain the normal stale-delivery guard. Existing pane names, members and connections stay in place; re-brief the chain through its existing owners.
 
 Helpers report progress with `tmux-agent-report --from ME "running tests"`. This starts work from idle or done. Every ended turn returns to idle or done, including a turn waiting for CI, a background command or another agent. A notice-only turn runs as working from idle or done, but preserves existing needs-you attention. Codex has no turn-start hook: directly typed work may show idle until a report or turn-end notification. Codex runtime approval prompts have no permission hook. Spawned Codex helpers and profiles detect the startup `Folder access` / `Trust this folder?` screen, show `⚠ permission` and notify their parent once that the task has not started. Open the pane and make the trust choice yourself; tmux-agents never confirms it. The permission marker clears when the dialog closes.
 

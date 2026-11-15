@@ -66,6 +66,6 @@ fi
   printf 'NAME\tPANE\tCOMMAND\tWHERE\n'
   for peer in $peers; do
     [ "$ids" != 1 ] || printf '%s\t' "$(pane_agent_id "$peer")"
-    printf '%s\t%s\t%s\t%s\n' "$(pane_name "$peer")" "$peer" "$(pane_command "$peer")" "$(pane_location "$peer")"
+    printf '%s\t%s\t%s\t%s\n' "$(pane_name "$peer")" "$peer" "$(pane_agent_command "$peer")" "$(pane_location "$peer")"
   done
 } | column -t -s "$(printf '\t')"

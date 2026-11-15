@@ -90,7 +90,7 @@ The secondary and worker are long-lived members: they stay out of the default su
 
 ## Rejoining after a restart or clear
 
-When told you were restarted or cleared and assigned a role in an existing chain, use `tmux-peers --from <me>` to find its current members and rejoin that role instead of spawning a new chain. Re-brief current roles and the current goal through the existing owners: main briefs secondary, then secondary briefs worker. Context clearing is manual; this re-brief keeps the existing members and connections.
+When told you were restarted or cleared and assigned a role in an existing chain, use `tmux-peers --from <me>` to find its current members and rejoin that role instead of spawning a new chain. Re-brief current roles and the current goal through the existing owners: main briefs secondary, then secondary briefs worker. Manual clearing with Claude `/clear` or Codex `/new` is supported: tracking and `tmux-spawn --resume` follow the new conversation when its hooks report it. This re-brief keeps the existing members and connections.
 
 ## Ending the chain
 

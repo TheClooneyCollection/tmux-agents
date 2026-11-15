@@ -18,7 +18,7 @@ Legacy --waiting and --local are progress reports; --local-done is a no-op.
 USAGE
 }
 
-FROM_PANE="" pane="" perm="" tool="" turn="" notify_json="" notify_agent_id="" waiting=0 save_work=0 local_work=0 local_done=0 needs_you=0
+FROM_PANE="" pane="" perm="" tool="" turn="" notify_json="" notify_agent_id="" notify_rebound="" waiting=0 save_work=0 local_work=0 local_done=0 needs_you=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
@@ -169,58 +169,49 @@ if [ -n "$notify_json" ]; then
 $fields
 EOF
   [ "$type" = agent-turn-complete ] && [ -n "$thread" ] || exit 0
-  notify_target=""
+  notify_target="" rebound=""
   if [ -n "$notify_agent_id" ]; then
     valid_agent_id "$notify_agent_id" || exit 0
     notify_target="$(find_pane_by_id "$notify_agent_id")"
     [ -n "$notify_target" ] || exit 0
     known="$(tmux show-options -pqv -t "$notify_target" @codex_thread)"
-    [ -z "$known" ] || [ "$known" = "$thread" ] || exit 0
-    known="$(record_get "$notify_agent_id" id)"
-    [ -z "$known" ] || [ "$known" = "$thread" ] || exit 0
+    recorded="$(record_get "$notify_agent_id" id)"
+    if [ "$known" != "$thread" ] || [ "$recorded" != "$thread" ]; then
+      previous="$known"
+      [ -n "$previous" ] && [ "$previous" != "$thread" ] || previous="$recorded"
+      rebound=" rebound from ${previous:--}"
+      if [ -n "$previous" ] && [ "$previous" != "$thread" ]; then notify_rebound=rebound; fi
+    fi
+    tmux set-option -p -t "$notify_target" @codex_thread "$thread"
   fi
   # One line per turn end, to debug state changes: time thread to= last words.
-  { mkdir -p "/tmp/tmux-agents-$(id -u)" && printf '%s %s to=%s %s\n' "$(date '+%F %T')" "$thread" "${to:--}" "${last_words:-}" \
+  { mkdir -p "/tmp/tmux-agents-$(id -u)" && printf '%s %s to=%s %s%s\n' "$(date '+%F %T')" "$thread" "${to:--}" "${last_words:-}" "$rebound" \
       >> "/tmp/tmux-agents-$(id -u)/notify.log"; } 2>/dev/null || true
-  pane="$(tmux list-panes -a -F '#{pane_id} #{@codex_thread}' | awk -v t="$thread" '$2 == t { print $1; exit }')"
+  # A verified stable identity is authoritative, even when threads duplicate.
+  pane="$notify_target"
   if [ -z "$pane" ]; then
-    # A late notification from a closed conversation must not bind to a
-    # new agent that has reused its label. Records also survive renames.
-    for rec in "$(sessions_dir)"/*; do
-      if [ ! -f "$rec" ] || ! valid_agent_id "${rec##*/}"; then continue; fi
-      [ "$(record_get "${rec##*/}" id)" = "$thread" ] || continue
-      pane="$(find_pane_by_id "${rec##*/}")"
-      if [ -n "$notify_target" ]; then
-        # A fresh launcher identity may resume a closed conversation. Its
-        # verified live ID outranks closed records with no live pane,
-        # but every live record owner must still agree with that identity.
-        if [ -z "$pane" ]; then
-          [ -n "$(record_get "${rec##*/}" closed)" ] || exit 0
-        else
-          [ "$pane" = "$notify_target" ] || exit 0
-        fi
-        continue
-      fi
-      [ -n "$pane" ] || exit 0
-      tmux set-option -p -t "$pane" @codex_thread "$thread"
-      break
-    done
-  fi
-  if [ -n "$notify_agent_id" ]; then
-    # The launcher has no request header on its first ordinary turn. Bind
-    # only its stable identity, never a reused pane or display label.
-    [ -z "$pane" ] || [ "$pane" = "$notify_target" ] || exit 0
-    tmux set-option -p -t "$notify_target" @codex_thread "$thread"
-    pane="$notify_target"
-  fi
-  if [ -z "$pane" ] && [ -n "$to" ]; then
-    p="$(find_pane "$to")"
-    if [ -n "$p" ] && [ -z "$(tmux show-options -pqv -t "$p" @codex_thread)" ]; then
-      known="$(record_get "$(pane_agent_id "$p")" id)"
-      [ -n "$known" ] && [ "$known" != "$thread" ] || tmux set-option -p -t "$p" @codex_thread "$thread"
+    pane="$(tmux list-panes -a -F '#{pane_id} #{@codex_thread}' | awk -v t="$thread" '$2 == t { print $1; exit }')"
+    if [ -z "$pane" ]; then
+      # A late notification from a closed conversation must not bind to a
+      # new agent that has reused its label. Records also survive renames.
+      for rec in "$(sessions_dir)"/*; do
+        if [ ! -f "$rec" ] || ! valid_agent_id "${rec##*/}"; then continue; fi
+        [ "$(record_get "${rec##*/}" id)" = "$thread" ] || continue
+        pane="$(find_pane_by_id "${rec##*/}")"
+        [ -n "$pane" ] || exit 0
+        tmux set-option -p -t "$pane" @codex_thread "$thread"
+        break
+      done
     fi
+    if [ -z "$pane" ] && [ -n "$to" ]; then
+      p="$(find_pane "$to")"
+      if [ -n "$p" ] && [ -z "$(tmux show-options -pqv -t "$p" @codex_thread)" ]; then
+        known="$(record_get "$(pane_agent_id "$p")" id)"
+        [ -n "$known" ] && [ "$known" != "$thread" ] || tmux set-option -p -t "$p" @codex_thread "$thread"
+      fi
+    fi
+    pane="$(tmux list-panes -a -F '#{pane_id} #{@codex_thread}' | awk -v t="$thread" '$2 == t { print $1; exit }')"
   fi
-  pane="$(tmux list-panes -a -F '#{pane_id} #{@codex_thread}' | awk -v t="$thread" '$2 == t { print $1; exit }')"
   [ -n "$pane" ] || exit 0
   # The thread id is the session id: record it so the sub agent can be
   # reopened once closed (tmux-spawn --resume).
@@ -261,7 +252,7 @@ fi
 
 case "$turn" in
   end)
-    stopped="$(turn_end "$pane" "$notify_json")"
+    stopped="$(turn_end "$pane" "$notify_json" "${notify_rebound:-}")"
     if [ -n "$stopped" ]; then
       me="$(pane_name "$pane")" doing="$(tmux show-option -pqv -t "$pane" @activity)"
       "$(dirname "$0")/tmux-ask" --system-notice "$stopped" \

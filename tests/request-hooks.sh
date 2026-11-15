@@ -41,6 +41,7 @@ reset_case() {
   done
   tmux set -p -t %1 @state idle
   record_set "$receiver_id" kind codex
+  record_set "$receiver_id" id ""
 }
 start() {
   /usr/bin/perl -CA -MJSON::PP -e 'print encode_json({prompt=>$ARGV[0], (@ARGV > 1 ? (session_id=>$ARGV[1]) : ())})' "$@" |
@@ -111,6 +112,7 @@ check 'system notice starts Codex' test "$(st @state)" = working
 check 'system notice never fills slot' test -z "$(st @owed)"
 
 reset_case; send
+record_set "$receiver_id" id turn-test
 report --codex-notify '{"type":"agent-turn-complete","thread-id":"turn-test"}'
 check 'notify without inputs ends turn' test "$(st @state)" = "done"
 check 'notify without inputs does not settle' test -z "$(st @owed_settled)"
@@ -321,4 +323,113 @@ turn_message_delivered %1 "$(pane_agent_id %0)" request ''
 notify '[request from sender to receiver via tmux-ask]'
 check 'legacy tokenless delivery can finish' test "$(st @state)" = "done"
 check 'legacy tokenless delivery cannot settle' test -z "$(st @owed_settled)"
+# A member working below the receiver defers the stop reminder, not the debt.
+reset_case
+child="$(tmux new-window -d -P -F '#{pane_id}' cat)"
+tmux set -p -t "$child" @agent child-member
+tmux set -p -t "$child" @parent %1
+tmux set -p -t "$child" @member 1
+tmux set -p -t "$child" @tracked 1
+tmux set -p -t "$child" @state working
+send
+latest="$(st @last_delivered)"
+notice_count="$(tmux capture-pane -p -S - -t %0 | rg -c 'stopped without replying' || true)"
+notify "$(body request "$latest")"
+check 'working member leaves reminder unnotified' test -z "$(st @owed_notified)"
+check 'working member retains settled obligation' test "$(st @owed_settled)" = 1
+check 'working member sends no stop notice' test "$(tmux capture-pane -p -S - -t %0 | rg -c 'stopped without replying' || true)" = "$notice_count"
+tmux set -p -t "$child" @state "done"
+notify "$(body request "$latest")"
+check 'child completion allows later reminder' test "$(st @owed_notified)" = 1
+notice_count="$(tmux capture-pane -p -S - -t %0 | rg -c 'stopped without replying' || true)"
+notify "$(body request "$latest")"
+check 'deferred reminder still sends once' test "$(tmux capture-pane -p -S - -t %0 | rg -c 'stopped without replying' || true)" = "$notice_count"
+# Descendant scans skip untracked/shell/dead candidates and handle deeper trees.
+tmux set -p -t "$child" @state working
+tmux set -p -t "$child" @tracked 0
+check 'untracked descendant does not defer' test -z "$(pane_has_working_descendant %1 && echo yes || true)"
+tmux set -p -t "$child" @tracked 1
+tmux set -p -t "$child" @shell 1
+check 'shell descendant does not defer' test -z "$(pane_has_working_descendant %1 && echo yes || true)"
+tmux set -pu -t "$child" @shell
+grandchild="$(tmux new-window -d -P -F '#{pane_id}' cat)"
+tmux set -p -t "$grandchild" @agent grandchild
+tmux set -p -t "$grandchild" @parent "$child"
+tmux set -p -t "$grandchild" @tracked 1
+tmux set -p -t "$grandchild" @state working
+tmux set -p -t "$child" @state idle
+check 'working grandchild defers through idle member' pane_has_working_descendant %1
+tmux set -p -t "$child" @parent "$grandchild"
+check 'unrelated parent cycle terminates' test -z "$(pane_has_working_descendant %1 && echo yes || true)"
+tmux set -p -t "$child" @parent %1
+tmux set -p -t "$grandchild" remain-on-exit on
+tmux respawn-pane -k -t "$grandchild" /usr/bin/true
+for ((attempt=0; attempt<100; attempt++)); do
+  [ "$(tmux display-message -p -t "$grandchild" '#{pane_dead}')" != 1 ] || break
+  sleep .05
+done
+check 'dead working descendant does not defer' test -z "$(pane_has_working_descendant %1 && echo yes || true)"
+tmux kill-window -t "$grandchild"
+tmux kill-window -t "$child"
+
+reset_case
+tmux set -p -t %1 @activity 'idle, waiting for a task'
+start 'new task'
+check 'prompt turn clears stale activity' test -z "$(st @activity)"
+tmux set -p -t %1 @activity 'current turn report'
+report --tool-start
+check 'tool start preserves activity' test "$(st @activity)" = 'current turn report'
+send
+check 'delivery turn clears stale activity' test -z "$(st @activity)"
+report 'new progress report'
+check 'progress source preserves fresh activity' test "$(st @activity)" = 'new progress report'
+# /new after a delivered request must not keep the new conversation working.
+for parent_mode in child launcher; do
+  reset_case
+  if [ "$parent_mode" = child ]; then tmux set -p -t %1 @parent %0
+  else tmux set -pu -t %1 @parent; fi
+  tmux set -p -t %1 @codex_thread "before-clear-$$"
+  record_set "$receiver_id" id "before-clear-$$"
+  send
+  old_token="$(st @last_delivered)"
+  owed_before="$(tmux display-message -p -t %1 '#{@owed_to}|#{@owed_msg}|#{@owed_at}|#{@owed}|#{@owed_settled}|#{@owed_notified}|#{@owed_asked}')"
+  notice_before="$(tmux capture-pane -p -S - -t %0 | rg -c 'stopped without replying' || true)"
+  notify 'fresh direct user prompt after /new'
+  wanted="done"; [ "$parent_mode" != launcher ] || wanted=idle
+  check "$parent_mode rebound finishes the new turn" test "$(st @state)" = "$wanted"
+  check "$parent_mode rebound adopts pane thread" test "$(st @codex_thread)" = turn-test
+  check "$parent_mode rebound adopts resume record" test "$(record_get "$receiver_id" id)" = turn-test
+  check "$parent_mode rebound discards absent prior token" test -z "$(st @last_delivered)"
+  check "$parent_mode rebound preserves owed slot verbatim" test "$(tmux display-message -p -t %1 '#{@owed_to}|#{@owed_msg}|#{@owed_at}|#{@owed}|#{@owed_settled}|#{@owed_notified}|#{@owed_asked}')" = "$owed_before"
+  check "$parent_mode rebound sends no stop reminder" test "$(tmux capture-pane -p -S - -t %0 | rg -c 'stopped without replying' || true)" = "$notice_before"
+  report 'next direct turn'
+  notify 'second direct user prompt'
+  check "$parent_mode same-thread empty-token end still finishes" test "$(st @state)" = "$wanted"
+  send
+  new_token="$(st @last_delivered)"
+  check "$parent_mode later delivery starts a fresh token" test "$new_token" != "$old_token" -a -n "$new_token"
+  notify 'does not contain newer request'
+  check "$parent_mode unchanged-thread stale guard still holds" test "$(st @state)" = working
+  notify "$(body request "$new_token")"
+  check "$parent_mode matching later notify finishes" test "$(st @state)" = "$wanted"
+done
+tmux set -p -t %1 @parent %0
+# Even a pre-set settled slot must not notify on the rebound call.
+reset_case
+send
+tmux set -p -t %1 @codex_thread "settled-before-clear-$$"
+record_set "$receiver_id" id "settled-before-clear-$$"
+tmux set -p -t %1 @owed_settled 1
+old_token="$(st @last_delivered)"
+notify "$(body request "$old_token")"
+check 'rebound retains a token present in its inputs' test "$(st @last_delivered)" = "$old_token"
+check 'rebound preserves pre-existing settled marker' test "$(st @owed_settled)" = 1
+check 'rebound does not notify even a previously settled slot' test -z "$(st @owed_notified)"
+reset_case
+send
+tmux set -p -t %1 @codex_thread "missing-inputs-before-$$"
+record_set "$receiver_id" id "missing-inputs-before-$$"
+"$B/tmux-agent-report" --agent-id "$receiver_id" --codex-notify '{"type":"agent-turn-complete","thread-id":"missing-inputs-new","last-assistant-message":"done"}'
+check 'rebound without input array finishes' test "$(st @state)" = "done"
+check 'rebound without input array drops prior token' test -z "$(st @last_delivered)"
 [ "$fail" = 0 ]

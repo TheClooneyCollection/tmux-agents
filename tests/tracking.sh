@@ -104,10 +104,14 @@ plain_json='{"type":"agent-turn-complete","thread-id":"plain-thread","input-mess
 [ "$(tmux show -pqv -t "$plain" @state)" = idle ]
 [ -z "$(tmux show -pqv -t "$plain" @attention_since)" ]
 [ "$(record_get "$plain_id" id)" = plain-thread ]
-# A side-thread title and a different conversation cannot replace the binding.
+# A title side thread stays inert; /new adopts the new conversation on this identity.
 "$B/tmux-agent-report" --agent-id "$plain_id" --codex-notify '{"type":"agent-turn-complete","thread-id":"side-thread","last-assistant-message":"{\"title\":\"Title\"}"}'
-"$B/tmux-agent-report" --agent-id "$plain_id" --codex-notify '{"type":"agent-turn-complete","thread-id":"wrong-thread","last-assistant-message":"done"}'
 [ "$(tmux show -pqv -t "$plain" @codex_thread)" = plain-thread ]
+"$B/tmux-agent-report" --from plain-codex 'working after /new' >/dev/null
+"$B/tmux-agent-report" --agent-id "$plain_id" --codex-notify '{"type":"agent-turn-complete","thread-id":"wrong-thread","last-assistant-message":"done"}'
+[ "$(tmux show -pqv -t "$plain" @codex_thread)" = wrong-thread ]
+[ "$(record_get "$plain_id" id)" = wrong-thread ]
+[ "$(tmux show -pqv -t "$plain" @state)" = idle ]
 # Same pane and label, different stable identity: a late callback stays inert.
 tmux set -pu -t "$plain" @agent_id
 tmux set -pu -t "$plain" @codex_thread
