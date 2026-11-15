@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.23.2 (2026-11-15)
+
+- The `chain-reset` skill and `tmux-clear-context` are removed: the user clears agents by hand and tells the main it is the main of an existing chain. `install.sh` removes the stale `tmux-clear-context` and `chain-reset` links left by v1.23.0 and v1.23.1.
+- The agent-chain skill says what a restarted main, secondary or worker does: find its members with `tmux-peers` and re-brief them on their roles and the current goal instead of starting a new chain.
+- The Claude session id recorded on turn start (v1.23.0) stays.
+
 ## v1.23.1 (2026-11-15)
 
 - `tmux-clear-context` treats Claude and Codex dim prompt suggestions and placeholders as an empty prompt, so an idle agent showing a gray history suggestion or `Ask Codex to do anything` can be cleared; non-dim drafts and a cursor past the input start are still refused.
