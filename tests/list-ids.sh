@@ -80,14 +80,23 @@ check 'same-label live parent cannot steal closed descendant window' lacks "$tmp
 check 'preview names selected record' has "$tmp/preview" duplicate
 check 'preview may show selected ID' has "$tmp/preview" a000000000002
 check 'preview resolves current parent label' has "$tmp/preview" main
-# Closed references are IDs; default peers resolves labels, opt-in includes IDs.
+# Without a connected same-name peer, closed IDs render as labels or opt-in IDs.
 tmux set -p -t %0 @closed 'a000000000001 a000000000002'
-tmux set -p -t %0 @peers "$other"
+tmux set -pu -t %0 @peers
 "$B/tmux-peers" --from main >"$tmp/peers"
 check 'default peers closed labels' has "$tmp/peers" 'duplicate, duplicate'
 check 'default peers hides IDs' lacks "$tmp/peers" a000000000001
 "$B/tmux-peers" --ids --from main >"$tmp/peers-ids"
-for aid in "$main_id" "$other_id" a000000000001 a000000000002; do check "peers --ids includes $aid" has "$tmp/peers-ids" "$aid"; done
+for aid in "$main_id" a000000000001 a000000000002; do check "peers --ids includes $aid" has "$tmp/peers-ids" "$aid"; done
+# A connected live peer owns its label, including when IDs are requested.
+tmux set -p -t %0 @peers "$other"
+"$B/tmux-peers" --from main >"$tmp/peers"
+check 'live same-name peer hides closed warnings' lacks "$tmp/peers" 'closed by user:'
+check 'live same-name peer remains listed' has "$tmp/peers" duplicate
+"$B/tmux-peers" --ids --from main >"$tmp/peers-ids"
+check 'peers --ids also hides same-name closed warnings' lacks "$tmp/peers-ids" 'closed by user:'
+for aid in "$main_id" "$other_id"; do check "live peers --ids includes $aid" has "$tmp/peers-ids" "$aid"; done
+for aid in a000000000001 a000000000002; do check "live peers --ids hides closed $aid" lacks "$tmp/peers-ids" "$aid"; done
 # Run the real picker acceptance path with a deterministic fzf selection.
 LIST_IDS_REAL_TMUX="$(command -v tmux)"
 export LIST_IDS_REAL_TMUX LIST_IDS_UI_LOG="$tmp/ui-log"
