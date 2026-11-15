@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# Clear a stopped descendant's conversation without delivering a chat message.
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+. "$here/lib.sh"
+FROM_PANE="" target=""
+usage() {
+  echo 'usage: tmux-clear-context --from ME PEER'
+  echo 'Requires --from for all callers. Clears an idle Claude/Codex descendant at an empty prompt.'
+}
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --from) [ "$#" -ge 2 ] && [ -n "$2" ] || die '--from needs an agent'; FROM_PANE="$2"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    -*) die "unknown option '$1'" ;;
+    *) [ -z "$target" ] || die 'only one agent name is allowed'; target="$1"; shift ;;
+  esac
+done
+[ -n "$FROM_PANE" ] || die '--from is required'
+[ -n "$target" ] || { usage; exit 1; }
+require_tmux
+ensure_agent_ids
+owner="$(self_pane)"
+pane="$(find_pane "$target")"
+if [ -z "$pane" ] || ! pane_alive "$pane"; then die "no agent named '$target'"; fi
+pane_is_descendant "$pane" "$owner" || die "'$target' is not your descendant; you can only clear your sub agents and their descendants"
+identity="$(pane_agent_id "$pane")"
+kind="$(record_get "$identity" kind)"
+resolve_codex_homes codex_homes
+full_agent_kind "$kind" || die "'$target' is not a Claude or Codex agent"
+command=/new
+[ "$kind" != claude ] || command=/clear
+QUEUE_DIR="$(message_queue_dir)"
+
+# Re-enter under the same kernel lock as queued deliveries. Pin the stable
+# identities across this boundary so replacement panes never receive input.
+if [ -z "${TMUX_CLEAR_CONTEXT_ID:-}" ]; then
+  status=0
+  with_lock "$QUEUE_DIR/.pane-${pane#%}.lock" env \
+    TMUX_CLEAR_CONTEXT_ID="$identity" TMUX_CLEAR_CONTEXT_OWNER="$(pane_agent_id "$owner")" \
+    "$here/tmux-clear-context" --from "$FROM_PANE" "$target" || status=$?
+  [ "$status" != 75 ] || die "$target has a message delivery in progress"
+  exit "$status"
+fi
+check_ready() {
+  [ "$(pane_agent_id "$pane")" = "$TMUX_CLEAR_CONTEXT_ID" ] &&
+    [ "$(pane_agent_id "$owner")" = "$TMUX_CLEAR_CONTEXT_OWNER" ] || die "$target identity changed"
+  pane_is_descendant "$pane" "$owner" || die "$target is no longer your descendant"
+  [ "$(tmux show-option -pqv -t "$pane" @state)" != working ] ||
+    die "$target is working: $(tmux show-option -pqv -t "$pane" @activity)"
+  [ "$(tmux display -p -t "$pane" '#{pane_in_mode}')" != 1 ] || die "$target is in copy mode"
+  if user_busy "$pane"; then die "$target has recent user input"; fi
+  if pane_has_queued_messages "$QUEUE_DIR" "$pane"; then die "$target has queued messages"; fi
+}
+ready=0
+for ((attempt=0; attempt<30; attempt++)); do
+  check_ready
+  if { [ "$kind" = claude ] && chain_claude_prompt "$pane" "$identity"; } ||
+     { [ "$kind" != claude ] && chain_codex_prompt "$pane" "$identity"; }; then
+    ready=1; break
+  fi
+  sleep .1
+done
+[ "$ready" = 1 ] || die "$target did not reach an empty prompt"
+check_ready
+if [ "$kind" != claude ]; then
+  tmux set-option -pu -t "$pane" @codex_thread
+  record_set "$identity" id ""
+fi
+tmux send-keys -t "$pane" -l "$command"
+settings_get ask_enter_delay TMUX_ASK_ENTER_DELAY @tmux_agents_ask_enter_delay 0.5
+# settings_get assigns this variable by name.
+# shellcheck disable=SC2154
+sleep "$ask_enter_delay"
+check_ready
+tmux send-keys -t "$pane" Enter
+for key in activity owed_to owed_msg owed_at owed owed_settled owed_notified owed_asked; do
+  tmux set-option -pu -t "$pane" "@$key"
+done
+printf 'cleared %s (%s)\n' "$target" "$command"

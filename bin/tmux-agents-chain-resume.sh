@@ -27,20 +27,6 @@ chain_resume_validate() {
   fi
 }
 
-# Check the cursor's input line, not old prompts in scrollback. A resumed
-# transcript may contain arbitrary prompt-looking output. Never submit into
-# a startup/trust dialog, a replacement pane, or tmux copy mode.
-chain_claude_prompt() {
-  local pane="$1" identity="$2" row screen line
-  [ "$(pane_agent_id "$pane")" = "$identity" ] || return 1
-  [ "$(tmux display -p -t "$pane" '#{pane_in_mode}')" != 1 ] || return 1
-  row="$(tmux display -p -t "$pane" '#{cursor_y}')" || return 1
-  screen="$(tmux capture-pane -p -t "$pane")" || return 1
-  line="$(printf '%s\n' "$screen" | sed -n "$((row + 1))p")"
-  [[ $line =~ ^[[:space:]]*❯[[:space:]]*$ ]] ||
-    [[ $line =~ ^[[:space:]]*❯[[:space:]]+Try[[:space:]] ]]
-}
-
 # /rc on an already connected conversation opens its management dialog.
 # Escape is the dialog's documented Continue action, not a permission choice.
 chain_rc_dialog() {

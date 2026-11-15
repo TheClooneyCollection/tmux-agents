@@ -1629,3 +1629,62 @@ fi
 # shellcheck source=bin/turn-state.sh
 . "$_turn_module"
 unset _turn_module
+
+# Kernel advisory locks cannot be stranded by SIGKILL. The owner PID is
+# recorded for diagnosis; the inherited descriptor, not PID reuse or an
+# unlink/check race, proves ownership. Never unlink these lock files.
+with_lock() {
+  local path="$1" blocking=0; shift
+  if [ "${1:-}" = --blocking ]; then blocking=1; shift; fi
+  mkdir -p "$(dirname "$path")"
+  perl -MFcntl=:flock -MIO::Handle -e '
+    $^F = 255;
+    my $path = shift @ARGV;
+    my $blocking = shift @ARGV;
+    open(my $lock, ">>", $path) or die "$path: $!";
+    flock($lock, LOCK_EX | ($blocking ? 0 : LOCK_NB)) or exit 75;
+    truncate($lock, 0) or die "truncate: $!";
+    seek($lock, 0, 0); print $lock "$$\n";
+    $lock->flush();
+    exec @ARGV; die "exec: $!";
+  ' "$path" "$blocking" "$@"
+}
+
+# Shared with tmux-ask: pane IDs are only unique within one server.
+message_queue_dir() {
+  local message_socket="${TMUX:-default}"
+  printf '%s\n' "/tmp/tmux-agents-$(id -u)/queue/$(basename "${message_socket%%,*}")"
+}
+
+pane_has_queued_messages() {
+  local dir="$1" pane="$2" file
+  for file in "$dir"/*-"${pane#%}".msg "$dir"/*-"${pane#%}".sending "$dir"/*-"${pane#%}".msg.sending; do
+    [ ! -f "$file" ] || return 0
+  done
+  return 1
+}
+
+# Check the cursor's input line, not old prompts in scrollback. A resumed
+# transcript may contain arbitrary prompt-looking output. Never submit into
+# a startup/trust dialog, a replacement pane, or tmux copy mode.
+chain_claude_prompt() {
+  local pane="$1" identity="$2" row screen line
+  [ "$(pane_agent_id "$pane")" = "$identity" ] || return 1
+  [ "$(tmux display -p -t "$pane" '#{pane_in_mode}')" != 1 ] || return 1
+  row="$(tmux display -p -t "$pane" '#{cursor_y}')" || return 1
+  screen="$(tmux capture-pane -p -t "$pane")" || return 1
+  line="$(printf '%s\n' "$screen" | sed -n "$((row + 1))p")"
+  [[ $line =~ ^[[:space:]]*❯[[:space:]]*$ ]] ||
+    [[ $line =~ ^[[:space:]]*❯[[:space:]]+Try[[:space:]] ]]
+}
+
+# Codex input uses a different glyph; accept only an empty cursor row.
+chain_codex_prompt() {
+  local pane="$1" identity="$2" row screen line
+  [ "$(pane_agent_id "$pane")" = "$identity" ] || return 1
+  [ "$(tmux display -p -t "$pane" '#{pane_in_mode}')" != 1 ] || return 1
+  row="$(tmux display -p -t "$pane" '#{cursor_y}')" || return 1
+  screen="$(tmux capture-pane -p -t "$pane")" || return 1
+  line="$(printf '%s\n' "$screen" | sed -n "$((row + 1))p")"
+  [[ $line =~ ^[[:space:]]*›[[:space:]]*$ ]]
+}

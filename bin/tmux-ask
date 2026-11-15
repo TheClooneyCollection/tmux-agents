@@ -68,8 +68,7 @@ deliver() {
 # them too. Per server because pane ids repeat across servers: a message
 # queued for %1 on one must never go to %1 on another. Names start with a
 # timestamp, so sorting gives the send order.
-queue_socket="${TMUX:-default}"
-QUEUE_DIR="/tmp/tmux-agents-$(id -u)/queue/$(basename "${queue_socket%%,*}")"
+QUEUE_DIR="$(message_queue_dir)"
 
 # Metadata is data, never shell code. Legacy bodies supply missing identities.
 queue_info() {
@@ -112,26 +111,6 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-
-# Kernel advisory locks cannot be stranded by SIGKILL. The owner PID is
-# recorded for diagnosis; the inherited descriptor, not PID reuse or an
-# unlink/check race, proves ownership. Never unlink these lock files.
-with_lock() {
-  local path="$1" blocking=0; shift
-  if [ "${1:-}" = --blocking ]; then blocking=1; shift; fi
-  mkdir -p "$(dirname "$path")"
-  perl -MFcntl=:flock -MIO::Handle -e '
-    $^F = 255;
-    my $path = shift @ARGV;
-    my $blocking = shift @ARGV;
-    open(my $lock, ">>", $path) or die "$path: $!";
-    flock($lock, LOCK_EX | ($blocking ? 0 : LOCK_NB)) or exit 75;
-    truncate($lock, 0) or die "truncate: $!";
-    seek($lock, 0, 0); print $lock "$$\n";
-    $lock->flush();
-    exec @ARGV; die "exec: $!";
-  ' "$path" "$blocking" "$@"
-}
 
 # Called under the pane lock. Keep the oldest escalated message visible
 # until the last such message has gone, including multiple queued sends.
