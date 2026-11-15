@@ -230,5 +230,20 @@ paneless_hook() { ! "$B/tmux-agent-report" --tool-end </dev/null 2>/dev/null; }
 check "tool hook on a missing pane is a no-op" gone_pane_hook
 check "tool hook needs a pane" paneless_hook
 
+# Startup trust is a permission overlay, not a model turn or explicit question.
+reset
+identity="$(pane_agent_id %1)"
+_agent_work %1 startup-perm on '' "$identity"
+check "startup trust stops work clock" test -z "$(st %1 @turn_start)"
+check "startup trust sets permission" test -n "$(st %1 @perm_since)"
+"$B/tmux-agent-report" --from kid --needs-you 'choose region after startup' >/dev/null
+_agent_work %1 startup-perm '' '' "$identity"
+expect "startup cleanup preserves explicit attention" needs_you
+check "startup cleanup preserves new activity" test "$(st %1 @activity)" = 'choose region after startup'
+reset
+_agent_work %1 startup-perm on '' "$identity"
+"$B/tmux-agent-report" --pane %1 --perm on
+_agent_work %1 startup-perm '' '' "$identity"
+check "new explicit permission retains ownership at same timestamp" test -n "$(st %1 @perm_since)"
 
 exit "$fail"

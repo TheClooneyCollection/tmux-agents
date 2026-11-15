@@ -204,6 +204,12 @@ if [ "${1:-}" = "--run" ]; then
   [ "$agent" != codex ] || unset CODEX_HOME
   build_agent_command "$agent" spawn "$sid" "$mode"
   agent_command+=( ${agent_args[@]+"${agent_args[@]}"} )
+  # Folder trust happens before Codex can report or notify. Observe startup
+  # outside the list builder; never answer the dialog for the user.
+  if [ "$agent" != claude ] && full_agent_kind "$agent"; then
+    nohup /bin/bash "$here/tmux-agents-codex-startup.sh" "$TMUX_PANE" "$(pane_agent_id "$TMUX_PANE")" "$$" \
+      </dev/null >/dev/null 2>&1 &
+  fi
   if [ "$split_exit" = shell ]; then
     status=0
     if [ -n "$prompt" ]; then "${agent_command[@]}" "$prompt" || status=$?

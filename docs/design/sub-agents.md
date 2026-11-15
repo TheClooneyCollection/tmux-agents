@@ -136,3 +136,9 @@ A first version parsed `capture-pane` output (Claude's spinner and `⏺ Tool(...
 ## Alerts
 
 The `alert-bell[42]` hook runs `tmux-agents --alert #{session_name} #{window_name}`. For sessions named `agents-*`, it shows `agent <name> needs you (prefix + a)` for 5s on every client that isn't itself viewing an agents session. Bells in unattached sessions still set `window_bell_flag` and fire the hook, which was verified. Codex rings the bell at the end of every turn, so a bell alone doesn't mean the task finished or that the agent is blocked.
+
+## Codex startup trust
+
+Spawned Codex and profiles run a separate read-only startup observer, outside the list build. It checks the visible `Folder access` confirmation and both choices once per second, marks permission through the work-accounting lock, and sends the recorded owner one notice. A real cursor-row prompt ends observation; unknown startup screens are observed for up to two minutes. A recognized trust wait has no time limit. Copy mode suspends screen checks, and pane exit or identity replacement stops observation.
+
+The `@codex_startup_wait` marker owns only its permission timestamp and default activity. Cleanup checks the stable agent ID under the accounting lock, preserves later reports and other permission timestamps, and never changes semantic state. No keys are sent. This does not restore Codex runtime permission hooks, which can mistake internal auto-review for user attention.

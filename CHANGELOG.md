@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Spawned Codex helpers and profiles waiting at the startup folder trust confirmation now show permission attention, pause work timing, and notify their parent once. Trust remains a manual user choice.
+
 ## v1.23.2 (2026-11-15)
 
 - The `chain-reset` skill and `tmux-clear-context` are removed: the user clears agents by hand and tells the main it is the main of an existing chain. `install.sh` removes the stale `tmux-clear-context` and `chain-reset` links left by v1.23.0 and v1.23.1.

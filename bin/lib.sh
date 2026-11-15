@@ -910,19 +910,20 @@ _agent_work() {
   mkdir -p "$d"
   perl -MFcntl=:flock -e '
     use strict; use warnings;
-    my ($dir, $pane, $op, $value, $now) = @ARGV;
+    my ($dir, $pane, $op, $value, $now, $identity) = @ARGV;
     die "invalid pane" unless $pane =~ /^%[0-9]+$/;
     die "invalid clock" if length($now) && $now !~ /^[0-9]+$/;
     open(my $lock, ">>", "$dir/.work-$pane.lock") or die "$!";
     flock($lock, LOCK_EX) or die "$!";
     $now = time unless length $now;
-    my @keys = qw(state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored agent_id agent attention_since activity);
+    my @keys = qw(state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored agent_id agent attention_since codex_startup_wait activity);
     my $format = "#{pane_id}\t" . join("\t", map { "\#{\@$_}" } @keys);
     open(my $in, "-|", "tmux", "display-message", "-p", "-t", $pane, $format) or die "$!";
     my $row = do { local $/; <$in> } // ""; close($in); chomp $row;
     my ($found, @vals) = split /\t/, $row, scalar(@keys)+1;
     exit 0 unless $found eq $pane;
     my %v; @v{@keys} = @vals;
+    exit 0 if length($identity) && ($v{agent_id} // "") ne $identity;
     my %before = %v;
     sub number { defined($_[0]) && $_[0] =~ /^[0-9]+$/ }
     sub effective {
@@ -964,9 +965,25 @@ _agent_work() {
         $v{state} = $value if length($value);
         $v{perm_since} = "" if $op eq "end";
       }
+      elsif ($op eq "startup-perm") {
+        my $reason = "waiting for folder trust confirmation";
+        if (length($value)) {
+          unless ($v{perm_since}) {
+            $v{perm_since} = $v{codex_startup_wait} = $now;
+            $v{activity} = $reason unless length($v{activity} // "");
+          }
+        } else {
+          $v{perm_since} = "" if $v{codex_startup_wait} &&
+            ($v{perm_since} // "") eq $v{codex_startup_wait};
+          $v{codex_startup_wait} = "";
+          $v{activity} = "" if ($v{activity} // "") eq $reason;
+        }
+      }
       elsif ($op eq "perm" || $op eq "message") {
         my $key = $op eq "perm" ? "perm_since" : "msg_waiting_since";
         die "invalid wait timestamp" if length($value) && !number($value);
+        # An explicit permission hook takes ownership from startup detection.
+        $v{codex_startup_wait} = "" if $op eq "perm";
         # Permission on repeats must not reset its attention timestamp.
         $v{$key} = $op eq "perm" && length($value) && $v{$key} ? $v{$key} : $value;
       }
@@ -1041,7 +1058,7 @@ _agent_work() {
       print $out "$_=$r{$_}\n" for sort keys %r;
       close($out) or die "$!"; rename($tmp, "$dir/$id") or die "$!";
     }
-  ' "$d" "$1" "$2" "$3" "$4"
+  ' "$d" "$1" "$2" "$3" "$4" "${5:-}"
 }
 
 # Takeover and exit share state cleanup; only takeover retains connections.
@@ -1053,7 +1070,7 @@ clear_agent() {
     [ "$keep_connections" = 1 ] || remove_word "$other" @peers "$pane"
     [ "$(tmux show-options -pqv -t "$other" @parent)" != "$pane" ] || tmux set-option -pu -t "$other" @parent
   done
-  for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored activity attention_since explicit_needs_you asking codex_thread resume_shell turn_began last_delivered owed_to owed_msg owed_at owed owed_settled owed_notified owed_asked; do
+  for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since codex_startup_wait msg_waiting_since work_closed work_restored activity attention_since explicit_needs_you asking codex_thread resume_shell turn_began last_delivered owed_to owed_msg owed_at owed owed_settled owed_notified owed_asked; do
     case "$key" in agent|peers|peer_names) [ "$keep_connections" != 1 ] || continue ;; esac
     tmux set-option -pu -t "$pane" "@$key" 2>/dev/null || true
   done
