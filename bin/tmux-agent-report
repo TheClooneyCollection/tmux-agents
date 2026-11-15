@@ -134,7 +134,9 @@ prompt_kind() {
       }
       last if $kind eq "local";
     }
-    print $kind;
+    my $session = $j->{session_id} // "";
+    $session = "" if ref($session) || $session !~ /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i;
+    print join("\x1f", $kind, $session);
   '
 }
 
@@ -268,8 +270,18 @@ case "$turn" in
     fi
     exit 0 ;;
   start)
-    prompt=local
-    if [ ! -t 0 ]; then prompt="$(prompt_kind)"; fi
+    prompt=local session_id=""
+    if [ ! -t 0 ]; then
+      fields="$(prompt_kind)"
+      IFS=$'\x1f' read -r prompt session_id <<< "$fields"
+    fi
+    if [ -n "$session_id" ]; then
+      n="$(pane_agent_id "$pane")"
+      if [ -n "$n" ] && [ "$(record_get "$n" kind)" = claude ] &&
+          [ "$(record_get "$n" id)" != "$session_id" ]; then
+        record_set "$n" id "$session_id"
+      fi
+    fi
     turn_begin "$pane" "$prompt" prompt
     exit 0 ;;
 esac

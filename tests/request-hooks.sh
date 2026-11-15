@@ -43,7 +43,7 @@ reset_case() {
   record_set "$receiver_id" kind codex
 }
 start() {
-  /usr/bin/perl -CA -MJSON::PP -e 'print encode_json({prompt=>$ARGV[0]})' "$1" |
+  /usr/bin/perl -CA -MJSON::PP -e 'print encode_json({prompt=>$ARGV[0], (@ARGV > 1 ? (session_id=>$ARGV[1]) : ())})' "$@" |
     "$B/tmux-agent-report" --pane %1 --turn-start
 }
 notify() {
@@ -210,6 +210,32 @@ report --needs-you question
 msg="$(body notice m123456789abc)"
 start "<pasted_content id=\"wrapped\">$msg</pasted_content id=\"wrapped\">"
 check 'wrapped notice preserves attention' test "$(st @state)" = needs_you
+
+# After Claude clears context, resume uses the next prompt hook's session ID.
+reset_case; record_set "$receiver_id" kind claude
+old_session=11111111-2222-4333-8444-555555555555
+new_session=AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE
+record_set "$receiver_id" id "$old_session"
+report --needs-you question
+start "$(body notice m123456789abc)" "$new_session"
+check 'Claude new session updates stable record' test "$(record_get "$receiver_id" id)" = "$new_session"
+check 'Claude session update keeps stable identity' test "$(pane_agent_id %1)" = "$receiver_id"
+check 'Claude session update preserves notice attention' test "$(st @state)" = needs_you
+start user "$new_session"
+check 'Claude unchanged session is retained' test "$(record_get "$receiver_id" id)" = "$new_session"
+check 'Claude unchanged session starts ordinary prompt' test "$(st @state)" = working
+for invalid in '' not-a-uuid "${new_session}suffix" "prefix${new_session}" $'11111111-2222-4333-8444-555555555555\nid=bad'; do
+  start user "$invalid"
+  check "Claude invalid session is ignored: $invalid" test "$(record_get "$receiver_id" id)" = "$new_session"
+done
+start user
+check 'Claude missing session retains resume ID' test "$(record_get "$receiver_id" id)" = "$new_session"
+for other_kind in codex custom; do
+  record_set "$receiver_id" kind "$other_kind"
+  start user "$old_session"
+  check "$other_kind hook cannot change resume ID" test "$(record_get "$receiver_id" id)" = "$new_session"
+done
+record_set "$receiver_id" id turn-test
 
 # A notice preserves hook attention as well as explicit attention.
 for agent in claude codex; do
