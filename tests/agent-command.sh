@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Peers/connect use recorded kinds and real process ancestry, not launcher shells.
-# Fake agent processes are symlinks to sleep, never real Claude/Codex binaries.
+# Fake agent processes are symlinks to perl, never real Claude/Codex binaries.
 set -eu
 here="$(cd "$(dirname "$0")/.." && pwd)"
 B="$here/bin"
@@ -11,11 +11,11 @@ tmp="$(mktemp -d "${TMPDIR:-/tmp}/tmux-agent-command.XXXXXX")"
 cleanup() { cleanup_test_server || return; rm -rf "$tmp"; }
 trap cleanup EXIT
 mkdir -p "$tmp/bin space" "$tmp/home" "$tmp/alpha"
-ln -s /bin/sleep "$tmp/bin space/claude"
-ln -s /bin/sleep "$tmp/bin space/codex"
+ln -s /usr/bin/perl "$tmp/bin space/claude"
+ln -s /usr/bin/perl "$tmp/bin space/codex"
 cat >"$tmp/fixture" <<'STUB'
 #!/bin/sh
-"$1/bin space/$2" 600 &
+"$1/bin space/$2" -e 'sleep 600' &
 child=$!
 printf '%s\n' "$child" >"$1/$2.pid"
 printf 'COMMAND STUB READY\n'
