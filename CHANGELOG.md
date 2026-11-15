@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Agent chains follow the `missions` skill when `fleet-command` is installed, using missions and inbox replies for fleet instructions while retaining ordinary tmux messages.
+
 ## v1.21.2 (2026-11-15)
 
 - Hide stale closed-by-user hints in `tmux-peers` when a connected live agent reuses the closed agent's name, while preserving its saved conversation.

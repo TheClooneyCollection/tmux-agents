@@ -92,6 +92,16 @@ The secondary and worker are long-lived members: they stay out of the default su
 
 `tmux-dismiss --from <me> <secondary>` closes the secondary, the worker and the worker's sub agents. Claude/Codex members with resumable conversations can be reopened with `tmux-spawn --resume <name> --from <me>`, preserving membership, or in place from a returned shell with `tmux-spawn --resume-id <id> --here`. Existing chains keep their sub-agent status until restarted; there is no conversion command.
 
+## Fleet Command (when installed)
+
+Check `command -v fleet-command`; if absent, keep the existing chain behavior unchanged with no hard dependency.
+When present, follow the `missions` skill and use your own recorded tmux-agents name: pass `--from NAME` before every subcommand or set `FLEET_AGENT`.
+
+- **Main:** create a mission with `fleet-command mission add "TITLE"`, retain its printed ID and send direction with `fleet-command send SECONDARY "TEXT" --mission ID`; pass the mission ID onward with delegated work.
+- **Secondary:** start each turn with `fleet-command inbox`; update status and owner with `fleet-command mission set ID --status STATUS --owner NAME` and record decisions with `fleet-command log MISSION_ID "TEXT" --kind decision`.
+- **Fleet instructions:** answer with `fleet-command reply ID "ANSWER"` so they leave the inbox; do not use `tmux-ask` for these replies. Keep ordinary tmux messages on the existing message workflow.
+- **Worker:** only append progress, handoff or completion with `fleet-command log MISSION_ID "TEXT" --kind KIND`, choosing `progress`, `handoff` or `done`; the secondary owns status changes.
+
 ## Messages
 
 - For an open design question, the design agent replies with its plan to the secondary, which sends it to the main for review. When the user is present, the main briefly walks them through it and relays their approval; when the user is away, the chain decides and records the decision in the away log. Only after approval does the secondary send the agreed plan to the worker. If implementation shows the plan does not work, the worker stops and reports to the secondary, which decides whether to return to design.

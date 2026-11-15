@@ -6,6 +6,7 @@ Each file: the context, the decision, why, and what was rejected. Name new ones 
 
 | Date | Decision |
 | --- | --- |
+| 2026-11-15 | [Optional fleet missions for agent chains](2026-11-15-fleet-missions.md) |
 | 2026-11-14 | [Retire the request ledger for turn state](2026-11-14-retire-request-ledger.md) |
 | 2026-11-14 | [Spawn arguments on resume](2026-11-14-spawn-resume-arguments.md) |
 | 2026-11-14 | [Resume only the chain main](2026-11-14-chain-main-resume.md) |
