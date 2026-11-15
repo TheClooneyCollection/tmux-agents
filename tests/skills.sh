@@ -3,11 +3,10 @@
 # Uses the repository's single-line name/description frontmatter convention.
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
-[ -s "$here/skills/chain-reset/SKILL.md" ] || { echo 'FAIL  missing chain-reset skill'; exit 1; }
 shopt -s nullglob
 files=("$here"/skills/*/SKILL.md)
-if [ "${#files[@]}" -eq 0 ]; then
-  echo 'FAIL  no skills/*/SKILL.md files'
+if [ "${#files[@]}" -ne 4 ]; then
+  echo "FAIL  expected four skills, found ${#files[@]}"
   exit 1
 fi
 

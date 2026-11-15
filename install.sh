@@ -84,6 +84,23 @@ copy() {
   echo "copied $2"
 }
 
+# A retired entry may be a dangling relative link from a HOME-local install.
+# Resolve its existing parent, never follow or remove a user-owned entry.
+remove_retired_link() {
+  local source="$1" destination="$2" target target_dir source_dir
+  [ -L "$destination" ] || return 0
+  target="$(readlink "$destination")"
+  case "$target" in /*) ;; *) target="${destination%/*}/$target" ;; esac
+  while [ "$target" != / ] && [ "${target%/}" != "$target" ]; do target="${target%/}"; done
+  target_dir="$(cd -P "${target%/*}" 2>/dev/null && pwd)" || return 0
+  source_dir="$(cd -P "${source%/*}" && pwd)" || return 0
+  if [ "$target_dir/${target##*/}" = "$source_dir/${source##*/}" ]; then
+    run rm "$destination"
+  fi
+}
+
+remove_retired_link "$here/bin/tmux-clear-context" "$bin_dir/tmux-clear-context"
+remove_retired_link "$here/skills/chain-reset" "$HOME/.claude/skills/chain-reset"
 # Remove only our retired command link; do not delete a user's own executable.
 if [ -L "$bin_dir/tmux-request-state" ] && [ "$(readlink "$bin_dir/tmux-request-state")" = "$here/bin/tmux-request-state" ]; then
   run rm "$bin_dir/tmux-request-state"
@@ -98,7 +115,6 @@ link "$here/skills/tmux-agents" "$HOME/.claude/skills/tmux-agents"
 link "$here/skills/tmux-agents-setup" "$HOME/.claude/skills/tmux-agents-setup"
 link "$here/skills/tmux-agents-perf" "$HOME/.claude/skills/tmux-agents-perf"
 link "$here/skills/agent-chain" "$HOME/.claude/skills/agent-chain"
-link "$here/skills/chain-reset" "$HOME/.claude/skills/chain-reset"
 
 # Always cover the standard home as well as an explicitly selected account.
 codex_map=''
@@ -117,6 +133,7 @@ for h in "${codex_homes[@]}"; do
   seen_homes+=("$h")
   [ -d "$h" ] || { echo "skipped $h: no such Codex home" >&2; continue; }
   echo "Codex home: $h"
+  remove_retired_link "$here/skills/chain-reset" "$h/skills/chain-reset"
   for skill in "$here"/skills/*; do
     [ -f "$skill/SKILL.md" ] || continue
     link "$skill" "$h/skills/$(basename "$skill")"

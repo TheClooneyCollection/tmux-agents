@@ -140,7 +140,7 @@ warn_broken_skill_links() {
     done
     [ "$duplicate" = 0 ] || continue
     seen+=("$dir")
-    for link in "$dir"/tmux-agents* "$dir"/agent-chain "$dir"/chain-reset; do
+    for link in "$dir"/tmux-agents* "$dir"/agent-chain; do
       if [ -L "$link" ] && [ ! -e "$link" ]; then
         printf 'tmux-agents: warning: broken skill symlink: %s; rerun install.sh from the installation checkout to repair it.\n' "$link" >&2
       fi

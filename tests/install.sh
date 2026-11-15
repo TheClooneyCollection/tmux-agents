@@ -32,7 +32,6 @@ install
 check 'fresh Claude links every skill' all_skills "$HOME/.claude/skills"
 check 'fresh default Codex links every skill' all_skills "$HOME/.codex/skills"
 check 'selected home with spaces links every skill' all_skills "$CODEX_HOME/skills"
-check 'tmux-clear-context command linked' test -x "$BIN_DIR/tmux-clear-context"
 check 'tmux-read command linked' test -x "$BIN_DIR/tmux-read"
 check 'tmux-read rules installed' contains "$CODEX_HOME/rules/tmux-agents.rules" '["tmux-read"]'
 check 'Claude permits tmux-read' contains "$here/integrations/claude/settings.json" 'Bash(tmux-read:*)'
@@ -119,6 +118,17 @@ for skill_home in .claude .codex 'selected home'; do
 done
 check 'link directly under HOME uses relative target' test "$(readlink "$internal_home/tmux-ask")" = .local/share/tmux-agents/bin/tmux-ask
 check 'link directly under HOME resolves' test "$internal_home/tmux-ask" -ef "$checkout/bin/tmux-ask"
+# Retired links produced by earlier HOME-local installs are relative and now
+# dangling, so -ef cannot recognize them after the source has been removed.
+ln -s .local/share/tmux-agents/bin/tmux-clear-context "$internal_home/tmux-clear-context"
+for skill_home in .claude .codex 'selected home'; do
+  ln -s ../../.local/share/tmux-agents/skills/chain-reset "$internal_home/$skill_home/skills/chain-reset"
+done
+internal_install
+check 'retired relative command removed' test ! -L "$internal_home/tmux-clear-context"
+for skill_home in .claude .codex 'selected home'; do
+  check "retired relative $skill_home skill removed" test ! -L "$internal_home/$skill_home/skills/chain-reset"
+done
 # Replace one correct relative link with a correct absolute one, and one with
 # a broken link. A second install preserves the former and repairs the latter.
 ln -sfn "$checkout/skills/agent-chain" "$internal_home/.codex/skills/agent-chain"
@@ -150,6 +160,41 @@ check 'non-codex-prefix profile gets query permission' contains "$tmp/extra/rule
 check 'extra profile gets owned shell permission' contains "$tmp/extra/rules/tmux-agents.rules" 'prefix_rule(pattern=["tmux-shell", "--from"], decision="allow")'
 check 'duplicate home reported once' test "$(grep -Fc "Codex home: $tmp/extra" "$tmp/output")" = 1
 check 'missing home explicitly skipped' contains "$tmp/output" "skipped $tmp/missing: no such Codex home"
+# Upgrade removes only this install's retired links in every discovered home.
+retired_homes=("$HOME/.claude" "$HOME/.codex" "$CODEX_HOME" "$tmp/extra")
+ln -s "$here/bin/tmux-clear-context" "$BIN_DIR/tmux-clear-context"
+for retired_home in "${retired_homes[@]}"; do
+  ln -s "$here/skills/chain-reset" "$retired_home/skills/chain-reset"
+done
+install --dry-run
+check 'retirement dry run reports command removal' contains "$tmp/output" "would: rm $BIN_DIR/tmux-clear-context"
+check 'retirement dry run preserves command link' test -L "$BIN_DIR/tmux-clear-context"
+for retired_home in "${retired_homes[@]}"; do
+  check "retirement dry run preserves $retired_home skill" test -L "$retired_home/skills/chain-reset"
+done
+install
+check 'retired command link removed' test ! -L "$BIN_DIR/tmux-clear-context"
+for retired_home in "${retired_homes[@]}"; do
+  check "retired $retired_home skill removed" test ! -L "$retired_home/skills/chain-reset"
+done
+# Even --force must preserve user files and another checkout's retired links.
+printf 'user executable\n' > "$BIN_DIR/tmux-clear-context"
+mkdir "$HOME/.claude/skills/chain-reset"
+printf 'user skill\n' > "$HOME/.claude/skills/chain-reset/SKILL.md"
+mkdir -p "$tmp/other-install/bin" "$tmp/other-install/skills"
+for retired_home in "$HOME/.codex" "$CODEX_HOME" "$tmp/extra"; do
+  ln -s "$tmp/other-install/skills/chain-reset" "$retired_home/skills/chain-reset"
+done
+install --force
+check 'retirement preserves user command' contains "$BIN_DIR/tmux-clear-context" 'user executable'
+check 'retirement preserves user skill directory' contains "$HOME/.claude/skills/chain-reset/SKILL.md" 'user skill'
+for retired_home in "$HOME/.codex" "$CODEX_HOME" "$tmp/extra"; do
+  check "retirement preserves foreign $retired_home link" test "$(readlink "$retired_home/skills/chain-reset")" = "$tmp/other-install/skills/chain-reset"
+done
+rm "$BIN_DIR/tmux-clear-context"
+ln -s "$tmp/other-install/bin/tmux-clear-context" "$BIN_DIR/tmux-clear-context"
+install --force
+check 'retirement preserves foreign command link' test "$(readlink "$BIN_DIR/tmux-clear-context")" = "$tmp/other-install/bin/tmux-clear-context"
 unset TMUX_AGENTS_CODEX_HOMES
 export PATH="$base_path"
 "$real_tmux" -L "$sock" -f /dev/null new-session -d -s work -c "$tmp" /bin/cat

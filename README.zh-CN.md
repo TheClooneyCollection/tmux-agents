@@ -71,7 +71,7 @@ cd tmux-agents
 `install.sh` 会：
 
 - 把 `tmux-*` 命令链接到 `~/.local/bin`（用 `BIN_DIR` 修改）
-- 把 `tmux-agents`、`tmux-agents-setup`、`tmux-agents-perf`、`agent-chain` 和 `chain-reset` 五个 skill 链接到 `~/.claude/skills/` 和你的 Codex home
+- 把 `tmux-agents`、`tmux-agents-setup`、`tmux-agents-perf` 和 `agent-chain` 四个 skill 链接到 `~/.claude/skills/` 和你的 Codex home
 - 复制 Codex rules（Codex 会忽略符号链接的 `.rules` 文件）
 - 保留链接目标处的真实文件和目录；加 `--force` 时，先备份为 `DEST.bak.YYYYmmddHHMMSS`，再建立链接
 
@@ -174,7 +174,6 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 | `tmux-spawn` | 在隐藏窗口或 `--split` 分屏中启动子 agent，或用 `--member` 创建长期成员 |
 | `tmux-agents` | agent 列表（`prefix + a`）；`start` 启动可跟踪的 agent 或 chain；`chain-config` 查询角色选择；`chain` 选择项目；`main-sequence` 打开配置的项目窗口 |
 | `tmux-peers`、`tmux-peek` | 查看连接关系；读取另一个 pane 的内容 |
-| `tmux-clear-context --from ME PEER` | 清空已就绪后代的上下文；用 `chain-reset` 重新交代任务 |
 | `tmux-dismiss`、`tmux-disconnect` | 关闭子 agent；断开 pane 之间的连接 |
 | `tmux-agent-report` | 报告进度，显示在状态行上 |
 

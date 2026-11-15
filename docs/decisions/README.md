@@ -6,7 +6,7 @@ Each file: the context, the decision, why, and what was rejected. Name new ones 
 
 | Date | Decision |
 | --- | --- |
-| 2026-11-15 | [Clear and re-brief an existing chain](2026-11-15-chain-reset.md) |
+| 2026-11-15 | [Clear and re-brief an existing chain (superseded: manual clear and re-brief)](2026-11-15-chain-reset.md) |
 | 2026-11-15 | [Commands in configured project windows](2026-11-15-project-window-commands.md) |
 | 2026-11-15 | [Optional fleet missions for agent chains](2026-11-15-fleet-missions.md) |
 | 2026-11-14 | [Retire the request ledger for turn state](2026-11-14-retire-request-ledger.md) |

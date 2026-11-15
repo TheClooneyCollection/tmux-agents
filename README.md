@@ -71,7 +71,7 @@ cd tmux-agents
 `install.sh`:
 
 - links the `tmux-*` commands into `~/.local/bin` (`BIN_DIR` to change)
-- links the `tmux-agents`, `tmux-agents-setup`, `tmux-agents-perf`, `agent-chain` and `chain-reset` skills into `~/.claude/skills/` and your Codex home
+- links the `tmux-agents`, `tmux-agents-setup`, `tmux-agents-perf` and `agent-chain` skills into `~/.claude/skills/` and your Codex home
 - copies the Codex rules (Codex skips symlinked `.rules` files)
 - preserves real files and directories at link destinations unless `--force` backs them up as `DEST.bak.YYYYmmddHHMMSS` before linking
 
@@ -174,7 +174,6 @@ Agents run these for you; each takes `--help`.
 | `tmux-spawn` | Start a sub agent, or a long-lived `--member`, hidden or with `--split` |
 | `tmux-agents` | The agent list (`prefix + a`); `start` launches a tracked agent or chain; `chain-config` queries roles; `chain` picks a project; `main-sequence` opens configured project windows |
 | `tmux-peers`, `tmux-peek` | Show connections; read another pane |
-| `tmux-clear-context --from ME PEER` | Clear a ready descendant’s context; re-brief with `chain-reset` |
 | `tmux-dismiss`, `tmux-disconnect` | Close a sub agent; unlink panes |
 | `tmux-agent-report` | Report progress for the status line |
 

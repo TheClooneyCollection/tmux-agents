@@ -21,7 +21,7 @@ assert_link() {
 verify() {
   local dest skill home command
   for dest in "$HOME/.claude/skills" "$HOME/.codex/skills" "$CODEX_HOME/skills" "$tmp/tree/extra/skills"; do
-    for skill in tmux-agents tmux-agents-setup tmux-agents-perf agent-chain chain-reset; do
+    for skill in tmux-agents tmux-agents-setup tmux-agents-perf agent-chain; do
       assert_link "$dest/$skill" "$here/skills/$skill"
       [ -f "$dest/$skill/SKILL.md" ] || fail "missing SKILL.md: $dest/$skill"
     done
@@ -66,7 +66,7 @@ snapshot strict >"$tmp/after"
 cmp -s "$tmp/before" "$tmp/after" || fail 'fresh dry-run changed destination tree'
 install
 verify
-echo 'ok: fresh install covers commands, five skills, real rules and reported homes'
+echo 'ok: fresh install covers commands, four skills, real rules and reported homes'
 snapshot content >"$tmp/before"
 install
 verify

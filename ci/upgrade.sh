@@ -54,7 +54,7 @@ if grep -Fq 'broken skill symlink' "$tmp/layout.out"; then fail 'warning leaked 
 echo 'ok: isolated layout activation warns and explains repair'
 /bin/bash "$checkout/install.sh" >"$tmp/new.log" 2>&1 </dev/null
 for dest in "$HOME/.claude/skills" "$HOME/.codex/skills" "$CODEX_HOME/skills" "$tmp/extra/skills"; do
-  for skill in tmux-agents tmux-agents-setup tmux-agents-perf agent-chain chain-reset; do
+  for skill in tmux-agents tmux-agents-setup tmux-agents-perf agent-chain; do
     [ -L "$dest/$skill" ] && [ -f "$dest/$skill/SKILL.md" ] || fail "skill not repaired: $dest/$skill"
     [ "$(readlink "$dest/$skill")" = "$checkout/skills/$skill" ] || fail "wrong repaired target: $dest/$skill"
   done
@@ -69,4 +69,4 @@ for home in "$HOME/.codex" "$CODEX_HOME" "$tmp/extra"; do
 done
 "$BIN_DIR/tmux-agents" --chip-layout on >"$tmp/repaired.out" 2>"$tmp/repaired.err" </dev/null
 [ ! -s "$tmp/repaired.err" ] || fail 'layout still warns after reinstall'
-echo 'ok: reinstall repairs all commands, five skills and rules; layout is quiet'
+echo 'ok: reinstall repairs all commands, four skills and rules; layout is quiet'

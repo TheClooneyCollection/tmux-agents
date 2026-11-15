@@ -37,8 +37,8 @@ cli add "$repo" --list | tee "$scratch/list"
 python3 - "$scratch/list" "$HOME" <<'PY'
 import pathlib, re, sys
 text = re.sub(r'\x1b\[[0-9;]*m', '', pathlib.Path(sys.argv[1]).read_text())
-assert re.search(r'Found 5 skills\b', text), text
-names = {'tmux-agents', 'tmux-agents-setup', 'tmux-agents-perf', 'agent-chain', 'chain-reset'}
+assert re.search(r'Found 4 skills\b', text), text
+names = {'tmux-agents', 'tmux-agents-setup', 'tmux-agents-perf', 'agent-chain'}
 listed = set(re.findall(r'^│\s{2,}(\S+)\s*$', text, re.M)) & names
 assert listed == names, (listed, text)
 assert not list(pathlib.Path(sys.argv[2]).rglob('SKILL.md')), '--list installed skills'
@@ -53,7 +53,7 @@ for mode in symlink copy; do
 import os, pathlib, sys
 repo, mode = pathlib.Path(sys.argv[1]), sys.argv[2]
 home = pathlib.Path(os.environ['HOME'])
-names = {'tmux-agents', 'tmux-agents-setup', 'tmux-agents-perf', 'agent-chain', 'chain-reset'}
+names = {'tmux-agents', 'tmux-agents-setup', 'tmux-agents-perf', 'agent-chain'}
 # In this pinned version Codex is a universal agent: its CLI destination is
 # ~/.agents/skills, even though agents.ts also declares CODEX_HOME.
 for base in (home / '.agents/skills', home / '.claude/skills'):

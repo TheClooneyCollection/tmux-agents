@@ -1,5 +1,11 @@
 # Clear and re-brief an existing chain
 
+## Superseded (2026-11-15)
+
+The user retired automated context clearing and the separate recovery skill. Clearing stays manual: when an existing chain member is restarted or cleared, recover its current role and peers and re-brief the current goal through main, secondary and worker. This keeps recovery in the agent-chain workflow without automating native conversation resets.
+
+## Original decision
+
 The user approved `chain-reset` to recover an existing chain after clearing the main conversation, preserving pane names, ownership and connections. The user clears the main themselves; the reset workflow only clears descendants.
 
 Every role recovers its trusted preserved name, checks peers and reloads the chain rules. Secondary and worker rejoin without clearing anyone. The worker tells main it is back through a notice to secondary for relay, preserving the existing connection topology.

@@ -1656,14 +1656,6 @@ message_queue_dir() {
   printf '%s\n' "/tmp/tmux-agents-$(id -u)/queue/$(basename "${message_socket%%,*}")"
 }
 
-pane_has_queued_messages() {
-  local dir="$1" pane="$2" file
-  for file in "$dir"/*-"${pane#%}".msg "$dir"/*-"${pane#%}".sending "$dir"/*-"${pane#%}".msg.sending; do
-    [ ! -f "$file" ] || return 0
-  done
-  return 1
-}
-
 # Check the cursor's input line, not old prompts in scrollback. A resumed
 # transcript may contain arbitrary prompt-looking output. Never submit into
 # a startup/trust dialog, a replacement pane, or tmux copy mode.
@@ -1739,9 +1731,4 @@ chain_prompt_input() {
 
 chain_claude_prompt() {
   chain_prompt_input "$1" "$2" ❯
-}
-
-# Codex shares the same input and cursor checks with its own prompt glyph.
-chain_codex_prompt() {
-  chain_prompt_input "$1" "$2" ›
 }

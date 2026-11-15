@@ -38,13 +38,9 @@ ln -s "$tmp/missing" "$CODEX_HOME/skills/tmux-agents-custom"
 rm "$CODEX_HOME/skills/agent-chain"
 ln -s "$tmp/missing" "$CODEX_HOME/skills/agent-chain"
 ln -s "$tmp/missing" "$HOME/.codex/skills/agent-chain"
-ln -s "$tmp/missing" "$HOME/.claude/skills/chain-reset"
-ln -s "$tmp/missing" "$CODEX_HOME/skills/chain-reset"
 run --chip-layout on
 check 'Claude broken link warns' contains "$tmp/err" "$HOME/.claude/skills/tmux-agents-perf"
 check 'current Codex home warns for wildcard skill' contains "$tmp/err" "$CODEX_HOME/skills/tmux-agents-custom"
-check 'Claude chain-reset broken link warns' contains "$tmp/err" "$HOME/.claude/skills/chain-reset"
-check 'Codex chain-reset broken link warns' contains "$tmp/err" "$CODEX_HOME/skills/chain-reset"
 check 'agent-chain broken link warns' contains "$tmp/err" "$CODEX_HOME/skills/agent-chain"
 check 'warning explains installation checkout repair' contains "$tmp/err" 'rerun install.sh from the installation checkout'
 check 'default Codex home is scanned alongside current home' contains "$tmp/err" "$HOME/.codex/skills/agent-chain"

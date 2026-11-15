@@ -88,6 +88,10 @@ Spawn both from the top-level main agent (no `@parent` and no `@member`); only t
 
 The secondary and worker are long-lived members: they stay out of the default sub-agent list, ordinary chip counts and `--done` cleanup. Find them with `ctrl-a` in the agent list, labelled `member of <owner>`; attention still pins them in the list and chip.
 
+## Rejoining after a restart or clear
+
+When told you were restarted or cleared and assigned a role in an existing chain, use `tmux-peers --from <me>` to find its current members and rejoin that role instead of spawning a new chain. Re-brief current roles and the current goal through the existing owners: main briefs secondary, then secondary briefs worker. Context clearing is manual; this re-brief keeps the existing members and connections.
+
 ## Ending the chain
 
 `tmux-dismiss --from <me> <secondary>` closes the secondary, the worker and the worker's sub agents. Claude/Codex members with resumable conversations can be reopened with `tmux-spawn --resume <name> --from <me>`, preserving membership, or in place from a returned shell with `tmux-spawn --resume-id <id> --here`. Existing chains keep their sub-agent status until restarted; there is no conversion command.
