@@ -41,18 +41,21 @@ else echo "you: $name ($self)"; fi
 if [ -z "$FROM_PANE" ] && [ -z "${TMUX_AGENTS_PINNED:-}" ] && [ -z "${CLAUDECODE:-}" ]; then
   echo "warning: this comes from \$TMUX_PANE, which isn't pinned. Inside Codex it may be another agent's pane; don't assume this is you."
 fi
+peers="$(get_peers "$self")"
 closed="$(closed_names "$self")"
 if [ -n "$closed" ]; then
+  # Closed records keep their history, but a connected replacement owns the label.
+  peer_labels="$(for peer in $peers; do pane_name "$peer"; done)"
   labels=""
   for aid in $closed; do
     label="$(agent_name_by_id "$aid")"
     [ -n "$label" ] || label='unknown agent'
+    case $'\n'"$peer_labels"$'\n' in *$'\n'"$label"$'\n'*) continue ;; esac
     [ "$ids" != 1 ] || label="$label [$aid]"
     labels="${labels:+$labels, }$label"
   done
-  echo "closed by user: $labels (reopen only if the user asks: tmux-spawn --resume NAME)"
+  [ -z "$labels" ] || echo "closed by user: $labels (reopen only if the user asks: tmux-spawn --resume NAME)"
 fi
-peers="$(get_peers "$self")"
 if [ -z "$peers" ]; then
   echo "peers: none"
   exit 0

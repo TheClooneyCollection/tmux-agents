@@ -85,6 +85,32 @@ check "a pane id works"                        ok    env TMUX_PANE=%0 "$B/tmux-a
 check "session:window.pane works"              ok    env TMUX_PANE=%0 "$B/tmux-peek" work:1.0
 check "a window number works (connect)"        ok    env TMUX_PANE=%0 "$B/tmux-connect" 1 --as me
 
+# A new live peer can reuse a closed conversation's label without its ID.
+reused_id="$(new_agent_id)"
+other_closed_id="$(new_agent_id)"
+record_set "$reused_id" name claude-blog.example.io-1
+record_set "$reused_id" closed 123
+record_set "$other_closed_id" name old-review
+record_set "$other_closed_id" closed 123
+tmux set -p -t %0 @closed "$reused_id $other_closed_id"
+check "connect a live peer reusing a closed name" ok "$B/tmux-connect" --from me claude-blog.example.io-1
+# Invoked through check with the captured command output.
+# shellcheck disable=SC2329
+has_text() { case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
+for flag in '' --ids; do
+  peers_output="$("$B/tmux-peers" --from me ${flag:+"$flag"})"
+  closed_line="$(printf '%s\n' "$peers_output" | grep '^closed by user:')"
+  check "reused name has no closed warning ($flag): $closed_line" fails has_text "$closed_line" claude-blog.example.io-1
+  check "unreused closed name still warns ($flag): $closed_line" ok has_text "$closed_line" old-review
+  live_lines="$(printf '%s\n' "$peers_output" | grep -v '^closed by user:')"
+  check "live reused name stays in peers ($flag)" ok has_text "$live_lines" claude-blog.example.io-1
+done
+check "closed conversation remains available by ID" ok test "$(record_get "$reused_id" closed)" = 123
+tmux set -p -t %0 @closed "$reused_id"
+peers_output="$("$B/tmux-peers" --from me)"
+check "no empty closed warning when all names are reused: $peers_output" fails has_text "$peers_output" "closed by user:"
+tmux set -pu -t %0 @closed
+
 # Keep messages parked while exercising both directions of queued metadata.
 # Pane and agent IDs stay stable while display labels change.
 mkdir -p "$state_dir/prefixed-project"

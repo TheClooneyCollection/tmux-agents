@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Hide stale closed-by-user hints in `tmux-peers` when a connected live agent reuses the closed agent's name, while preserving its saved conversation.
+- Mark and order the caller's window correctly in `tmux-connect --list` and the picker when sessions share linked windows.
+
 ## v1.21.1 (2026-11-14)
 
 - Write relative install links when both paths are under HOME, preserving existing correct links and absolute targets outside HOME.

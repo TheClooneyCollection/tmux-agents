@@ -35,19 +35,19 @@ EOF
 
 # Panes in this window, or every window ($1 = all), other than pane $2, as
 # tab-separated: window ("session:index  name"), id, name, command,
-# project, link ("⇄ linked" or "-"), what it is doing (or its directory).
+# project, link ("⇄ linked" or "-"), what it is doing (or its directory), window ID.
 # This window first, then the others in order.
 connect_tsv() {
   local tab here peers rows
   tab="$(printf '\t')"
-  here="$(tmux display-message -p -t "$2" '#{session_name}:#{window_index}')"
+  here="$(tmux display-message -p -t "$2" '#{window_id}')"
   peers=" $(get_peers "$2" | tr '\n' ' ') "
   if [ "$1" = all ]; then rows="$(tmux list-panes -a -F "$CONNECT_FMT")"
   else rows="$(tmux list-panes -t "$2" -F "$CONNECT_FMT")"; fi
   # Grouped sessions list a window once per session, so dedupe by pane id.
-  rows="$(printf '%s\n' "$rows" | awk -F '\t' -v OFS='\t' -v s="$2" '$1 != s && $9 != 1 && !seen[$1]++ { NF=8; print }')"
+  rows="$(printf '%s\n' "$rows" | awk -F '\t' -v OFS='\t' -v s="$2" '$1 != s && $10 != 1 && !seen[$1]++ { NF=9; print }')"
   [ -n "$rows" ] || return 0
-  printf '%s\n' "$rows" | while IFS="$tab" read -r id win wname name cmd act path session; do
+  printf '%s\n' "$rows" | while IFS="$tab" read -r id win wname name cmd act path session window_id; do
       if is_agents_session "$session"; then project="${session#"$AGENTS_PREFIX"-}"
       else project="$(agents_session_for "$path")"; project="${project#"$AGENTS_PREFIX"-}"; fi
       link="-"; case "$peers" in *" $id "*) link="⇄ linked" ;; esac
@@ -55,8 +55,8 @@ connect_tsv() {
         case "$path" in "$HOME"|"$HOME"/*) act="~${path#"$HOME"}" ;; *) act="$path" ;; esac
       fi
       # This window first, hidden sub agent sessions last.
-      first=1; [ "$win" = "$here" ] && first=0; is_agents_session "$session" && first=2
-      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$first" "$win  $wname" "$id" "$name" "$cmd" "$project" "$link" "$act"
+      first=1; [ "$window_id" = "$here" ] && first=0; is_agents_session "$session" && first=2
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$first" "$win  $wname" "$id" "$name" "$cmd" "$project" "$link" "$act" "$window_id"
     done | sort -t "$tab" -k1,1n -s | cut -f2-
 }
 
@@ -80,7 +80,7 @@ connect_rows() {
         printf "%s %s%s\n  \033[38;5;245m%s\033[0m%c", I[i], sect, $0, A[i], 30 }'
 }
 
-CONNECT_FMT="#{pane_id}	#{session_name}:#{window_index}	#{window_name}	#{?@agent,#{@agent},(no name)}	#{pane_current_command}	#{?@activity,#{@activity},-}	#{pane_current_path}	#{session_name}	#{?@shell,#{@shell},0}"
+CONNECT_FMT="#{pane_id}	#{session_name}:#{window_index}	#{window_name}	#{?@agent,#{@agent},(no name)}	#{pane_current_command}	#{?@activity,#{@activity},-}	#{pane_current_path}	#{session_name}	#{window_id}	#{?@shell,#{@shell},0}"
 
 # Picker reload: rows for the scope the prompt names.
 if [ "${1:-}" = "--rows" ]; then
@@ -144,10 +144,9 @@ require_agent_pane "$self"
 if [ "$list" -eq 1 ]; then
   rows="$(connect_tsv all "$self")"
   [ -n "$rows" ] || { echo "no other panes"; exit 0; }
-  here="$(tmux display-message -p -t "$self" '#{session_name}:#{window_index}')"
+  here="$(tmux display-message -p -t "$self" '#{window_id}')"
   printf '%s\n' "$rows" | awk -F '\t' -v here="$here" '
-    { split($1, w, "  ")
-      if ($1 != last) { printf "%s== %s%s\n", (NR > 1 ? "\n" : ""), $1, (w[1] == here ? "  (this window)" : ""); last = $1 }
+    { if ($1 != last) { printf "%s== %s%s\n", (NR > 1 ? "\n" : ""), $1, ($8 == here ? "  (this window)" : ""); last = $1 }
       printf "  %-5s %-28s %-8s %-20s %s\n", $2, $3, $4, $5, ($6 == "-" ? "" : "linked")
       printf "        %s\n", $7 }'
   me="$(pane_name "$self")"
