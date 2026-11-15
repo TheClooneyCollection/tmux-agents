@@ -167,3 +167,85 @@ cp "$new_config" "$tmp/unchanged"
 if "$B/tmux-agents" main-sequence add "$tmp/alpha" --at 999 2>/dev/null; then exit 1; fi
 cmp "$new_config" "$tmp/unchanged"
 echo 'PASS append, 1-based insertion, list and preservation of existing lines/comments'
+
+# Command fields remain literal config data until their window is launched.
+export TMUX_MAIN_SEQUENCE_CONFIG="$tmp/commands" TMUX_MAIN_SEQUENCE_SESSION=commands
+# Expansion belongs to the launched command, not the config editor.
+# shellcheck disable=SC2016
+command='printf "%s\n" "$PWD" > "$TEST_LOG/command-dir"; printf "%s\n" "spaces -- $(printf literal)" > "$TEST_LOG/command-marker"; printf "COMMAND EXIT SEVEN\n"; exit 7'
+"$B/tmux-agents" main-sequence add "$tmp/two words" name=command-only "command=$command" resume=ignored > "$tmp/command-added"
+"$B/tmux-agents" main-sequence list > "$tmp/command-list"
+cmp "$tmp/command-added" "$tmp/command-list"
+python3 - "$tmp/command-list" "$tmp/two words" "$command" <<'PY'
+import shlex, sys
+fields = shlex.split(open(sys.argv[1]).read())
+assert fields == [sys.argv[2], 'name=command-only', 'command='+sys.argv[3], 'resume=ignored'], fields
+PY
+[ ! -e "$tmp/command-marker" ]
+changed='printf "%s\n" "changed -- value" > never-run'
+"$B/tmux-agents" main-sequence set command-only "command=$changed" > "$tmp/command-edited"
+python3 - "$tmp/command-edited" "$tmp/two words" "$changed" <<'PY'
+import shlex, sys
+assert shlex.split(open(sys.argv[1]).read()) == [
+    sys.argv[2], 'name=command-only', 'resume=ignored', 'command='+sys.argv[3]]
+PY
+"$B/tmux-agents" main-sequence unset command-only command > "$tmp/command-edited"
+python3 - "$tmp/command-edited" "$tmp/two words" <<'PY'
+import shlex, sys
+assert shlex.split(open(sys.argv[1]).read()) == [sys.argv[2], 'name=command-only', 'resume=ignored']
+PY
+"$B/tmux-agents" main-sequence set command-only "command=$command" >/dev/null
+"$B/tmux-agents" main-sequence set command-only resume=changed >/dev/null
+"$B/tmux-agents" main-sequence unset command-only resume > "$tmp/command-edited"
+python3 - "$tmp/command-edited" "$tmp/two words" "$command" <<'PY'
+import shlex, sys
+assert shlex.split(open(sys.argv[1]).read()) == [sys.argv[2], 'name=command-only', 'command='+sys.argv[3]]
+PY
+"$B/tmux-agents" main-sequence set command-only resume=ignored >/dev/null
+cp "$TMUX_MAIN_SEQUENCE_CONFIG" "$tmp/command-before-invalid"
+if "$B/tmux-agents" main-sequence set command-only $'command=printf first\nprintf second' 2>/dev/null; then exit 1; fi
+if "$B/tmux-agents" main-sequence set command-only unknown=value 2>/dev/null; then exit 1; fi
+cmp "$TMUX_MAIN_SEQUENCE_CONFIG" "$tmp/command-before-invalid"
+"$B/tmux-agents" main-sequence add "$tmp/alpha" name=command-shell shell 'command=printf "OK\n" > command-ok' >/dev/null
+printf '%s name=resume-shell shell resume=ignored unknown-field\n' "$tmp/alpha" >> "$TMUX_MAIN_SEQUENCE_CONFIG"
+[ ! -e "$tmp/command-marker" ]
+[ ! -e "$tmp/alpha/command-ok" ]
+echo 'PASS command add/list quoting, independent command/resume edits and no config evaluation'
+
+# Use a shell wrapper to prove default-shell wins over SHELL for both stages.
+cat > "$tmp/bin/command shell" <<'STUB'
+#!/bin/sh
+printf '%s\n' "$1" >> "$TEST_LOG/command-shell-calls"
+exec /bin/sh "$@"
+STUB
+chmod +x "$tmp/bin/command shell"
+tmux set -g default-shell "$tmp/bin/command shell"
+SHELL=/bin/false "$B/tmux-agents" main-sequence --no-attach 2> "$tmp/command-warnings"
+grep -q "unknown field 'unknown-field'" "$tmp/command-warnings"
+grep -q 'command-only.*ignoring resume' "$tmp/command-warnings"
+grep -q 'resume-shell.*ignoring resume' "$tmp/command-warnings"
+wait_file "$tmp/command-marker"
+wait_file "$tmp/alpha/command-ok"
+[ "$(cat "$tmp/command-dir")" = "$tmp/two words" ]
+[ "$(cat "$tmp/command-marker")" = 'spaces -- literal' ]
+pane="$(tmux display -p -t commands:0 '#{pane_id}')"
+tmux send-keys -t "$pane" "printf '%s\n' INTERACTIVE > '$tmp/interactive-ready'" Enter
+wait_file "$tmp/interactive-ready"
+[ "$(cat "$tmp/interactive-ready")" = INTERACTIVE ]
+[ "$(tmux display -p -t "$pane" '#{pane_dead}')" = 0 ]
+tmux capture-pane -p -t "$pane" | grep -q 'COMMAND EXIT SEVEN'
+grep -qx -- -c "$tmp/command-shell-calls"
+grep -qx -- -i "$tmp/command-shell-calls"
+for target in commands:0 commands:1 commands:2; do
+  [ -z "$(tmux display -p -t "$target" '#{@agent_id}')" ]
+  [ "$(tmux show -wv -t "$target" automatic-rename)" = off ]
+  [ "$(tmux show -wv -t "$target" allow-rename)" = off ]
+done
+[ "$(tmux display -p -t commands:0 '#{window_name}')" = command-only ]
+echo 'PASS command rows run at DIR and keep the configured interactive shell after failure; shell/resume handling'
+tmux set -g default-shell /bin/sh
+# The picker consumes the extended records too, including rows after a command.
+"$B/tmux-agents" chain --filter "$tmp/alpha" --no-save --target test > "$tmp/pane" 2>/dev/null
+grep -Fxq "$tmp/two words" "$tmp/choices"
+grep -Fxq "$tmp/alpha" "$tmp/choices"
+echo 'PASS picker reads command-bearing records without shifting later directories'

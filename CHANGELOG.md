@@ -4,6 +4,8 @@
 
 ### Added
 
+- Project sequences accept `command=CMD` rows and command-field edits. Commands run in the configured shell at the project directory, then leave an interactive shell even after failure; plain windows ignore resume with a warning.
+
 - Agent chains follow the `missions` skill when `fleet-command` is installed, using missions and inbox replies for fleet instructions while retaining ordinary tmux messages.
 
 ## v1.21.2 (2026-11-15)

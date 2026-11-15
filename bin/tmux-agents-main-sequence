@@ -8,9 +8,9 @@ usage() {
   cat <<'HELP'
 usage: tmux-agents main-sequence [--add-missing] [--no-attach]
        tmux-agents main-sequence list
-       tmux-agents main-sequence add DIR [name=NAME] [shell] [resume=ID] [--at N]
-       tmux-agents main-sequence set DIR|NAME resume=ID
-       tmux-agents main-sequence unset DIR|NAME resume
+       tmux-agents main-sequence add DIR [name=NAME] [shell] [command=CMD] [resume=ID] [--at N]
+       tmux-agents main-sequence set DIR|NAME resume=ID|command=CMD
+       tmux-agents main-sequence unset DIR|NAME resume|command
 
 Open configured projects in line order, then join a separate main-N client.
 --add-missing adds missing window names to an existing group.
@@ -19,7 +19,9 @@ Settings: TMUX_MAIN_SEQUENCE_SESSION / _CONFIG / _AGENT / _SOCKET.
 Config: ${XDG_CONFIG_HOME:-$HOME/.config}/tmux-agents/projects;
 fallback: ~/.config/tmux-main-sequence/projects. No built-in projects.
 --at N inserts before project N (1-based); omitted means append.
-Lines: DIR [name=NAME] [shell] [resume=ID]. Quote paths/names with spaces.
+Lines: DIR [name=NAME] [shell] [command=CMD] [resume=ID]. Quote paths/values with spaces.
+command= runs in the default shell, then leaves an interactive shell.
+shell and command= open plain windows and ignore resume= with a warning.
 HELP
 }
 case "${1:-}" in -h|--help) usage; exit 0 ;; esac
@@ -59,7 +61,7 @@ projects_records > "$records"
 [ -s "$records" ] || { printf 'main-sequence: no configured projects; nothing to open\n' >&2; exit 0; }
 if [ -z "$session_id" ]; then fresh=1; fi
 index=0 first_pane="" bootstrap=""
-while IFS= read -r -d '' dir && IFS= read -r -d '' name && IFS= read -r -d '' shell && IFS= read -r -d '' resume; do
+while IFS= read -r -d '' dir && IFS= read -r -d '' name && IFS= read -r -d '' shell && IFS= read -r -d '' resume && IFS= read -r -d '' command; do
   if [ ! -d "$dir" ]; then printf 'main-sequence: skipping missing directory: %s\n' "$dir" >&2; continue; fi
   if [ -z "$session_id" ]; then
     # Temporary bootstrap occupies no final configured index or window name.
@@ -80,7 +82,18 @@ while IFS= read -r -d '' dir && IFS= read -r -d '' name && IFS= read -r -d '' sh
     destination="$index"
     if [ "$occupied" = 1 ]; then destination=$((max + 1)); fi
     if [ "$shell" = 1 ]; then
-      pane="$(tmux new-window -d -t "$session_id:$destination" -n "$name" -c "$dir" -P -F '#{pane_id}')"
+      if [ -n "$resume" ]; then printf 'main-sequence: %s opens a plain window; ignoring resume\n' "$name" >&2; fi
+      command_args=()
+      if [ -n "$command" ]; then
+        command_shell="$(tmux show-option -gv default-shell)"
+        command_shell="${command_shell:-${SHELL:-/bin/sh}}"
+        # Pass exact command bytes as argv, and isolate exit/errexit from the
+        # wrapper that keeps an interactive shell after success or failure.
+        # Positional arguments expand inside the new window, not here.
+        # shellcheck disable=SC2016
+        command_args=(/bin/sh -c '"$1" -c "$2"; exec "$1" -i' tmux-main-sequence "$command_shell" "$command")
+      fi
+      pane="$(tmux new-window -d -t "$session_id:$destination" -n "$name" -c "$dir" -P -F '#{pane_id}' ${command_args[@]+"${command_args[@]}"})"
       tmux set-option -w -t "$pane" automatic-rename off
       tmux set-option -w -t "$pane" allow-rename off
     else

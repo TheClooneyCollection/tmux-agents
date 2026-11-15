@@ -87,8 +87,8 @@ done
 projects_settings
 canonical_dir() { projects_canonical "$1"; }
 saved_dirs() {
-  local dir name shell resume
-  while IFS= read -r -d '' dir && IFS= read -r -d '' name && IFS= read -r -d '' shell && IFS= read -r -d '' resume; do
+  local dir name shell resume _command
+  while IFS= read -r -d '' dir && IFS= read -r -d '' name && IFS= read -r -d '' shell && IFS= read -r -d '' resume && IFS= read -r -d '' _command; do
     canonical_dir "$dir" || true
   done < <(projects_records)
 }

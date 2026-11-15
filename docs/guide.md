@@ -67,10 +67,12 @@ Use `--target session[:index]`, `--name NAME` and `--main-resume ID` as with `st
 
 `tmux-agents main-sequence` opens the configured windows in line order in session `main`, then joins through a separate `main-N` client session. Clients share windows but select them independently; their sessions disappear on detach. The base session survives. Existing windows stay unchanged unless `--add-missing` adds missing names, using the configured index when free or appending otherwise. `--no-attach` opens windows without creating a client session. Empty configuration creates no session. Configure unique names when opening the same directory more than once.
 
-The shared project file is `${XDG_CONFIG_HOME:-$HOME/.config}/tmux-agents/projects`. Until it exists, the commands read `~/.config/tmux-main-sequence/projects`. The first edit or new save copies the fallback content into the new path without changing the old file. `TMUX_MAIN_SEQUENCE_CONFIG` overrides both paths. Each line contains a directory with optional `name=NAME`, `shell` and `resume=ID` fields. `~` expands to HOME; quote paths or values containing spaces. Blank lines and `#` comments are preserved. Unknown fields warn and are ignored. `shell` opens a plain shell and ignores `resume`. A resume field remains until explicitly removed.
+The shared project file is `${XDG_CONFIG_HOME:-$HOME/.config}/tmux-agents/projects`. Until it exists, the commands read `~/.config/tmux-main-sequence/projects`. The first edit or new save copies the fallback content into the new path without changing the old file. `TMUX_MAIN_SEQUENCE_CONFIG` overrides both paths. The row grammar is `DIR [name=NAME] [shell] [command=CMD] [resume=ID]`. `~` expands to HOME; quote paths or values containing spaces. Blank lines and `#` comments are preserved. Unknown fields warn and are ignored. `shell` and `command=CMD` open plain windows and ignore `resume` with a warning; `shell` is redundant alongside `command`. A resume field remains until explicitly removed.
+
+A command runs in DIR through the server's `default-shell` as `SHELL -c CMD`, falling back to `$SHELL` and then `/bin/sh`. When it exits, including on failure, the window keeps an interactive instance of the same shell so its output remains visible. Config parsing never executes command text. Quote the whole command value as one token.
 
 ```text
-~ name=dashboard shell
+~ name=dashboard command="tmux-agents start fleet-command --name command-center --exact -- serve"
 ~ name=home
 ~/projects/example name=example
 "~/projects/two words" name="two words" shell
@@ -81,14 +83,16 @@ Use the same commands from a shell or an agent; no manual file editing is needed
 ```sh
 tmux-agents main-sequence list
 tmux-agents main-sequence add ~/projects/example name=example
-tmux-agents main-sequence add ~ name=dashboard shell --at 1
+tmux-agents main-sequence add ~ name=dashboard command="tmux-agents start fleet-command --name command-center --exact -- serve" --at 1
+tmux-agents main-sequence set dashboard command="tmux-agents start fleet-command --name command-center --exact -- serve"
+tmux-agents main-sequence unset dashboard command
 tmux-agents main-sequence set example resume=11111111-1111-4111-8111-111111111111
 tmux-agents main-sequence unset example resume
 tmux-agents main-sequence --no-attach
 tmux-agents main-sequence --add-missing
 ```
 
-`add` appends unless `--at N` inserts before project N (1-based, counting project records rather than comments); N one beyond the last project appends. `set` and `unset` match a directory or a configured/default window name and print the resulting line. Ambiguous matches error and list candidate lines, so use a unique name. Edits preserve other lines, comments and order. `list` prints the source file, including comments. These config commands do not launch agents.
+`add` appends unless `--at N` inserts before project N (1-based, counting project records rather than comments); N one beyond the last project appends. `set` and `unset` match a directory or a configured/default window name and print the resulting line. Ambiguous matches error and list candidate lines, so use a unique name. `set` and `unset` edit only the named `command` or `resume` field. Removing `command` leaves a plain window only if `shell` is also present; otherwise the row starts a chain. Edits preserve other lines, comments and order. `list` prints the source file, including comments. These config commands do not launch agents.
 
 ## Shell panes
 

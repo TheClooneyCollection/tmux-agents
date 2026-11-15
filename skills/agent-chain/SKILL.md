@@ -44,7 +44,7 @@ New profiles need the installer run for their existing Codex home so they receiv
 
 ## Starting from a shell
 
-For saved projects, `tmux-agents chain` offers a project picker and `tmux-agents main-sequence` opens configured windows in order. Use `main-sequence list`, `add DIR [name=NAME] [shell] [--at N]`, `set DIR|NAME resume=ID` and `unset DIR|NAME resume` to maintain the shared config. Resolve ambiguous matches with a unique window name. See [Project launchers](../../docs/guide.md#project-launchers) for paths, fallback and scan settings.
+For saved projects, `tmux-agents chain` offers a project picker and `tmux-agents main-sequence` opens configured windows in order. Use `main-sequence list`, `add`, `set` and `unset` to maintain the shared config, including per-window `command` and `resume` fields. Resolve ambiguous matches with a unique window name. See [Project launchers](../../docs/guide.md#project-launchers) for paths, fallback and scan settings.
 
 `tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--main-resume ID] [--secondary AGENT] [--worker AGENT]` opens a new window in DIR (default `$PWD`), names it after DIR's basename (`root` at the filesystem root) unless `--name NAME` is supplied, and launches the selected main.
 
