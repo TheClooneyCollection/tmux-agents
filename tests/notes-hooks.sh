@@ -93,7 +93,12 @@ check 'digest starts a Codex notice turn without debt' test -z "$(option @owed)"
 check 'digest marks included notes read' test "$("$B/tmux-notes" --from main --count)" = 0
 tmux capture-pane -p -S - -t %0 >"$tmp/screen"
 check 'digest includes sender and latest payload' grep -q 'helper (2): automatic digest payload' "$tmp/screen"
-check 'hook does not repeat digested notes' test -z "$(start)"
+digest_before="$(option @notes_digest_at)"
+notice_hook="$(printf '%s' '{"prompt":"[notice from tmux-agents to main via tmux-ask]\ndigest\n[end of notice from tmux-agents to main]"}' | "$B/tmux-agent-report" --pane %0 --turn-start)"
+check 'notice hook does not repeat digested notes' test -z "$notice_hook"
+check 'digest notice hook preserves continuation marker' test "$(option @notes_digest_at)" = "$digest_before"
+turn_begin %0 notice delivery
+check 'notice delivery preserves continuation marker' test "$(option @notes_digest_at)" = "$digest_before"
 idle
 once
 check 'no new notes means no digest' test "$(cat "$(notes_dir)/$id/.cursor")" = "$stamp"
@@ -117,5 +122,20 @@ tmux set -p -t %0 @notes_digest_sent_at "$(($(date +%s)-5))"
 idle
 once
 check 'no new batch cannot digest again' test "$(cat "$(notes_dir)/$id/.cursor")" = "$stamp"
+# A genuine Claude user prompt ends the uninterrupted update sequence.
+check 'user hook does not repeat digested notes' test -z "$(start)"
+check 'user prompt clears continuation marker' test -z "$(option @notes_digest_at)"
+"$B/tmux-agent-report" --pane %0 --turn-end >/dev/null
+write_note 'fresh after user prompt'
+fresh_idle="$(($(date +%s)-125))"
+tmux set -p -t %0 @notes_idle_since "$fresh_idle"
+tmux set -p -t %0 @notes_digest_sent_at "$((fresh_idle-600))"
+expected_since="$(perl -e 'my @t=localtime($ARGV[0]); printf "%02d:%02d",$t[2],$t[1]' "$fresh_idle")"
+once
+tmux capture-pane -p -S - -t %0 >"$tmp/screen"
+grep 'fresh after user prompt' "$tmp/screen" >"$tmp/fresh-digest"
+check 'post-user digest uses idle start for since' grep -Fq "agent notes since $expected_since:" "$tmp/fresh-digest"
+check 'post-user digest starts a fresh update' test "$(grep -c 'Continuing from last update' "$tmp/fresh-digest" || true)" = 0
+check 'post-user digest consumes its batch' test "$("$B/tmux-notes" --from main --count)" = 0
 printf '%s checks, %s failures\n' "$count" "$fail"
 [ "$fail" = 0 ]

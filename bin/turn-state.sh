@@ -24,6 +24,9 @@ _turn_begin() {
   local kind="$1" source="$2" state began
   state="$(_turn_get state)"; began="$(_turn_get turn_began)"
   _turn_unset owed_notified
+  # Claude also runs prompt hooks for pasted notices. Only actual user input
+  # ends an uninterrupted digest sequence; delivery and notice hooks keep it.
+  if [ "$source" = prompt ] && [ "$kind" = local ]; then _turn_unset notes_digest_at; fi
   case "$source" in prompt|delivery) _turn_unset activity ;; esac
   if { [ "$source" = tool ] && [ -z "$began" ]; } ||
       { [ "$source" = prompt ] && [ "$state" != working ]; }; then

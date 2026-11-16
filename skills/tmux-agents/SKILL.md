@@ -149,7 +149,7 @@ The file must be a readable regular file, not a symlink, and at most 1 MiB; its 
 
 **Quiet updates:** use `--note` for progress, handoff updates, partial completion and plan updates. Awaited results and matters needing the user (release completion, CI failure, push approval or a decision) stay ordinary replies, requests or notices, never notes.
 
-**Digest notices:** an `agent notes` digest summarizes unread notes after an idle interval (default 5 minutes). Delivery advances your read cursor past the included notes; use `tmux-notes --from ME --all` to inspect them. A later digest begins `Continuing from last update ...` and contains only new notes after another idle interval. No new notes means no digest, and a digest asks for no reply. Main agents summarize useful points when the user asks or at a natural pause, without relaying each note into chat.
+**Digest notices:** an `agent notes` digest summarizes unread notes after an idle interval (default 5 minutes). Delivery advances your read cursor past the included notes; use `tmux-notes --from ME --all` to inspect them. A later digest begins `Continuing from last update ...` and contains only new notes after another idle interval. For Claude, a user prompt resets that continuation prefix and the next digest starts from its new idle period; notice hooks do not reset it. Codex has no user prompt hook, so digests after the first retain the prefix even if the user has spoken. No new notes means no digest, and a digest asks for no reply. Main agents summarize useful points when the user asks or at a natural pause, without relaying each note into chat.
 
 **Markers tell you who wrote what.** Every message looks like this:
 
