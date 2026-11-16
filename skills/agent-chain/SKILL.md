@@ -1,6 +1,6 @@
 ---
 name: agent-chain
-description: Run a chain of three agents through tmux-agents, a main agent that talks to the user, a secondary that coordinates and merges, and a worker that implements. Use when the user says "start the chain", "agent chain", "end the chain" or similar, and whenever a message says you are the main agent, secondary or worker in the agent chain.
+description: Run a chain of three agents through tmux-agents, a main agent that talks to the user, a secondary that coordinates and merges, and a worker that implements. Use when the user says "start the chain", "agent chain", "end the chain", asks to rejoin after clearing context ("cleared, resume please" or "清完了，继续"), or a message assigns a main, secondary or worker role in an agent chain.
 ---
 
 # Agent chain
@@ -90,7 +90,15 @@ The secondary and worker are long-lived members: they stay out of the default su
 
 ## Rejoining after a restart or clear
 
-When told you were restarted or cleared and assigned a role in an existing chain, use `tmux-peers --from <me>` to find its current members and rejoin that role instead of spawning a new chain. Re-brief current roles and the current goal through the existing owners: main briefs secondary, then secondary briefs worker. Manual clearing with Claude `/clear` or Codex `/new` is supported: tracking and `tmux-spawn --resume` follow the new conversation when its hooks report it. This re-brief keeps the existing members and connections.
+Treat "cleared, resume please" or "清完了，继续" after a context clear as a request to restore the existing chain's roles and review its handoff. The user need not repeat the role or procedure. Follow the tmux-agents identity rules, then use `tmux-peers --from <me>` and the recorded role suffix to identify yourself and current members. If identity or role is unclear, ask only for the missing information. Keep existing names and connections; do not spawn a replacement chain or reopen an old conversation to restore roles.
+
+Main re-briefs the secondary on its role and current member names, asking it to restore the worker's role in turn. Secondary and worker rejoin their roles and wait for assigned work; they do not automatically restart old tasks. Report surviving background work, worktrees and uncommitted changes so a fresh context does not duplicate or discard them.
+
+Main reads the project-root `HANDOFF.md` saved through the wrap-up skill. Present a short numbered list of important outcomes, unfinished choices and live work the user needs to know about. Continue work explicitly selected by the user before the clear; otherwise wait for their selection, such as "do 2 and 3", or a new task. A role-restoration request alone is not permission to resume every old task. If no handoff exists, say so and ask for the current goal rather than inventing lost context.
+
+`HANDOFF.md` is temporary and must never be committed. Before creating or updating it, check that it is untracked and locally excluded from Git; preserve unrelated contents. Remove an entry only once completed, explicitly dropped or transferred to a user-approved durable record. Delete the file when all its entries are handled, not merely after reading it. Use wrap-up again before another clear to refresh the remaining handoff.
+
+Manual clearing with Claude `/clear` or Codex `/new` is supported: tracking and `tmux-spawn --resume` follow the new conversation when its hooks report it. Restoring roles does not itself clear any agent's context.
 
 ## Ending the chain
 
