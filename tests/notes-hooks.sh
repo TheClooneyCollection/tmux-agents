@@ -88,6 +88,18 @@ idle
 # Public write starts the observer, without any chip daemon or foreground poll.
 TMUX_AGENTS_NOTES_DIGEST_SECS=1 "$B/tmux-ask" --from helper --note main 'automatic digest payload' >/dev/null
 check 'public note starts independent digest observer' wait_marker
+# The marker precedes observer exit. Wait for its lifetime lock before making
+# the receiver idle or publishing another batch: otherwise --watch can race
+# our synchronous --once and advance the cursor after an assertion reads it.
+# The timeout reports a stuck observer, not a guessed delay for its shutdown.
+# shellcheck disable=SC2016
+perl -MFcntl=:flock -e '
+  $SIG{ALRM} = sub { die "digest observer did not release its lock\n" };
+  alarm 15;
+  open(my $lock, "+<", $ARGV[0]) or die "digest observer lock: $!\n";
+  flock($lock, LOCK_EX) or die "digest observer lock: $!\n";
+  alarm 0;
+' "$(notes_dir)/.digest-$id.lock"
 stamp="$(cat "$(notes_dir)/$id/.cursor")"
 check 'digest starts a Codex notice turn without debt' test -z "$(option @owed)"
 check 'digest marks included notes read' test "$("$B/tmux-notes" --from main --count)" = 0
