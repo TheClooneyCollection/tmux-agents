@@ -17,8 +17,8 @@ import os, sys
 print("STUB CODEX", flush=True)
 normal = any("normal-start" in arg for arg in sys.argv)
 if normal:
-    print("Folder access /example; Trust this folder?; 1. Trust and continue; 2. Back to Agent Command Center")
-    print("› ", end="", flush=True)
+    # Publish the quoted transcript and ready prompt together.
+    print("Folder access /example; Trust this folder?; 1. Trust and continue; 2. Back to Agent Command Center\n› ", end="", flush=True)
 else:
     print("Folder access " + os.getcwd())
     print("Trust this folder?")
@@ -114,7 +114,8 @@ done
 pane="$(pane_of normal)"
 check 'normal stub reaches prompt' wait_text "$pane" '›'
 /bin/bash "$B/tmux-agents-codex-startup.sh" "$pane" "$(pane_agent_id "$pane")" "$$"
-check 'normal startup with quoted trust text has no permission' test -z "$(option "$pane" @perm_since)"
+# The spawned observer owns cleanup; the foreground observer can finish first.
+check 'normal startup with quoted trust text has no permission' wait_option "$pane" @perm_since ''
 "$B/tmux-spawn" claude --from main --exact --name claude-normal 'normal-start' >"$tmp/spawn"
 check 'Claude stub runs normally' wait_text "$(pane_of claude-normal)" 'STUB CLAUDE'
 check 'Claude has no Codex permission marker' test -z "$(option "$(pane_of claude-normal)" @codex_startup_wait)"
