@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.24.1 (2026-11-16)
+
+- Digest notices now suggest `tmux-notes --from NAME --all --keep-unread`, so their already-read notes remain visible and reviewing them does not consume newer unread arrivals.
+- After a manual clear, the agent-chain skill accepts "cleared, resume please" or "清完了，继续", restores existing roles through main, secondary and worker, and reviews selected work from wrap-up's temporary `HANDOFF.md`. The file is never committed and is removed when its entries are handled; restoring roles does not automatically restart unselected tasks.
+- The rejoining main refreshes its existing main-sequence `resume=` with the verified new conversation ID. Codex waits for its first new-thread turn end before updating; missing or ambiguous project rows are left for clarification.
+
 ## v1.24.0 (2026-11-16)
 
 - Quiet notes: `tmux-ask --note PEER "progress"` stores an update for any connected receiver without pasting a prompt, starting a turn or changing the reply obligation. Notes form an append-only per-receiver log with increasing ids and one read cursor; `tmux-notes --from ME` prints the unread ones grouped by sender and advances the cursor (`--keep-unread`, `--all`, `--since`, `--count`). `--mission ID` also logs the note to Fleet Command when it is installed.
