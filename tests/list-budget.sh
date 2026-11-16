@@ -119,7 +119,7 @@ for tool in tmux perl awk git basename sed date stat dirname tr column sort cut 
 done
 export PATH="$tmp/count:$PATH" BENCH_RECEIVED="$tmp/received" BENCH_EXECUTED="$tmp/executed" BENCH_EXEC_CALLS="$tmp/exec-calls"
 mkdir "$tmp/installed"
-for file in "$here"/bin/tmux-* "$here/bin/lib.sh" "$here/bin/turn-state.sh"; do ln -s "$file" "$tmp/installed/${file##*/}"; done
+for file in "$here"/bin/tmux-* "$here/bin/lib.sh" "$here/bin/turn-state.sh" "$here/bin/notes-lib.sh"; do ln -s "$file" "$tmp/installed/${file##*/}"; done
 python3 - "$before" "$tmp/installed/tmux-agents" "$client" <<'PY'
 import collections, os, statistics, subprocess, sys, time
 before, after, client = sys.argv[1:]

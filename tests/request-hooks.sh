@@ -6,6 +6,7 @@ here="$(cd "$(dirname "$0")/.." && pwd)"
 sock="tmux-turn-hooks-$$"
 state_dir="$(mktemp -d "${TMPDIR:-/tmp}/tmux-turn-hooks.XXXXXX")"
 unset TMUX TMUX_PANE CLAUDECODE TMUX_AGENTS_KIND TMUX_AGENTS_PINNED
+export TMUX_AGENTS_NOTES_DIGEST_SECS=0
 export XDG_STATE_HOME="$state_dir/state" TMUX_ASK_ENTER_DELAY=0 TMUX_ASK_IDLE_SECS=0
 B="$state_dir/bin"; cp -R "$here/bin" "$B"
 tmux -L "$sock" -f /dev/null new-session -d -x 180 -y 40 cat
@@ -69,10 +70,10 @@ check 'old notify cannot finish newer delivery' test "$(st @state)" = working
 check 'old notify does not settle latest slot' test -z "$(st @owed_settled)"
 notify "$(body request "$second")"
 check 'matched notify finishes subagent' test "$(st @state)" = "done"
-check 'matched request sends stop notice' test "$(st @owed_notified)" = 1
-notice_count="$(tmux capture-pane -p -S - -t %0 | rg -c 'stopped without replying' || true)"
+check 'matched request writes stop note' test "$(st @owed_notified)" = 1
+notice_count="$("$B/tmux-notes" --from sender --count)"
 notify "$(body request "$second")"
-check 'duplicate notify sends no extra reminder' test "$(tmux capture-pane -p -S - -t %0 | rg -c 'stopped without replying' || true)" = "$notice_count"
+check 'duplicate notify sends no extra reminder' test "$("$B/tmux-notes" --from sender --count)" = "$notice_count"
 send --notice
 notice="$(st @last_delivered)"
 check 'notice delivery rearms stop reminder' test -z "$(st @owed_notified)"
@@ -333,17 +334,17 @@ tmux set -p -t "$child" @tracked 1
 tmux set -p -t "$child" @state working
 send
 latest="$(st @last_delivered)"
-notice_count="$(tmux capture-pane -p -S - -t %0 | rg -c 'stopped without replying' || true)"
+notice_count="$("$B/tmux-notes" --from sender --count)"
 notify "$(body request "$latest")"
 check 'working member leaves reminder unnotified' test -z "$(st @owed_notified)"
 check 'working member retains settled obligation' test "$(st @owed_settled)" = 1
-check 'working member sends no stop notice' test "$(tmux capture-pane -p -S - -t %0 | rg -c 'stopped without replying' || true)" = "$notice_count"
+check 'working member writes no stop note' test "$("$B/tmux-notes" --from sender --count)" = "$notice_count"
 tmux set -p -t "$child" @state "done"
 notify "$(body request "$latest")"
 check 'child completion allows later reminder' test "$(st @owed_notified)" = 1
-notice_count="$(tmux capture-pane -p -S - -t %0 | rg -c 'stopped without replying' || true)"
+notice_count="$("$B/tmux-notes" --from sender --count)"
 notify "$(body request "$latest")"
-check 'deferred reminder still sends once' test "$(tmux capture-pane -p -S - -t %0 | rg -c 'stopped without replying' || true)" = "$notice_count"
+check 'deferred reminder still sends once' test "$("$B/tmux-notes" --from sender --count)" = "$notice_count"
 # Descendant scans skip untracked/shell/dead candidates and handle deeper trees.
 tmux set -p -t "$child" @state working
 tmux set -p -t "$child" @tracked 0
@@ -393,7 +394,7 @@ for parent_mode in child launcher; do
   send
   old_token="$(st @last_delivered)"
   owed_before="$(tmux display-message -p -t %1 '#{@owed_to}|#{@owed_msg}|#{@owed_at}|#{@owed}|#{@owed_settled}|#{@owed_notified}|#{@owed_asked}')"
-  notice_before="$(tmux capture-pane -p -S - -t %0 | rg -c 'stopped without replying' || true)"
+  notice_before="$("$B/tmux-notes" --from sender --count)"
   notify 'fresh direct user prompt after /new'
   wanted="done"; [ "$parent_mode" != launcher ] || wanted=idle
   check "$parent_mode rebound finishes the new turn" test "$(st @state)" = "$wanted"
@@ -401,7 +402,7 @@ for parent_mode in child launcher; do
   check "$parent_mode rebound adopts resume record" test "$(record_get "$receiver_id" id)" = turn-test
   check "$parent_mode rebound discards absent prior token" test -z "$(st @last_delivered)"
   check "$parent_mode rebound preserves owed slot verbatim" test "$(tmux display-message -p -t %1 '#{@owed_to}|#{@owed_msg}|#{@owed_at}|#{@owed}|#{@owed_settled}|#{@owed_notified}|#{@owed_asked}')" = "$owed_before"
-  check "$parent_mode rebound sends no stop reminder" test "$(tmux capture-pane -p -S - -t %0 | rg -c 'stopped without replying' || true)" = "$notice_before"
+  check "$parent_mode rebound sends no stop reminder" test "$("$B/tmux-notes" --from sender --count)" = "$notice_before"
   report 'next direct turn'
   notify 'second direct user prompt'
   check "$parent_mode same-thread empty-token end still finishes" test "$(st @state)" = "$wanted"

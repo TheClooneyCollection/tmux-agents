@@ -6,6 +6,7 @@ Each file: the context, the decision, why, and what was rejected. Name new ones 
 
 | Date | Decision |
 | --- | --- |
+| 2026-11-16 | [Quiet agent notes and idle digests](2026-11-16-quiet-notes.md) |
 | 2026-11-15 | [Track manual clears and owned work](2026-11-15-manual-clear-tracking.md) |
 | 2026-11-15 | [Show Codex startup folder trust as permission](2026-11-15-codex-startup-trust.md) |
 | 2026-11-15 | [Clear and re-brief an existing chain (superseded: manual clear and re-brief)](2026-11-15-chain-reset.md) |

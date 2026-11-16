@@ -3,6 +3,7 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 . "$here/lib.sh"
+. "$here/notes-lib.sh"
 
 # Migration and first naming take exclusive locks, before any shared lock.
 if [ "${TMUX_ASK_IDENTITY_LOCKED:-}" != 1 ]; then
@@ -12,7 +13,7 @@ case "${1:-}" in
   --deliver|--retry|--kick|--pending|-h|--help) ;;
   *) if [ "${TMUX_ASK_IDENTITY_LOCKED:-}" != 1 ]; then
        case "${1:-}" in
-         --*) case "$1" in --attempt|--retry-locked|--system-notice) internal=1 ;; *) internal=0 ;; esac ;;
+         --*) case "$1" in --attempt|--retry-locked|--system-notice|--system-note|--notes-digest|--notes-digest-turn|--notes-digest-locked) internal=1 ;; *) internal=0 ;; esac ;;
          *) internal=0 ;;
        esac
        if [ "$internal" = 0 ]; then
@@ -21,8 +22,8 @@ case "${1:-}" in
          for ((i=0; i<${#args[@]}; i++)); do
            case "${args[$i]}" in
              --from) i=$((i+1)); FROM_PANE="${args[$i]:-}" ;;
-             --request-id) i=$((i+1)) ;;
-             --reply|--notice|--any) ;;
+             --request-id|--mission|--message-file) i=$((i+1)) ;;
+             --reply|--notice|--note|--any) ;;
              --) break ;;
              *) if [ -z "$initial_target" ]; then initial_target="${args[$i]}"; else break; fi ;;
            esac
@@ -235,6 +236,69 @@ try_delivery_locked() {
   return 1
 }
 
+# Digest delivery never enters the durable queue. Lock order matches delivery:
+# pane delivery lock, then turn lock. The locked event avoids taking it twice.
+notes_digest_ready() {
+  [ "$(pane_agent_id "$1")" = "$2" ] || return 1
+  [ "$(tmux display-message -p -t "$1" '#{pane_dead}')" = 0 ] || return 1
+  [ "$(tmux show-options -pqv -t "$1" @tracked)" = 1 ] || return 1
+  [ "$(tmux show-options -pqv -t "$1" @shell)" != 1 ] || return 1
+  case "$(tmux show-options -pqv -t "$1" @state)" in idle|done) ;; *) return 1 ;; esac
+  local key
+  for key in perm_since asking explicit_needs_you; do
+    [ -z "$(tmux show-options -pqv -t "$1" "@$key")" ] || return 1
+  done
+  ! user_busy "$1"
+}
+if [ "${1:-}" = --notes-digest ]; then
+  [ "$#" = 5 ] || die 'invalid notes digest'
+  require_tmux
+  with_lock "$QUEUE_DIR/.pane-${2#%}.lock" "$here/tmux-ask" --notes-digest-turn "${@:2}"
+  exit $?
+fi
+if [ "${1:-}" = --notes-digest-turn ]; then
+  perl -MFcntl=:flock -e '
+    my ($path, @cmd) = @ARGV;
+    open(my $lock, ">>", $path) or die "$!";
+    flock($lock, LOCK_EX) or die "$!";
+    system(@cmd); exit($? == -1 ? 1 : $? >> 8);
+  ' "$(sessions_dir)/.turn-$2.lock" "$here/tmux-ask" --notes-digest-locked "${@:2}"
+  exit $?
+fi
+if [ "${1:-}" = --notes-digest-locked ]; then
+  peer="$2" receiver_id="$3" text="$4"
+  notes_digest_ready "$peer" "$receiver_id" || exit 1
+  message_id="$(new_message_id)"
+  body="$(notice_body tmux-agents "$text" "$(pane_name "$peer")" "$message_id")"
+  buf="tmux-notes-digest-$$"
+  printf '%s' "$body" | tmux load-buffer -b "$buf" - || exit 1
+  notes_digest_ready "$peer" "$receiver_id" || { tmux delete-buffer -b "$buf"; exit 1; }
+  tmux paste-buffer -p -d -b "$buf" -t "$peer" || exit 1
+  sleep "$ask_enter_delay"
+  notes_digest_ready "$peer" "$receiver_id" || exit 1
+  tmux send-keys -t "$peer" Enter || exit 1
+  notes_mark_read "$receiver_id" "$5"
+  sent_at="$(date +%s)"
+  tmux set-option -p -t "$peer" @notes_digest_at "$sent_at" \; \
+    set-option -p -t "$peer" @notes_digest_sent_at "$sent_at"
+  _turn_event "$peer" delivered '' notice "$message_id"
+  exit 0
+fi
+
+if [ "${1:-}" = --system-note ]; then
+  [ "$#" = 3 ] || [ "$#" = 4 ] || die 'invalid system note'
+  sender="${4:-tmux-agents}"
+  [ "$sender" = tmux-agents ] || die 'invalid system note sender'
+  [ -n "$3" ] || die 'empty message'
+  require_tmux
+  peer="$(resolve_pane "$2")"
+  require_agent_pane "$peer"
+  to_id="$(pane_agent_id "$peer")"
+  notes_write "$to_id" '' "$sender" "$(new_message_id)" "$3"
+  notes_start_digest "$to_id"
+  exit 0
+fi
+
 # Internal durable notice entry point for rename and turn-end reports; no
 # request/reply state effects. The optional sender names the tool.
 if [ "${1:-}" = --system-notice ]; then
@@ -375,7 +439,7 @@ fi
 
 usage() {
   cat <<'EOF'
-usage: tmux-ask [--from ME] [--any] <name> [--reply | --notice] [--message-file PATH | message...]
+usage: tmux-ask [--from ME] [--any] <name> [--reply | --notice | --note] [--message-file PATH | message...]
 
 Sends message (arguments, stdin, or --message-file) to the connected pane name
 and submits it. Requests tell the receiver how to reply. Replies are
@@ -400,6 +464,8 @@ marked as needing no response, which stops endless back-and-forth.
               Use a unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/$ME/;
               remove it after a successful send or keep it for a retry.
 --from ME: your own name (needed where $TMUX_PANE is wrong, e.g. Codex)
+--note:    store a quiet note without pasting or starting a turn
+--mission ID: with --note, best-effort fleet-command progress logging
 --notice:  a message that needs no answer (tmux-connect sends one when
            it connects agents in different windows)
 --any:     send to a named pane you aren't connected to (the reply
@@ -422,7 +488,7 @@ Settings (environment overrides option):
 EOF
 }
 
-target="" reply=0 notice=0 any=0 msg="" full_message="" FROM_PANE="" message_file="" message_file_given=0 positional_message=0
+target="" reply=0 notice=0 note=0 mission="" any=0 msg="" full_message="" FROM_PANE="" message_file="" message_file_given=0 positional_message=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
@@ -430,6 +496,8 @@ while [ $# -gt 0 ]; do
     --message-file) [ "$#" -ge 2 ] || die "--message-file needs a path"; [ "$message_file_given" -eq 0 ] || die "--message-file may only be used once"; message_file="$2"; message_file_given=1; shift 2 ;;
     --reply) reply=1; shift ;;
     --notice) notice=1; shift ;;
+    --note) note=1; shift ;;
+    --mission) [ "$#" -ge 2 ] && [ -n "$2" ] || die "--mission needs an ID"; mission="$2"; shift 2 ;;
     --from) FROM_PANE="${2:-}"; shift 2 ;;
     --any) any=1; shift ;;
     --) shift; [ "$#" -eq 0 ] || positional_message=1; msg="$*"; break ;;
@@ -443,6 +511,8 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$target" ] || { usage >&2; exit 1; }
+[ "$note" -eq 0 ] || [ "$((reply + notice))" -eq 0 ] || die '--note conflicts with --reply and --notice'
+[ -z "$mission" ] || [ "$note" -eq 1 ] || die '--mission requires --note'
 if [ "$message_file_given" -eq 1 ]; then
   read_message_file full_message "$message_file"
   [ -n "$full_message" ] || die "empty message"
@@ -466,20 +536,39 @@ if [ -z "$me" ]; then
   trusted_pane || die "this pane has no name; run tmux-connect first, or pass --from <your name>"
   me="$(auto_name "$self")" || die "couldn't give pane $self a name"
 fi
-if [ "$any" -eq 1 ]; then
-  peer="$(resolve_pane "$target")"
-  require_agent_pane "$peer"
-  [ "$peer" != "$self" ] || die "that's you"
-  [ -n "$(pane_name "$peer")" ] || die "pane $peer has no name, so it couldn't reply; name it with tmux-connect first"
-else
-  if is_target "$target"; then
-    candidate="$(resolve_pane "$target")"
-    require_agent_pane "$candidate"
+from_id="$(pane_agent_id "$self")"
+peer="" to_id="" to_name=""
+if [ "$note" -eq 1 ] && [ -z "$named_target" ] && ! is_target "$target"; then
+  ids="$(record_ids_by_name "$target")"
+  if valid_agent_id "$target" && [ -f "$(sessions_dir)/$target" ]; then ids="$target"; fi
+  [ -n "$ids" ] || die "no agent named '$target'"
+  [ "$(printf '%s\n' "$ids" | wc -l | tr -d ' ')" = 1 ] || die "ambiguous closed agent '$target'; use its agent ID"
+  to_id="$ids"; to_name="$(record_get "$to_id" name)"
+  [ -z "$(find_pane_by_id "$to_id")" ] && [ -n "$(record_get "$to_id" closed)" ] || die "agent '$target' has no live pane or closed record"
+  [ "$to_id" != "$from_id" ] || die "that's you"
+  if [ "$any" -eq 0 ]; then
+    authorized=0
+    case " $(closed_names "$self") " in *" $to_id "*) authorized=1 ;; esac
+    [ "$(record_get "$to_id" parent)" != "$from_id" ] || authorized=1
+    [ "$(record_get "$from_id" parent)" != "$to_id" ] || authorized=1
+    [ "$authorized" -eq 1 ] || die "'$target' is not connected; use --any for an unrelated closed agent"
   fi
-  peer="$(resolve_peer "$self" "$target")"
+else
+  if [ "$any" -eq 1 ]; then
+    peer="$(resolve_pane "$target")"
+    require_agent_pane "$peer"
+    [ "$peer" != "$self" ] || die "that's you"
+    [ -n "$(pane_name "$peer")" ] || die "pane $peer has no name, so it couldn't reply; name it with tmux-connect first"
+  else
+    if is_target "$target"; then
+      candidate="$(resolve_pane "$target")"
+      require_agent_pane "$candidate"
+    fi
+    peer="$(resolve_peer "$self" "$target")"
+  fi
+  to_id="$(pane_agent_id "$peer")" to_name="$(pane_name "$peer")"
 fi
 
-from_id="$(pane_agent_id "$self")" to_id="$(pane_agent_id "$peer")"
 message_id="$(new_message_id)"
 
 # Only an explicit positional summary plus a file creates a retained original.
@@ -488,6 +577,16 @@ if [ "$message_file_given" -eq 1 ] && [ "$positional_message" -eq 1 ]; then
   store_message "$full_message" "$message_id"
   msg="$msg
 Read the full message here: tmux-read $message_id"
+fi
+
+if [ "$note" -eq 1 ]; then
+  notes_write "$to_id" "$from_id" "$me" "$message_id" "$msg"
+  notes_start_digest "$to_id"
+  if [ -n "$mission" ] && command -v fleet-command >/dev/null 2>&1; then
+    fleet-command --from "$me" log "$mission" "$msg" --kind progress || printf 'warning: note saved, mission log failed\n' >&2
+  fi
+  printf 'noted to %s (%s)\n' "$to_name" "${peer:-closed}"
+  exit 0
 fi
 
 if [ "$notice" -eq 1 ]; then

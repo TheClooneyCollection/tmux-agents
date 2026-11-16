@@ -2,6 +2,7 @@
 # Report what an agent is doing, for the sub agent chip (tmux-agents --chip).
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/notes-lib.sh"
 
 usage() {
   cat <<'USAGE'
@@ -255,10 +256,11 @@ case "$turn" in
     stopped="$(turn_end "$pane" "$notify_json" "${notify_rebound:-}")"
     if [ -n "$stopped" ]; then
       me="$(pane_name "$pane")" doing="$(tmux show-option -pqv -t "$pane" @activity)"
-      "$(dirname "$0")/tmux-ask" --system-notice "$stopped" \
+      "$(dirname "$0")/tmux-ask" --system-note "$stopped" \
         "${me:-$pane} stopped without replying to your last request: ${doing:-no report yet}" tmux-agents \
         </dev/null >/dev/null 2>&1 || true
     fi
+    "$(dirname "$0")/tmux-agents-notes-digest.sh" --start "$(pane_agent_id "$pane")" >/dev/null 2>&1 || true
     exit 0 ;;
   start)
     prompt=local session_id=""
@@ -274,6 +276,15 @@ case "$turn" in
       fi
     fi
     turn_begin "$pane" "$prompt" prompt
+    if [ "$(record_get "$(pane_agent_id "$pane")" kind)" = claude ]; then
+      summary="$(notes_summary "$(pane_agent_id "$pane")" "$(pane_name "$pane")")"
+      if [ -n "$summary" ]; then
+        printf '%s' "$summary" | perl -MJSON::PP -e '
+          local $/; my $text=<STDIN>; utf8::decode($text);
+          print encode_json({hookSpecificOutput=>{hookEventName=>"UserPromptSubmit",additionalContext=>$text}}), "\n";
+        '
+      fi
+    fi
     exit 0 ;;
 esac
 

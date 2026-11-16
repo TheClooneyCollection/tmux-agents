@@ -34,6 +34,9 @@ check 'fresh default Codex links every skill' all_skills "$HOME/.codex/skills"
 check 'selected home with spaces links every skill' all_skills "$CODEX_HOME/skills"
 check 'Codex startup observer linked' test -x "$BIN_DIR/tmux-agents-codex-startup.sh"
 check 'tmux-read command linked' test -x "$BIN_DIR/tmux-read"
+check 'notes library linked' test -f "$BIN_DIR/notes-lib.sh"
+check 'tmux-notes command linked' test -x "$BIN_DIR/tmux-notes"
+check 'tmux-notes link resolves to checkout' test "$BIN_DIR/tmux-notes" -ef "$here/bin/tmux-notes"
 check 'tmux-read rules installed' contains "$CODEX_HOME/rules/tmux-agents.rules" '["tmux-read"]'
 check 'Claude permits tmux-read' contains "$here/integrations/claude/settings.json" 'Bash(tmux-read:*)'
 check 'rules are real files' test ! -L "$CODEX_HOME/rules/tmux-agents.rules"

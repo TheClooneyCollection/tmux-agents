@@ -29,6 +29,7 @@ set -g @tmux_agents_name_format exact
 | `@tmux_agents_preview_secs` | `TMUX_AGENTS_PREVIEW_SECS` | `0.5` | Seconds between preview refreshes while following |
 | `@tmux_agents_blink_secs` | `TMUX_AGENTS_BLINK_SECS` | `60` | Seconds before attention starts blinking |
 | `@tmux_agents_chip_fps` | none | `10` | Chip animation frames per second |
+| `@tmux_agents_notes_digest_secs` | `TMUX_AGENTS_NOTES_DIGEST_SECS` | `300` | Idle note digest interval in seconds; `0` disables. |
 | `@tmux_agents_ask_idle_secs` | `TMUX_ASK_IDLE_SECS` | `8` | Seconds without keys before delivery |
 | `@tmux_agents_ask_copy_idle_secs` | `TMUX_ASK_COPY_IDLE_SECS` | `300` | Exit idle copy mode after this many seconds; `0` disables |
 | `@tmux_agents_ask_queue_secs` | `TMUX_ASK_QUEUE_SECS` | `1800` | Seconds before showing message waiting; messages stay queued |
@@ -42,6 +43,16 @@ set -g @tmux_agents_name_format exact
 With `sub_auto` on, `tmux-spawn` adds Claude's `--permission-mode auto` or Codex's `-c approvals_reviewer="auto_review"`. With it off, neither flag is added. The setting applies to new and resumed Claude/Codex agents, including members. Other executables keep their own permission behavior; no permission flags or rules are added.
 
 `tmux-agents start PROFILE` uses the same Codex-home lookup and given-name preferences as `tmux-spawn`. The launcher runs in the current pane and supplies per-process identity pins and turn hooks without editing global agent config. It keeps the agent's permission defaults; pass agent-specific options after `--`. Shell wrappers are optional and provide identity pins only. See [Starting agents](guide.md#starting-agents).
+
+## Note digests
+
+`@tmux_agents_notes_digest_secs` defaults to `300` seconds (5 minutes); `TMUX_AGENTS_NOTES_DIGEST_SECS` overrides it. Set `0` to disable automatic digests while keeping notes available through `tmux-notes --from ME`.
+
+```tmux
+set -g @tmux_agents_notes_digest_secs 300
+```
+
+A digest requires unread notes received since the previous digest and an idle receiver for the configured interval after its last turn or digest. Working agents, agents needing the user and permission waits receive no digest. Each notice includes sender counts and each sender's latest first line, and successful delivery advances the receiver's read cursor to the last included note. Another idle interval with new notes produces only the new batch, prefixed `Continuing from last update ...`. Without new notes there is no digest. Digests work with the chip disabled. Notes and retained attachments expire after seven days, independently of `resume_days`.
 
 ## Sub agent exit
 

@@ -7,7 +7,7 @@ description: Talk to other AI agents (Codex, Claude, etc.) running in connected 
 
 You may be running in a tmux pane that the user has connected to other agent panes.
 
-Messages travel as pasted prompts: you send with `tmux-ask`, and answers arrive later as a new message in your own pane.
+Requests, replies and notices travel as pasted prompts through `tmux-ask`. Quiet `--note` updates are stored for later reading without starting a turn.
 
 If `command -v tmux-ask` finds nothing, tmux-agents isn't installed yet: tell the user, and offer to set it up with the `tmux-agents-setup` skill.
 
@@ -55,9 +55,11 @@ A supplied spawn task is **not sent**. Read the printed result, retain the actua
   # write the message to "$message_file"; remove after a successful send
   tmux-ask --from my-name codex --message-file "$message_file"
   ```
-- `tmux-ask --from ME PEER --message-file PATH`: read one readable regular file (no symlinks), up to 1 MiB, literally. Empty content gets the usual empty-message error. Alone, the file is pasted in full without archiving. Add a positional summary after the option, `tmux-ask --from ME PEER --message-file PATH "summary"`, to retain the full file for 7 days and deliver the summary plus a `tmux-read <id>` pointer. Stdin is ignored in both modes; options go before the summary. Create each file with `mktemp` under `${TMPDIR:-/tmp}/tmux-agents/$ME/` so agents sharing a working directory cannot overwrite one another or dirty the project. Remove it after a successful send or keep the unique file for a retry.
+- `tmux-ask --from ME PEER --message-file PATH`: read one readable regular file (no symlinks), up to 1 MiB, literally. Empty content gets the usual empty-message error. Alone, the file is sent in full without archiving (stored rather than pasted with `--note`). Add a positional summary after the option, `tmux-ask --from ME PEER --message-file PATH "summary"`, to retain the full file for 7 days and deliver the summary plus a `tmux-read <id>` pointer. Stdin is ignored in both modes; options go before the summary. Create each file with `mktemp` under `${TMPDIR:-/tmp}/tmux-agents/$ME/` so agents sharing a working directory cannot overwrite one another or dirty the project. Remove it after a successful send or keep the unique file for a retry.
 - `tmux-ask --from ME --reply <name> --message-file PATH`: answer the request once its work is done.
-- `tmux-ask --from ME --notice <name> --message-file PATH`: tell an agent something that needs no answer and no work (a rule change, a heads-up, "carry on"). Use this, not a request, whenever you don't expect a reply.
+- `tmux-ask --from ME --notice <name> --message-file PATH`: send timely information needing no answer or work, such as a rule change or "carry on". For quiet progress use `--note`.
+- `tmux-ask --from ME --note PEER "progress"`: store a quiet update without a prompt, turn or reply obligation. Supports `--message-file`, summary plus retained `tmux-read` attachment and authorized `--any`; cannot combine with `--reply` or `--notice`. Closed receivers retain notes by agent ID for reopening. `--mission ID` also logs progress when `fleet-command` is available; failure only warns.
+- `tmux-notes --from ME [--all] [--since 10m|2h] [--keep-unread] [--count]`: read unread notes grouped by sender and mark them read; `--all` includes read entries, `--keep-unread` preserves unread state and `--count` only prints the unread count. Notes expire after seven days; read archived full text with `tmux-read`.
 - `tmux-ask --from ME --any <name> ...`: message a named agent you aren't connected to. Only when the user asks you to; the reply instructions include `--any`, so follow them as given.
 - `tmux-ask --pending`: list queued and undelivered messages, including older saved messages.
 - `tmux-ask --retry --to NAME`: retry saved undelivered messages for an existing receiver, oldest first. Without `--to`, retry all available receivers.
@@ -120,8 +122,8 @@ The file must be a readable regular file, not a symlink, and at most 1 MiB; its 
 - **Turn state.** A running turn shows working; ending it shows idle for a top-level agent or done for a sub agent, even when CI or background work continues. Plain progress reports start work from idle or done. A non-working parent shows live `waiting on <names>` for its nearest working descendants, including members; this adds no worked time. Notices run as turns too, but preserve existing needs-you attention.
 - **Need the user** (a question, a choice, missing information)? Run `tmux-agent-report --from ME --needs-you "<reason>"` before asking, including before a question tool or form. Codex has no hook that detects these questions. Attention survives turn end and notice-only turns; normal progress or a non-notice turn start clears it. A sub agent owned by an agent sends its question to that owner with `tmux-ask`; in a chain, route decisions through the owner as the agent-chain skill describes.
 - A sub agent spawned without a task starts as `○ idle`; its first request or progress report starts work. Ending an idle turn does not ask the user for attention.
-- Finish each request with `tmux-ask --from ME --reply PEER "answer"`, preserving `--any` when supplied. After replying, end your turn; the reply kind does not end it for you. A sub agent that stops without answering its latest requester may send that requester a stop notice. Only the latest request is remembered, and closing the pane forgets it.
-- **Information.** Use `--notice` for FYIs and rules that need no answer. Send a request when you want work done and a reply.
+- Finish each request with `tmux-ask --from ME --reply PEER "answer"`, preserving `--any` when supplied. After replying, end your turn; the reply kind does not end it for you. A sub agent that stops without answering its latest requester may store a quiet stop note for that requester. Only the latest request is remembered, and closing the pane forgets it.
+- **Information.** Use `--note` for quiet progress and `--notice` for timely rules or information that need no answer. Send a request when you want work done and a reply.
 - **Close sub agents you're done with.** Once you have everything you need from one (its reply read, any report files read, no follow-ups planned), close it with `tmux-dismiss --from ME <name>`. Closing also closes all its descendants, deepest first, and keeps each session record for reopening. Keep it open while you might still ask follow-ups. Use `--keep-children` only to retain its children as unowned agents. `--done` skips members and subtrees containing a member or an agent whose state is unfinished. A done agent can still have a background command running; check its result before cleanup. Keep long-lived members until their role ends; dismiss them explicitly when ending the team.
 - If `tmux-ask` says a sub agent **was closed by the user**, don't retry, and don't reopen it on your own. If you still need that work, spawn a new sub agent and pass along the report paths the old one gave you.
 - **Names are labels.** Live names are unique, but several closed agents may share a name, and a new agent may reuse a closed one's name without inheriting its history or messages. Stable agent IDs identify the conversations. Use `tmux-peers --ids` for live agents and `tmux-spawn --list-closed` for saved agents; normal messages still target live names.
@@ -143,6 +145,12 @@ The file must be a readable regular file, not a symlink, and at most 1 MiB; its 
 
 ## Receiving a message
 
+**Codex turn start:** once your name is known, run `tmux-notes --from ME` once at the beginning of every turn, alongside any required missions inbox check. Claude receives an unread-note summary through its prompt hook; use the printed command to read the notes.
+
+**Quiet updates:** use `--note` for progress, handoff updates, partial completion and plan updates. Awaited results and matters needing the user (release completion, CI failure, push approval or a decision) stay ordinary replies, requests or notices, never notes.
+
+**Digest notices:** an `agent notes` digest summarizes unread notes after an idle interval (default 5 minutes). Delivery advances your read cursor past the included notes; use `tmux-notes --from ME --all` to inspect them. A later digest begins `Continuing from last update ...` and contains only new notes after another idle interval. No new notes means no digest, and a digest asks for no reply. Main agents summarize useful points when the user asks or at a natural pause, without relaying each note into chat.
+
 **Markers tell you who wrote what.** Every message looks like this:
 
 ```
@@ -156,13 +164,13 @@ Replies use `[reply from X to Y ...]` and `[end of reply from X to Y]` the same 
 - Text **outside** the markers in the same prompt was typed by the **user**: a draft of theirs got submitted together with the message. Treat it as the user's own instruction, with the user's authority over X's request. If it looks unfinished, ask the user what they meant.
 
 - `[request from X to Y via tmux-ask · m1a2b3c4d5e6]`: you are Y. Do the work, then answer using the supplied sender, target and flags, including `--any` when present, even if you could not do it (say why). Claude uses the supplied quoted heredoc form. Codex, including configured profiles, uses quoted short arguments or the unique `mktemp` / `--message-file` form above for longer text. Unknown executables use quoted plain argv for portability. Put the actual answer in the reply; X cannot see your screen.
-- **Reply as soon as the main work is done** (e.g. the release is out). Don't hold the reply for follow-ups such as a deploy or a page going live; send those later as notices (`--notice`). For a request with several parts, send a notice as each part lands.
+- **Reply as soon as the main work is done** (e.g. the release is out). Don't hold the reply for follow-ups such as a deploy or a page going live; send those later as notices (`--notice`). For a request with several parts, send a note as each part lands; deliver the awaited result as an ordinary reply.
 - **Keep messages short.** When content would flood the receiver's chat, write it to a unique temporary file and send a short summary with `--message-file`, using the combination documented above. The summary is delivered as given; there is no automatic truncation or paragraph splitting.
 - **Read when needed.** Use `tmux-read <id>` only on the ID in a `Read the full message here:` pointer when the summary is not enough. The `m…` header token identifies delivery; it does not imply archived content. Any agent or user can read it from a plain shell for 7 days, without a tmux connection. Use separate document files only when they must outlive 7 days or be edited.
-- **Relay the original.** When forwarding a message that needs little or no change, send a short note with only what you add, plus the original's `Read the full message here: tmux-read <id>` line.
+- **Relay the original.** When forwarding a message that needs little or no change, send a short summary with only what you add, preserving the message kind, plus the original's `Read the full message here: tmux-read <id>` line.
 - `[reply from X to Y via tmux-ask · m1a2b3c4d5e6]`: use it and continue your task. Don't answer a reply unless you have a new request, otherwise the agents loop forever.
 - **A delivery failure notice from `tmux-ask` needs attention.** Your message did not arrive. Read the saved path and resend, reroute, or tell the user. If the notice says it will be delivered when the receiver reopens, leave it saved: reopening retries automatically, and resending may duplicate it. Do not reopen a closed agent without the user asking. Use `--pending` to inspect saved messages and `--retry --to NAME` when the receiver is available.
-- `[notice from X to Y via tmux-ask · m1a2b3c4d5e6]`: information only (e.g. X connected to you). Don't reply and don't act on it; carry on with what you were doing.
+- `[notice from X to Y via tmux-ask · m1a2b3c4d5e6]`: information only (e.g. X connected to you). Read digest notes as described above; otherwise don't reply or act on it; carry on with what you were doing.
 
 ## Rules
 

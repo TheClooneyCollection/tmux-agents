@@ -13,6 +13,7 @@ sock="tmux-agents-test-$$"
 state_dir="$(mktemp -d "${TMPDIR:-/tmp}/tmux-agents-test.XXXXXX")"
 
 unset TMUX TMUX_PANE CLAUDECODE TMUX_AGENTS_KIND TMUX_AGENTS_PINNED
+export TMUX_AGENTS_NOTES_DIGEST_SECS=0
 export XDG_STATE_HOME="$state_dir" TMUX_ASK_ENTER_DELAY=0
 
 tmux -L "$sock" -f /dev/null new-session -d -x 120 -y 30 cat
@@ -245,5 +246,16 @@ _agent_work %1 startup-perm on '' "$identity"
 "$B/tmux-agent-report" --pane %1 --perm on
 _agent_work %1 startup-perm '' '' "$identity"
 check "new explicit permission retains ownership at same timestamp" test -n "$(st %1 @perm_since)"
+
+# Quiet progress cannot act as the answer to an explicit user question.
+reset
+"$B/tmux-agent-report" --from kid --needs-you 'choose deployment region' >/dev/null
+before="$(st %1 @last_delivered)"
+"$B/tmux-ask" --from boss --note kid 'background build is ready' >/dev/null
+expect "quiet note preserves explicit needs-you" needs_you
+check "quiet note preserves delivery token" test "$(st %1 @last_delivered)" = "$before"
+check "quiet note is available without starting a turn" test "$("$B/tmux-notes" --from kid --count)" -gt 0
+"$B/tmux-notes" --from kid >/dev/null
+expect "reading quiet notes preserves explicit needs-you" needs_you
 
 exit "$fail"

@@ -112,6 +112,7 @@ _turn_event() {
       else
         agent_turn_state "$turn_pane" end "$state"
       fi
+      tmux set-option -p -t "$turn_pane" @notes_idle_since "$(date +%s)"
       [ "${2:-}" != rebound ] || return 0
       if [ -n "$(_turn_get parent)" ] && [ "$(_turn_get owed)" = 1 ] &&
           [ "$(_turn_get owed_settled)" = 1 ] && [ "$(_turn_get owed_notified)" != 1 ]; then

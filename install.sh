@@ -106,10 +106,11 @@ if [ -L "$bin_dir/tmux-request-state" ] && [ "$(readlink "$bin_dir/tmux-request-
   run rm "$bin_dir/tmux-request-state"
 fi
 
-# Includes tmux-read, the socket-free retained-message reader.
+# Includes tmux-read for retained messages and tmux-notes for quiet updates.
 for f in "$here"/bin/tmux-*; do link "$f" "$bin_dir/$(basename "$f")"; done
 link "$here/bin/lib.sh" "$bin_dir/lib.sh"
 link "$here/bin/turn-state.sh" "$bin_dir/turn-state.sh"
+link "$here/bin/notes-lib.sh" "$bin_dir/notes-lib.sh"
 
 link "$here/skills/tmux-agents" "$HOME/.claude/skills/tmux-agents"
 link "$here/skills/tmux-agents-setup" "$HOME/.claude/skills/tmux-agents-setup"

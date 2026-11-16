@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Read quiet notes for the calling agent without delivering a prompt.
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+. "$here/lib.sh"
+. "$here/notes-lib.sh"
+FROM_PANE="" all=0 keep=0 mode=read after=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --from) [ "$#" -ge 2 ] || die '--from needs a name'; FROM_PANE="$2"; shift 2 ;;
+    --all) all=1; shift ;;
+    --keep-unread) keep=1; shift ;;
+    --count) mode=count; shift ;;
+    --since)
+      [ "$#" -ge 2 ] || die '--since needs a duration such as 10m or 2h'
+      duration="$2"; amount="${duration%?}"
+      case "$amount" in ''|*[!0-9]*) die 'invalid --since duration' ;; esac
+      [ "${#amount}" -le 8 ] || die 'invalid --since duration'
+      case "$duration" in *m) scale=60 ;; *h) scale=3600 ;; *) die 'invalid --since duration' ;; esac
+      after=$(( $(date +%s) - 10#$amount * scale )); shift 2 ;;
+    -h|--help)
+      echo 'usage: tmux-notes [--from ME] [--all] [--since 10m|2h] [--keep-unread] [--count]'
+      exit 0 ;;
+    *) die "unknown argument: $1" ;;
+  esac
+done
+require_tmux
+ensure_agent_ids
+self="$(self_pane)"
+require_agent_pane "$self"
+id="$(ensure_agent_id "$self")"
+# Count always means unread and never advances the read cursor.
+if [ "$mode" = count ]; then all=0; keep=1; fi
+_notes_store "$mode" "$id" "$after" "$all" "$keep" ''

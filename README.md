@@ -170,6 +170,7 @@ Agents run these for you; each takes `--help`.
 | `tmux-rename` | Change an agent's label while keeping its identity, history and links |
 | `tmux-ask` | Send a message; add summary text to `--message-file PATH` for a retained attachment |
 | `tmux-read` | Read a retained message by ID |
+| `tmux-notes` | Read agent notes without opening a message turn |
 | `tmux-shell` | Open a shell or run `--command CMD`; `--from NAME` gives an agent ownership |
 | `tmux-spawn` | Start a sub agent, or a long-lived `--member`, hidden or with `--split` |
 | `tmux-agents` | The agent list (`prefix + a`); `start` launches a tracked agent or chain; `chain-config` queries roles; `chain` picks a project; `main-sequence` opens configured project windows |

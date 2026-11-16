@@ -134,6 +134,16 @@ Borders show `name ⇄ peers`. Links are one-to-one: A↔B and B↔C do not link
 
 Use `tmux-ask --from ME PEER "task"` for requests, `--reply` for answers and `--notice` for information needing no work or reply. Requests include reply instructions; the sender ends its turn and receives the answer later. A request saying “no reply needed” still starts work and makes the sender await a reply. Replies do not invite another reply.
 
+Use `tmux-ask --from ME --note PEER "progress"` for quiet progress, handoff updates, partial completion and plan updates. A note is stored immediately without pasting a prompt, starting a turn, waiting for typing or changing the reply obligation. `--note` is mutually exclusive with `--reply` and `--notice`; it supports `--any` and the file and summary forms below. Empty notes are rejected. Notes follow the receiver's stable agent ID, including while its record is closed, and remain readable after reopening for up to seven days. Adding `--mission ID` also logs progress through `fleet-command` when installed; logging failure only warns and does not lose the note.
+
+Keep awaited results and matters requiring the user on ordinary `--reply`, request or `--notice` messages: release completion, CI failure, push approval and decisions must never be notes. A decision request includes the default and what is blocked. Main agents read notes for a concise update when the user asks or at a natural pause, rather than repeating every entry.
+
+Read `tmux-notes --from ME` to see unread notes grouped by sender, ordered by time within each group, with `HH:MM` and message IDs. Each receiver has one read cursor over increasing note IDs. Reading advances it to the last printed note; `--keep-unread` preserves them. `--all` includes read notes, `--since 10m` or `--since 2h` limits the time range, and `--count` prints only the unread count without consuming notes. Summary attachments still use `tmux-read <id>` for their full text.
+
+Claude's `UserPromptSubmit` hook supplies an unread-note summary at turn start, with sender counts, the latest first line and the command to read them; it is silent with no unread notes. Codex has no prompt hook, so its skill requires `tmux-notes --from ME` once at the start of each turn. A hook summary leaves notes unread; a successfully delivered digest advances the cursor to its last included note.
+
+An idle receiver gets a digest notice after about 5 minutes, including sender counts and latest first lines. It requires new unread notes since the previous digest and skips working, needs-you and permission states. After another idle interval, a new batch gets a digest beginning with `Continuing from last update ...`; it contains only new notes. No new notes means no digest. It works even when the chip is off. Set the [note digest interval](configuration.md#note-digests) to `0` to disable it.
+
 For a message already saved in a file, use `--message-file`:
 
 ```sh
@@ -144,7 +154,7 @@ message_file="$(mktemp "$message_dir/message.XXXXXX")"
 tmux-ask --from ME PEER --message-file "$message_file"
 ```
 
-The file must be one readable regular file, not a symlink, and at most 1 MiB. Its literal text is sent unchanged; empty files use the usual empty-message validation. The option alone pastes the file in full without archiving it. To send a summary with the file as retained full text, use `tmux-ask --from ME PEER --message-file "$message_file" "Review complete; details attached."`. Put options before the summary. The file is copied to state storage and the summary receives a `Read the full message here: tmux-read <id>` line. Both modes ignore stdin without reading it; stdin summaries are not supported. Empty summaries are rejected.
+The file must be one readable regular file, not a symlink, and at most 1 MiB. Its literal text is sent unchanged; empty files use the usual empty-message validation. The option alone sends the file in full without archiving it (stored rather than pasted with `--note`). To send a summary with the file as retained full text, use `tmux-ask --from ME PEER --message-file "$message_file" "Review complete; details attached."`. Put options before the summary. The file is copied to state storage and the summary receives a `Read the full message here: tmux-read <id>` line. Both modes ignore stdin without reading it; stdin summaries are not supported. Empty summaries are rejected.
 
 Reply instructions follow the receiving agent: Claude uses the supplied quoted heredoc form; Codex, including configured profiles, uses quoted short arguments or a unique `mktemp` file with `--message-file` as above. Unknown executables receive quoted plain argv for portability. Preserve the supplied sender, target and `--any` when present.
 
@@ -240,7 +250,7 @@ Helpers report progress with `tmux-agent-report --from ME "running tests"`. This
 
 A non-working parent shows `waiting on <names>` for its nearest working descendants, including members. The walk passes through idle, done and needs-you agents and stops at each working one. Working parents keep their own report. Counts use each agent's own state. Unrelated and cross-project requests do not appear in this suffix. If a member has stopped, inspect its last report or pane and pick up any finished result.
 
-A sub agent remembers only its latest requester in a pane-local slot. Once a turn has seen that request, stopping without a message back sends the live requester one notice. Any message to that requester clears the obligation; a clarifying question before answering re-arms it when the answer arrives. A new turn, including a notice nudge, allows another warning if it stops again. This neither marks needs-you nor proves task completion. Earlier senders are forgotten, as are delivered requests when the pane closes. Only undelivered queued messages refill the slot on reopen. See [notice details and limits](design/state-and-protocol.md#unanswered-stop-notice).
+A sub agent remembers only its latest requester in a pane-local slot. Once a turn has seen that request, stopping without a message back stores one quiet note from `tmux-agents` for the requester. An ordinary message to that requester clears the obligation; notes do not. A clarifying question before answering re-arms it when the answer arrives. A new turn, including a notice nudge, allows another warning if it stops again. This neither marks needs-you nor proves task completion. Earlier senders are forgotten, as are delivered requests when the pane closes. Only undelivered queued messages refill the slot on reopen. See [reply-obligation details and limits](design/state-and-protocol.md#unanswered-stop-notice).
 
 Compatibility accepts old `--request-id` arguments but ignores their values with a note. Old report `--waiting` and `--local` forms become plain progress; `--local-done` is a successful no-op. Existing archived `r…` IDs remain readable until expiry. This deprecation window lasts at least through the following release; removing the flags needs a separate decision.
 
@@ -302,7 +312,8 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 | `tmux-rename --from ME PEER NAME [--exact]` | Rename yourself or a descendant. |
 | `tmux-disconnect [name]` | User unlinks one peer or all. |
 | `tmux-peers --from ME [--ids]` | Show identity and connections. |
-| `tmux-ask --from ME [--any] [--reply\|--notice] PEER [msg...]` or `--message-file FILE` | Send request, answer or notice; a file alone is the full message, a file plus positional text delivers a summary and retained-file pointer. Accepts stdin only without a message file. `--any` permits unlinked targets. |
+| `tmux-ask --from ME [--any] [--reply\|--notice\|--note] PEER [msg...]` or `--message-file FILE` | Send request, answer, notice or quiet note; a file alone is the full message, a file plus positional text delivers a summary and retained-file pointer. Accepts stdin only without a message file. `--any` permits unlinked targets. |
+| `tmux-notes --from ME [--all] [--since 10m\|2h] [--keep-unread] [--count]` | Read quiet notes; default reads and marks unread entries, while `--count` only counts unread notes. |
 | `tmux-read ID` | Read any retained message by ID (7-day retention; no tmux connection needed). |
 | `tmux-ask --pending` | Inspect queued/undelivered messages. |
 | `tmux-ask --retry [--to PEER]` | Retry saved messages. |
