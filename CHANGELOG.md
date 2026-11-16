@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.24.0 (2026-11-16)
+
+- Quiet notes: `tmux-ask --note PEER "progress"` stores an update for any connected receiver without pasting a prompt, starting a turn or changing the reply obligation. Notes form an append-only per-receiver log with increasing ids and one read cursor; `tmux-notes --from ME` prints the unread ones grouped by sender and advances the cursor (`--keep-unread`, `--all`, `--since`, `--count`). `--mission ID` also logs the note to Fleet Command when it is installed.
+- Claude agents get a one-line unread summary through the `UserPromptSubmit` hook when the user speaks; it leaves the cursor alone. Codex agents check `tmux-notes` at each turn start.
+- Idle digests: any tracked agent that has been idle or done for `@tmux_agents_notes_digest_secs` (default 300, `0` disables) with unread notes gets one notice summarizing them, which marks them read. A later digest carries only newer notes and opens with "Continuing from last update ..." until the user speaks: a real Claude prompt, or a Codex turn whose notify inputs carry no tmux-ask header, resets that marker. No new notes, no digest; working, needs-you and permission states are never interrupted.
+- Bare `tmux-notes --count` resolves the agent from `$TMUX_PANE` with one tmux lookup and no Perl, prints just the unread number and `0` on any miss, cheap enough for a status line.
+- The "stopped without replying" reminder is a quiet note instead of a chat notice; the reply obligation and its list display are unchanged.
+- The agent-chain and tmux-agents skills send progress, handoffs and partial completions as notes; awaited results and anything needing the user (release done, CI failure, push approval, decisions) stay replies, requests or notices.
+
 ## v1.23.4 (2026-11-15)
 
 - Clearing a session by hand is supported: after Codex `/new`, a turn end reported with the agent's verified id adopts the new thread for the pane and its record, so tracking and `tmux-spawn --resume` follow the newest conversation instead of leaving the pane working forever. The first turn end after such a switch counts even when its inputs omit the previous delivery token; the owed reply slot is left as is.
