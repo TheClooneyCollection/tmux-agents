@@ -1,6 +1,36 @@
 #!/usr/bin/env bash
 # Read quiet notes for the calling agent without delivering a prompt.
 set -euo pipefail
+# Statuslines explicitly trust their pane. Keep this before library loading and
+# option parsing: one tmux query, then only shell builtins and immutable names.
+if [ "$#" -eq 1 ] && [ "$1" = --count ]; then
+  fast_notes_count() {
+    local id sock dir cursor=0 padded file name prefix count=0
+    if [ -z "${TMUX_PANE:-}" ] || [ -z "${TMUX:-}" ]; then printf '0\n'; return; fi
+    id="$(tmux display-message -p -t "$TMUX_PANE" '#{@agent_id}' 2>/dev/null)" || id=''
+    if [[ ! $id =~ ^a[0-9a-f]{12}$ ]]; then printf '0\n'; return; fi
+    sock="${TMUX%%,*}"; sock="${sock##*/}"
+    dir="${XDG_STATE_HOME:-$HOME/.local/state}/tmux-agents/${sock:-default}/notes/$id"
+    if [ ! -d "$dir" ]; then printf '0\n'; return; fi
+    if [ -f "$dir/.cursor" ]; then
+      { IFS= read -r cursor < "$dir/.cursor"; } 2>/dev/null || true
+    fi
+    case "$cursor" in ''|*[!0-9]*) cursor=0 ;; esac
+    [ "${#cursor}" -le 20 ] || { printf '0\n'; return; }
+    padded="00000000000000000000$cursor"; padded="${padded: -20}"
+    local LC_ALL=C
+    for file in "$dir"/*.json; do
+      [ -f "$file" ] || continue
+      name="${file##*/}"
+      [[ $name =~ ^[0-9]{20}-m[0-9a-f]+\.json$ ]] || continue
+      prefix="${name%%-*}"
+      if [[ $prefix > $padded ]]; then count=$((count + 1)); fi
+    done
+    printf '%s\n' "$count"
+  }
+  fast_notes_count
+  exit 0
+fi
 here="$(cd "$(dirname "$0")" && pwd)"
 . "$here/lib.sh"
 . "$here/notes-lib.sh"

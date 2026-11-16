@@ -106,7 +106,8 @@ notes --since 10m --keep-unread >"$tmp/recent"
 if grep -q 'old but retained\|expired' "$tmp/recent"; then fail 'since filter'; fi
 notes --all --keep-unread >"$tmp/read"
 grep -q 'old but retained' "$tmp/read" || fail 'retained old note'
-[ ! -f "$(notes_dir)/$receiver/m000000000002.json" ] || fail 'seven day prune'
+expired_files=("$note_dir"/*-m000000000002.json)
+[ ! -f "${expired_files[0]}" ] || fail 'seven day prune'
 reject notes --since bananas
 reject notes --since 1d
 notes_write "$receiver" "$outsider" outsider m000000000003 'another group'
@@ -139,7 +140,7 @@ perl -MJSON::PP -e '
   my @ids;
   for my $path (@ARGV) {open(my $fh,"<",$path) or die $!; local $/; push @ids, decode_json(<$fh>)->{id}}
   die "concurrent IDs collided" unless $ids[0] != $ids[1];
-' "$note_dir/m000000000007.json" "$note_dir/m000000000008.json"
+' "$note_dir"/*-m000000000007.json "$note_dir"/*-m000000000008.json
 # Retention may remove every record, but never the durable sequence or cursor.
 pruned_receiver=a000000000011
 notes_write "$pruned_receiver" "$sender" sender m000000000030 'expired first' "$((now - 604801))"
@@ -244,4 +245,21 @@ notes --all --since 10m >"$tmp/filtered-all"
 [ "$(cat "$note_dir/.cursor")" = "$filtered_cursor" ] || fail 'all changed cursor beyond displayed IDs'
 notes --keep-unread >"$tmp/remaining"
 grep -q 'later ID outside time filter' "$tmp/remaining" || fail 'unseen note lost'
+# Connected peers can exchange notes regardless of ownership or member role.
+# These deliberately generic names carry no chain-role naming convention.
+tmux set -p -t %0 @peers "$pane"
+tmux set -p -t "$pane" @peers %0
+for relationship in peer child member; do
+  case "$relationship" in
+    peer) tmux set -pu -t "$pane" @parent; tmux set -pu -t "$pane" @member ;;
+    child) tmux set -p -t "$pane" @parent %0 ;;
+    member) tmux set -p -t "$pane" @member 1 ;;
+  esac
+  "$B/tmux-ask" --from sender --note receiver "to $relationship"
+  notes --keep-unread >"$tmp/relationship-to"
+  grep -q "to $relationship" "$tmp/relationship-to" || fail "note to $relationship missing"
+  "$B/tmux-ask" --from receiver --note sender "from $relationship"
+  "$B/tmux-notes" --from sender >"$tmp/relationship-from"
+  grep -q "from $relationship" "$tmp/relationship-from" || fail "note from $relationship missing"
+done
 echo 'PASS: immutable quiet notes, monotonic cursor, digest batches, retention and mission logging'

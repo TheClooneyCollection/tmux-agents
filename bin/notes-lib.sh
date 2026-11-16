@@ -48,7 +48,7 @@ _notes_store() {
     opendir(my $dh, $dir) or die "notes directory: $!\n";
     my @notes;
     for my $file (sort readdir($dh)) {
-      next unless $file =~ /^m[0-9a-f]+\.json$/;
+      next unless $file =~ /^(?:[0-9]{20}-)?m[0-9a-f]+\.json$/;
       open(my $fh, "<", "$dir/$file") or next;
       my $raw = do {local $/; <$fh>}; close($fh);
       my $note = eval {decode_json($raw)};
@@ -65,12 +65,13 @@ _notes_store() {
       die "invalid note timestamp\n" unless $at =~ /^\d+(?:\.\d+)?$/;
       my $text = do {local $/; <STDIN>};
       die "empty note\n" unless defined($text) && length($text);
-      die "note already exists\n" if -e "$dir/$message_id.json";
+      die "note already exists\n" if grep {$_->{message_id} eq $message_id} @notes;
       # Reserve first: an interrupted publication may leave a gap, never reuse.
       my $id = $sequence + 1;
       atomic("$dir/.sequence", $id);
       atomic("$dir/.cursor", $cursor) unless -e "$dir/.cursor";
-      atomic("$dir/$message_id.json", {id=>$id, message_id=>$message_id, at=>0+$at, from_id=>$from_id,
+      my $filename = sprintf("%020d-%s.json", $id, $message_id);
+      atomic("$dir/$filename", {id=>$id, message_id=>$message_id, at=>0+$at, from_id=>$from_id,
         from_name=>decode("UTF-8", $name), text=>decode("UTF-8", $text)});
       exit;
     }

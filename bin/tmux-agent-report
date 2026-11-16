@@ -19,7 +19,7 @@ Legacy --waiting and --local are progress reports; --local-done is a no-op.
 USAGE
 }
 
-FROM_PANE="" pane="" perm="" tool="" turn="" notify_json="" notify_agent_id="" notify_rebound="" waiting=0 save_work=0 local_work=0 local_done=0 needs_you=0
+FROM_PANE="" pane="" perm="" tool="" turn="" notify_json="" notify_agent_id="" notify_rebound="" notify_user_input=0 waiting=0 save_work=0 local_work=0 local_done=0 needs_you=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
@@ -153,7 +153,8 @@ if [ -n "$notify_json" ]; then
   fields="$(printf '%s' "$notify_json" | /usr/bin/perl -MJSON::PP -e '
     local $/; my $raw = <STDIN>; my $j = eval { decode_json($raw) } || {};
     my $to = "";
-    my @inputs = @{ $j->{"input-messages"} || [] };
+    my $inputs = $j->{"input-messages"};
+    my @inputs = ref($inputs) eq "ARRAY" ? @$inputs : ();
     for my $m (@inputs) {
       if ($m =~ /\[(?:request|reply|notice) from \S+ to (\S+) via tmux-ask(?: \x{b7} m[0-9a-f]{12})?\]/) { $to = $1; last }
     }
@@ -164,9 +165,9 @@ if [ -n "$notify_json" ]; then
     my $type = $j->{type} // "";
     $type = "title" if ref $t eq "HASH" && exists $t->{title} && keys %$t == 1;
     (my $words = $last) =~ s/\s+/ /g;
-    print join("\x1f", $type, $j->{"thread-id"} // "", $to, substr($words, 0, 80));
+    print join("\x1f", $type, $j->{"thread-id"} // "", $to, substr($words, 0, 80), ref($inputs) eq "ARRAY" && !length($to) ? 1 : 0);
   ' 2>/dev/null)" || exit 0
-  IFS=$'\x1f' read -r type thread to last_words <<EOF
+  IFS=$'\x1f' read -r type thread to last_words notify_user_input <<EOF
 $fields
 EOF
   [ "$type" = agent-turn-complete ] && [ -n "$thread" ] || exit 0
@@ -253,6 +254,12 @@ fi
 
 case "$turn" in
   end)
+    # A verified direct-input turn is user speech, even if a newer delivery
+    # makes its completion stale. Older protocol headers are not user speech.
+    if [ "$notify_user_input" = 1 ] && [ -n "${notify_target:-}" ]; then
+      tmux set-option -pu -t "$pane" @notes_digest_at \; \
+        set-option -p -t "$pane" @notes_idle_since "$(date +%s)"
+    fi
     stopped="$(turn_end "$pane" "$notify_json" "${notify_rebound:-}")"
     if [ -n "$stopped" ]; then
       me="$(pane_name "$pane")" doing="$(tmux show-option -pqv -t "$pane" @activity)"

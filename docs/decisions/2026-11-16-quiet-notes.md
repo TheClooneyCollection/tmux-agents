@@ -18,7 +18,9 @@ Notes form an immutable append-only log with increasing IDs and one read cursor 
 
 Claude receives an unread summary through its prompt hook; Codex checks notes at each turn start. Hook summaries leave notes unread; successful digest delivery marks only its included notes read. Main summarizes useful points when asked or at a natural pause. Optional Fleet progress logging does not make delivery depend on Fleet.
 
-The optional unread badge is omitted to preserve the list build budget. Rename and folder-trust notices remain immediate ordinary system notices.
+User speech resets the continuation marker: Claude uses real user prompt hooks, while Codex uses verified notify inputs containing no tmux-ask header, before the stale-token guard. Missing inputs or older message headers do not imply user speech. Digests apply to all tracked idle or done agents, including secondary agents and sub agents; note sending is available between any connected pair.
+
+A fast, bare `tmux-notes --count` supplies statuslines with the unread number using the current pane ID, one tmux lookup, a cursor read and sequence-prefixed filenames. It performs no JSON parsing or pruning; the normal paths retain expiry cleanup. The optional tmux agent-list/chip badge is omitted to preserve the list build budget. Rename and folder-trust notices remain immediate ordinary system notices.
 
 ## Rejected alternatives
 

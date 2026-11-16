@@ -52,7 +52,7 @@ With `sub_auto` on, `tmux-spawn` adds Claude's `--permission-mode auto` or Codex
 set -g @tmux_agents_notes_digest_secs 300
 ```
 
-A digest requires unread notes received since the previous digest and an idle receiver for the configured interval after its last turn or digest. Working agents, agents needing the user and permission waits receive no digest. Each notice includes sender counts and each sender's latest first line, and successful delivery advances the receiver's read cursor to the last included note. Another idle interval with new notes produces only the new batch, prefixed `Continuing from last update ...`. Without new notes there is no digest. Digests work with the chip disabled. Notes and retained attachments expire after seven days, independently of `resume_days`.
+Digests apply to all tracked idle or done agents, including secondary agents and sub agents. A digest requires unread notes received since the previous digest and an idle receiver for the configured interval after its last turn or digest. Working agents, agents needing the user and permission waits receive no digest. Each notice includes sender counts and each sender's latest first line, and successful delivery advances the receiver's read cursor to the last included note. Another idle interval with new notes produces only the new batch, prefixed `Continuing from last update ...`. Without new notes there is no digest. Digests work with the chip disabled. Notes and retained attachments expire after seven days, independently of `resume_days`.
 
 ## Sub agent exit
 

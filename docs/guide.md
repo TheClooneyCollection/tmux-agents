@@ -140,9 +140,16 @@ Keep awaited results and matters requiring the user on ordinary `--reply`, reque
 
 Read `tmux-notes --from ME` to see unread notes grouped by sender, ordered by time within each group, with `HH:MM` and message IDs. Each receiver has one read cursor over increasing note IDs. Reading advances it to the last printed note; `--keep-unread` preserves them. `--all` includes read notes, `--since 10m` or `--since 2h` limits the time range, and `--count` prints only the unread count without consuming notes. Summary attachments still use `tmux-read <id>` for their full text.
 
+For a Claude statusline, bare `tmux-notes --count` reads the current `$TMUX_PANE` with one tmux lookup and no Perl or JSON scan. Missing pane identity or note storage prints `0`. For example, this fragment appends the unread count to an existing statusline script; it does not change Claude configuration:
+
+```sh
+unread="$(tmux-notes --count)"
+printf '%s unread' "$unread"
+```
+
 Claude's `UserPromptSubmit` hook supplies an unread-note summary at turn start, with sender counts, the latest first line and the command to read them; it is silent with no unread notes. Codex has no prompt hook, so its skill requires `tmux-notes --from ME` once at the start of each turn. A hook summary leaves notes unread; a successfully delivered digest advances the cursor to its last included note.
 
-An idle receiver gets a digest notice after about 5 minutes, including sender counts and latest first lines. It requires new unread notes since the previous digest and skips working, needs-you and permission states. After another idle interval, a new batch gets a digest beginning with `Continuing from last update ...`; it contains only new notes. For Claude, a user prompt resets that continuation prefix and the next digest starts from its new idle period; notice hooks do not reset it. Codex has no user prompt hook, so digests after the first retain the prefix even if the user has spoken. No new notes means no digest. It works even when the chip is off. Set the [note digest interval](configuration.md#note-digests) to `0` to disable it.
+Digests apply to all tracked idle or done agents, including secondary agents and sub agents. An idle receiver gets a digest notice after about 5 minutes, including sender counts and latest first lines. It requires new unread notes since the previous digest and skips working, needs-you and permission states. After another idle interval, a new batch gets a digest beginning with `Continuing from last update ...`; it contains only new notes. Both agents reset continuation after user speech, so the next digest starts from the new idle period. Claude uses its user prompt hook, excluding notice hooks. Codex uses a verified turn-end notification whose input array contains no tmux-ask header; an absent array or an older message header does not reset it. No new notes means no digest. It works even when the chip is off. Set the [note digest interval](configuration.md#note-digests) to `0` to disable it.
 
 For a message already saved in a file, use `--message-file`:
 
@@ -313,7 +320,7 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 | `tmux-disconnect [name]` | User unlinks one peer or all. |
 | `tmux-peers --from ME [--ids]` | Show identity and connections. |
 | `tmux-ask --from ME [--any] [--reply\|--notice\|--note] PEER [msg...]` or `--message-file FILE` | Send request, answer, notice or quiet note; a file alone is the full message, a file plus positional text delivers a summary and retained-file pointer. Accepts stdin only without a message file. `--any` permits unlinked targets. |
-| `tmux-notes --from ME [--all] [--since 10m\|2h] [--keep-unread] [--count]` | Read quiet notes; default reads and marks unread entries, while `--count` only counts unread notes. |
+| `tmux-notes --from ME [--all] [--since 10m\|2h] [--keep-unread] [--count]` | Read quiet notes; default reads and marks unread entries, while `--count` only counts unread notes. Bare `tmux-notes --count` is the fast statusline form using `$TMUX_PANE`. |
 | `tmux-read ID` | Read any retained message by ID (7-day retention; no tmux connection needed). |
 | `tmux-ask --pending` | Inspect queued/undelivered messages. |
 | `tmux-ask --retry [--to PEER]` | Retry saved messages. |

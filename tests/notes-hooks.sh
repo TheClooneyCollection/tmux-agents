@@ -137,5 +137,40 @@ grep 'fresh after user prompt' "$tmp/screen" >"$tmp/fresh-digest"
 check 'post-user digest uses idle start for since' grep -Fq "agent notes since $expected_since:" "$tmp/fresh-digest"
 check 'post-user digest starts a fresh update' test "$(grep -c 'Continuing from last update' "$tmp/fresh-digest" || true)" = 0
 check 'post-user digest consumes its batch' test "$("$B/tmux-notes" --from main --count)" = 0
+# Codex direct-input evidence resets even when the latest delivery is stale.
+record_set "$id" kind codex
+record_set "$id" id notes-user-thread
+tmux set -p -t %0 @codex_thread notes-user-thread
+tmux set -p -t %0 @last_delivered m111111111111
+tmux set -p -t %0 @state working
+codex_notify() {
+  "$B/tmux-agent-report" --agent-id "$id" --codex-notify "$1"
+}
+marker="$(option @notes_digest_at)"
+codex_notify '{"type":"agent-turn-complete","thread-id":"notes-user-thread","input-messages":["[notice from tmux-agents to main via tmux-ask · m222222222222]\nold digest"]}'
+check 'late old-header notify preserves continuation' test "$(option @notes_digest_at)" = "$marker"
+codex_notify '{"type":"agent-turn-complete","thread-id":"notes-user-thread"}'
+check 'notify without input array preserves continuation' test "$(option @notes_digest_at)" = "$marker"
+tmux set -p -t %0 @state working
+before_user="$(date +%s)"
+codex_notify '{"type":"agent-turn-complete","thread-id":"notes-user-thread","input-messages":["user typed a question"]}'
+check 'Codex direct-input notify resets before stale guard' test -z "$(option @notes_digest_at)"
+check 'direct-input reset leaves stale state guard intact' test "$(option @state)" = working
+check 'direct-input reset preserves latest delivery token' test "$(option @last_delivered)" = m111111111111
+check 'direct-input notify records new idle origin' test "$(option @notes_idle_since)" -ge "$before_user"
+write_note 'fresh after Codex user input'
+tmux set -p -t %0 @state idle
+fresh_idle="$(($(date +%s)-125))"
+tmux set -p -t %0 @notes_idle_since "$fresh_idle"
+tmux set -p -t %0 @notes_digest_sent_at "$((fresh_idle-600))"
+expected_since="$(perl -e 'my @t=localtime($ARGV[0]); printf "%02d:%02d",$t[2],$t[1]' "$fresh_idle")"
+once
+tmux capture-pane -p -S - -t %0 >"$tmp/screen"
+grep 'fresh after Codex user input' "$tmp/screen" >"$tmp/codex-fresh-digest"
+check 'post-Codex-user digest uses new idle start' grep -Fq "agent notes since $expected_since:" "$tmp/codex-fresh-digest"
+check 'post-Codex-user digest has no continuation prefix' test "$(grep -c 'Continuing from last update' "$tmp/codex-fresh-digest" || true)" = 0
+marker="$(option @notes_digest_at)"
+"$B/tmux-agent-report" --agent-id aeeeeeeeeeeee --codex-notify '{"type":"agent-turn-complete","thread-id":"notes-user-thread","input-messages":[]}'
+check 'invalid live identity cannot reset continuation' test "$(option @notes_digest_at)" = "$marker"
 printf '%s checks, %s failures\n' "$count" "$fail"
 [ "$fail" = 0 ]
