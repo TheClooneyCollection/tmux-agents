@@ -105,6 +105,27 @@ check 'digest starts a Codex notice turn without debt' test -z "$(option @owed)"
 check 'digest marks included notes read' test "$("$B/tmux-notes" --from main --count)" = 0
 tmux capture-pane -p -S - -t %0 >"$tmp/screen"
 check 'digest includes sender and latest payload' grep -q 'helper (2): automatic digest payload' "$tmp/screen"
+# Follow the actual advertised command after delivery consumed this batch.
+# A newer arrival must stay unread while the user reviews retained notes.
+write_note 'arrived after digest'
+python3 - "$tmp/screen" "$B/tmux-notes" >"$tmp/digest-read" <<'PY'
+import pathlib
+import re
+import shlex
+import subprocess
+import sys
+
+screen = pathlib.Path(sys.argv[1]).read_text()
+command = re.search(r"Read with: (tmux-notes[^\n]*)", screen)
+assert command, "digest has no read command"
+args = shlex.split(command.group(1))
+subprocess.run([sys.argv[2], *args[1:]], check=True)
+PY
+check 'advertised command reads earlier digested note' grep -q 'digest payload' "$tmp/digest-read"
+check 'advertised command reads latest digested note' grep -q 'automatic digest payload' "$tmp/digest-read"
+check 'reviewing digest leaves newer arrivals unread' test "$("$B/tmux-notes" --from main --count)" = 1
+"$B/tmux-notes" --from main >/dev/null
+stamp="$(cat "$(notes_dir)/$id/.cursor")"
 digest_before="$(option @notes_digest_at)"
 notice_hook="$(printf '%s' '{"prompt":"[notice from tmux-agents to main via tmux-ask]\ndigest\n[end of notice from tmux-agents to main]"}' | "$B/tmux-agent-report" --pane %0 --turn-start)"
 check 'notice hook does not repeat digested notes' test -z "$notice_hook"

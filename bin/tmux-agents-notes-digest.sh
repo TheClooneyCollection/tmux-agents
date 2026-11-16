@@ -40,7 +40,7 @@ check_digest() {
   summary="$(printf '%s' "$snapshot" | perl -MJSON::PP -MEncode=decode -e '
     local $/; my $s=decode_json(<STDIN>); my ($since,$name)=@ARGV;
     my @time=localtime($since); binmode STDOUT, ":encoding(UTF-8)";
-    printf "%s agent notes since %02d:%02d: %s. Read with: tmux-notes --from %s",
+    printf "%s agent notes since %02d:%02d: %s. Read with: tmux-notes --from %s --all --keep-unread",
       $s->{count}, $time[2], $time[1],
       join("; ", map {"$_->{name} ($_->{count}): $_->{latest}"} @{$s->{senders}}), decode("UTF-8",$name);
   ' "${at:-$idle}" "$(pane_name "$pane")")"
