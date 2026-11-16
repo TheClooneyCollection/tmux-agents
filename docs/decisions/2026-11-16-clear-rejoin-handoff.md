@@ -12,6 +12,8 @@ Reuse wrap-up for the user's numbered selection before a clear. Store the select
 
 Remove entries after completion, explicit dismissal or transfer to a user-approved durable record. Delete `HANDOFF.md` when all entries are handled; reading alone does not consume the handoff. Preserve unrelated contents and do not overwrite a tracked file.
 
+Main refreshes the existing, uniquely matched main-sequence agent row's `resume=` with the verified new conversation ID using the existing `set` command, then checks `list`. Claude can do this after its prompt hook; Codex must wait for its first new-thread turn end, with secondary completing the update after main's turn or main retaining a pending item for its next turn. Never write an unconfirmed old ID, create an unrequested row or change shell/command rows.
+
 ## Why
 
 A short trigger is enough to restore roles without requiring the user to recite the chain procedure. A temporary file survives context loss while keeping unfinished choices separate from authorization to act.
