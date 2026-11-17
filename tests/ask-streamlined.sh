@@ -45,6 +45,9 @@ tmux set -p -t %2 @peers '%0 %1'
 ensure_agent_ids "$tmp/empty"
 ask() { "$B/tmux-ask" --from sender "$@"; }
 reply() { "$B/tmux-ask" --from receiver --reply "$@"; }
+# A lone reply argument without stdin explains both unambiguous forms.
+reject reply 'one positional body' </dev/null
+grep -Fq -- '--reply -- "text" or --reply NAME "text"' "$tmp/error" || fail 'ambiguous reply guidance'
 # A receiver with no requests cannot guess where to reply.
 reject reply -- 'no requester'
 grep -q 'no remembered requester' "$tmp/error" || fail 'missing requester error'
@@ -161,11 +164,21 @@ report='A full mission report longer than the sixty characters shown in the acti
 "$B/tmux-agents-mission" show --from sender "$mission" >"$tmp/mission"
 grep -Fq "$report" "$tmp/mission" || fail 'report log truncated'
 [ "$(tmux show-option -pqv -t %0 @activity)" = "${report:0:60}" ] || fail 'report chip changed'
-reject ask --note --mission M999 receiver 'invalid mission note'
+archives_before="$(find "$(messages_dir)" -type f -print | sort)"
+reject ask --note --mission M999 --summary 'invalid mission summary' receiver 'invalid mission note'
+grep -q "cannot read mission 'M999'; note was not saved" "$tmp/error" || fail 'mission preflight error'
+[ "$archives_before" = "$(find "$(messages_dir)" -type f -print | sort)" ] || fail 'invalid mission retained attachment'
+mission_before="$("$B/tmux-agents-mission" show --from sender "$mission")"
+mkdir "$(mission_directory)/.lock"
+reject ask --note --mission "$mission" --summary 'locked mission summary' receiver 'locked mission note'
+rmdir "$(mission_directory)/.lock"
+grep -q "cannot log mission '$mission'; note was not saved" "$tmp/error" || fail 'locked mission error'
+[ "$archives_before" = "$(find "$(messages_dir)" -type f -print | sort)" ] || fail 'failed mission retained attachment'
+[ "$mission_before" = "$("$B/tmux-agents-mission" show --from sender "$mission")" ] || fail 'failed mission changed log'
 reject "$B/tmux-agent-report" --from sender --mission M999 'invalid mission report'
 [ "$(tmux show-option -pqv -t %0 @activity)" = "${report:0:60}" ] || fail 'invalid mission changed report'
 "$B/tmux-notes" --from receiver --keep-unread >"$tmp/notes"
-if grep -q 'invalid mission note' "$tmp/notes"; then fail 'invalid mission published note'; fi
+if grep -Eq 'invalid mission|locked mission' "$tmp/notes"; then fail 'invalid mission published note'; fi
 reject "$B/tmux-agent-report" --from sender --mission "$mission" --turn-end
 # Reusing a cleared pane must not inherit the previous agent's requester.
 clear_agent %1

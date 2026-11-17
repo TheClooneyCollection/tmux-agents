@@ -503,19 +503,30 @@ done
 [ "$note" -eq 0 ] || [ "$((reply + notice))" -eq 0 ] || die '--note conflicts with --reply and --notice'
 [ -z "$mission" ] || [ "$note" -eq 1 ] || die '--mission requires --note'
 [ "$summary_given" -eq 0 ] || [ "$message_file_given" -eq 0 ] || die "--summary conflicts with --message-file"
+# Read-only preflight before retaining a summary or publishing a note.
+if [ -n "$mission" ]; then
+  "$here/tmux-agents-mission" show --from "${FROM_PANE:-tmux-ask}" --log 0 -- "$mission" >/dev/null ||
+    die "cannot read mission '$mission'; note was not saved"
+fi
+missing_message() {
+  if [ "$reply" -eq 1 ] && [ -n "$target" ] && [ "$positional_message" -eq 0 ]; then
+    die 'reply body missing; use --reply -- "text" or --reply NAME "text"'
+  fi
+  die "$1"
+}
 if [ "$message_file_given" -eq 1 ]; then
   read_message_file full_message "$message_file"
   [ -n "$full_message" ] || die "empty message"
   if [ "$positional_message" -eq 0 ]; then msg="$full_message"; fi
 else
   if [ -z "$msg" ]; then
-    [ -t 0 ] && die "no message (pass it as arguments or on stdin)"
+    [ -t 0 ] && missing_message "no message (pass it as arguments or on stdin)"
     # Keep trailing newlines too: the archived stdin body is the full message.
     msg="$(cat; printf '\001')"
     msg="${msg%$'\001'}"
   fi
 fi
-[ -n "$msg" ] || die "empty message"
+[ -n "$msg" ] || missing_message "empty message"
 
 require_tmux
 self="$(self_pane)"
@@ -575,19 +586,22 @@ if [ "$summary_given" -eq 1 ]; then
   full_message="$msg"
   msg="$summary"
 fi
-# Only explicit summary forms create a retained original.
-# File-only sends still ignore stdin and paste the entire file.
+# Build the pointer first, but do not retain the body until mission logging
+# succeeds. A busy or unwritable mission must not leave an orphan attachment.
+retain=0
 if [ "$summary_given" -eq 1 ] || { [ "$message_file_given" -eq 1 ] && [ "$positional_message" -eq 1 ]; }; then
-  store_message "$full_message" "$message_id"
+  retain=1
   msg="$msg
 Read the full message here: tmux-read $message_id"
 fi
+if [ -n "$mission" ]; then
+  mission_text="$(printf '%s' "$msg" | tr '\n\r\t' '   ')"
+  "$here/tmux-agents-mission" log --from "$me" --kind progress -- "$mission" "$mission_text" ||
+    die "cannot log mission '$mission'; note was not saved"
+fi
+[ "$retain" -eq 0 ] || store_message "$full_message" "$message_id"
 
 if [ "$note" -eq 1 ]; then
-  if [ -n "$mission" ]; then
-    mission_text="$(printf '%s' "$msg" | tr '\n\r\t' '   ')"
-    "$here/tmux-agents-mission" log --from "$me" --kind progress -- "$mission" "$mission_text"
-  fi
   notes_write "$to_id" "$from_id" "$me" "$message_id" "$msg"
   notes_start_digest "$to_id"
   printf 'noted to %s (%s)\n' "$to_name" "${peer:-closed}"
