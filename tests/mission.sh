@@ -23,6 +23,8 @@ STUB
 chmod +x "$tmp/stubs/date"
 export MISSION_NOW=100
 git init -q "$tmp/project"
+git -C "$tmp/project" -c user.name=Test -c user.email=test@example.com -c commit.gpgsign=false commit -q --allow-empty -m initial
+git -C "$tmp/project" worktree add -q -b linked "$tmp/linked"
 cd "$tmp/project/sub"
 mission() { "$here/bin/tmux-agents" mission "$@" --from tester; }
 fail=0
@@ -92,5 +94,51 @@ check 'allocation continues after lock released' test "$(mission add Third)" = M
 mv "$dir/M3.mission" "$dir/M9.mission"
 check 'allocation uses max existing filename' test "$(mission add Tenth)" = M10
 check 'writer releases lock' test ! -d "$dir/.lock"
-check 'no real agent or tmux invocation' test ! -e "$MISSION_CALLS"
+check 'numeric list order' test "$(mission list --all --tsv | cut -f1 | tr '\n' ' ')" = 'M1 M2 M3 M10 '
+# A surviving log must not attach to a newly allocated mission.
+printf 'old log\n' > "$dir/M12.log"
+check 'orphan log reserves ID' test "$(mission add AfterOrphan)" = M13
+cd "$tmp/linked"
+mission log M1 'from linked worktree'
+check 'linked worktree shares main record' grep -q 'from linked worktree$' "$dir/M1.log"
+check 'linked worktree shares allocation' test "$(mission add Shared)" = M14
+check 'no worktree project created' test ! -e "$XDG_STATE_HOME/tmux-agents/missions/linked"
+cd "$tmp/project/sub"
+check 'empty title rejected' reject add ''
+check 'empty replacement title rejected' reject set M1 --title ''
+check 'empty owner rejected' reject add EmptyOwner --owner ''
+check 'empty replacement owner rejected' reject set M1 --owner ''
+check 'empty log rejected' reject log M1 ''
+check 'bare set rejected' reject set M1
+check 'operation help' mission add --help
+check 'option-like title' test "$("$here/bin/tmux-agents" mission add --from tester -- --title)" = M15
+check 'option-like title preserved' grep -qx title=--title "$dir/M15.mission"
+# Publish failure must not append either an explicit or implicit status log.
+cat > "$tmp/stubs/mv" <<'STUB'
+#!/bin/sh
+exit 1
+STUB
+chmod +x "$tmp/stubs/mv"
+cp "$dir/M1.log" "$tmp/log-before"
+cp "$dir/M1.mission" "$tmp/record-before"
+check 'failed log publication rejected' reject log M1 'must not appear'
+check 'failed log leaves log unchanged' cmp -s "$dir/M1.log" "$tmp/log-before"
+check 'failed set publication rejected' reject set M1 --status active
+check 'failed set leaves log unchanged' cmp -s "$dir/M1.log" "$tmp/log-before"
+check 'failed publication leaves record unchanged' cmp -s "$dir/M1.mission" "$tmp/record-before"
+rm "$tmp/stubs/mv"
+# Deterministic contention: release the holder only when the writer polls.
+export MISSION_LOCK="$dir/.lock" MISSION_POLLS="$tmp/polls"
+cat > "$tmp/stubs/sleep" <<'STUB'
+#!/bin/sh
+printf 'poll\n' >> "$MISSION_POLLS"
+rmdir "$MISSION_LOCK"
+STUB
+chmod +x "$tmp/stubs/sleep"
+mkdir "$dir/.lock"
+check 'writer retries then acquires released lock' test "$(mission add Contended)" = M16
+check 'contention reached retry boundary' test -s "$MISSION_POLLS"
+check 'retried writer releases lock' test ! -d "$dir/.lock"
+rm "$tmp/stubs/sleep"
+check 'no real agent or tmux invocation'  test ! -e "$MISSION_CALLS"
 exit "$fail"

@@ -13,7 +13,8 @@ usage: tmux-agents mission COMMAND --from ME [arguments]
   list [--all] [--tsv]
 Statuses: design, plan-ready, active, needs-decision, ready-to-push, done.
 TSV columns: id, status, owner, title, branch, worktree, created, updated.
-A busy or stale .lock is refused; remove a stale lock only after verifying no writer remains.
+Put --from and all options before -- when a title/text starts with --.
+A busy .lock is retried for two seconds, then refused; remove a stale lock only after verifying no writer remains.
 HELP
 }
 valid_value() {
@@ -27,6 +28,7 @@ args=() keys=() values=()
 while [ "$#" -gt 0 ]; do
   valid_value "$1"
   case "$1" in
+    -h|--help) usage; exit 0 ;;
     --from|--title|--owner|--status|--branch|--worktree|--kind|--log)
       option="$1"; [ "$#" -ge 2 ] || die "missing value for $option"
       valid_value "$2"
@@ -50,13 +52,24 @@ done
 case "$kind" in progress|decision|handoff|done) ;; *) die 'unknown log kind' ;; esac
 case "$count" in ''|*[!0-9]*) die '--log must be a nonnegative integer' ;; esac
 for ((i=0; i<${#keys[@]}; i++)); do
+  case "${keys[i]}" in title|owner) [ -n "${values[i]}" ] || die "${keys[i]} must not be empty" ;; esac
   if [ "${keys[i]}" = status ]; then
     case "${values[i]}" in design|plan-ready|active|needs-decision|ready-to-push|done) ;; *) die 'unknown mission status' ;; esac
   fi
 done
 case "$command:${#args[@]}" in add:1|set:1|log:2|show:1|list:0) ;; *) die 'wrong number of mission arguments' ;; esac
+case "$command" in
+  add) [ -n "${args[0]}" ] || die 'title must not be empty' ;;
+  log) [ -n "${args[1]}" ] || die 'log text must not be empty' ;;
+  set) [ "${#keys[@]}" -gt 0 ] || die 'set requires at least one field' ;;
+esac
+# Missions share the main checkout's name across linked worktrees.
+project_root="$PWD"
+if common="$(git rev-parse --git-common-dir 2>/dev/null)"; then
+  project_root="$(cd "$common/.." && pwd -P)"
+fi
 # Force the known prefix so this filesystem-only command never queries tmux settings.
-project="$(TMUX_AGENTS_PREFIX=agents agents_session_for "$PWD")"
+project="$(TMUX_AGENTS_PREFIX=agents agents_session_for "$project_root")"
 project="${project#agents-}"
 dir="${XDG_STATE_HOME:-$HOME/.local/state}/tmux-agents/missions/$project"
 file='' tmp='' locked=0
@@ -72,7 +85,12 @@ trap 'exit 143' TERM
 case "$command" in
   add|set|log)
     mkdir -p "$dir" || die 'cannot create mission directory'
-    mkdir "$dir/.lock" 2>/dev/null || die 'mission directory locked (busy or stale .lock)'
+    attempts=0
+    until mkdir "$dir/.lock" 2>/dev/null; do
+      [ "$attempts" -lt 20 ] || die 'mission directory locked after retries (busy or stale .lock)'
+      sleep 0.1
+      attempts=$((attempts + 1))
+    done
     locked=1 ;;
 esac
 if [ "$command" != add ] && [ "$command" != list ]; then
@@ -104,8 +122,8 @@ write_record() {
 case "$command" in
   add)
     next=0
-    for record in "$dir"/M*.mission; do
-      number="${record##*/M}"; number="${number%.mission}"
+    for record in "$dir"/M*.mission "$dir"/M*.log; do
+      number="${record##*/M}"; number="${number%.*}"
       case "$number" in ''|*[!0-9]*|0*) continue ;; esac
       [ "$number" -le "$next" ] || next="$number"
     done
@@ -120,12 +138,12 @@ case "$command" in
       [ "${keys[i]}" != status ] || new_status="${values[i]}"
     done
     keys+=(updated); values+=("$now")
+    write_record
     if [ "$command" = log ]; then
       printf '%s\t%s\t%s\t%s\n' "$now" "$from" "$kind" "${args[1]}" >> "$dir/$id.log"
     elif [ "$old_status" != "$new_status" ]; then
       printf '%s\t%s\tprogress\tstatus: %s -> %s\n' "$now" "$from" "$old_status" "$new_status" >> "$dir/$id.log"
-    fi
-    write_record ;;
+    fi ;;
   show)
     cat "$file"
     if [ -f "$dir/$id.log" ]; then tail -n "$count" "$dir/$id.log"; fi ;;
@@ -138,5 +156,5 @@ case "$command" in
       else
         printf '%s  %s  %s  %s\n' "$(get id)" "$status" "$(get owner)" "$(get title)"
       fi
-    done ;;
+    done | sort -k1.2,1n ;;
 esac

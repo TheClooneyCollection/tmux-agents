@@ -376,7 +376,12 @@ columns are id, status, owner, title, branch, worktree, created and updated, wit
 a header. `show` includes fields and the last five log entries by default.
 
 Records live in `${XDG_STATE_HOME:-$HOME/.local/state}/tmux-agents/missions/PROJECT/`,
-using the same project name as agent sessions. Updates preserve unknown record
+using the main repository's name across linked worktrees (or the directory name
+outside Git, with `home` for the home directory). Updates preserve unknown record
 fields and publish records atomically. Writers use a directory lock; a busy or stale
-`.lock` produces an error. Remove a stale lock only after verifying no writer remains.
-Values cannot contain tabs or line breaks.
+`.lock` produces an error after two seconds of retries. Remove a stale lock only after verifying no writer remains.
+Title, owner and log text must be nonempty; `set` requires at least one field.
+Values cannot contain tabs or line breaks. For text starting with `--`, put all
+options first, then `--` and the positional arguments, for example:
+`tmux-agents mission add --from my-agent -- "--flag documentation"`.
+Lists use numeric ID order; allocation also reserves IDs with surviving log files.
