@@ -4,14 +4,11 @@
 
 - The mission board uses status glyphs and terminal colour (`NO_COLOR` disables it), orders missions newest first and sibling agents by attention, and animates working glyphs at the chip frame rate when the full board fits in the pane.
 - Retire the agent-chain clear/rejoin flow; the separately maintained wrap-up skill owns resume. Agents with open helpers record `tmux-agents status` in the handoff "Resume steps".
-
 - Retire Agent Fleet Command integration in favor of the local mission board. Mission logging is local only; chain skills no longer mirror missions or check a Fleet inbox.
-
 - `tmux-agents status` (alias `resume`) combines identity, peers, roles, missions, notes, queue and handoff state; `--handoff` explicitly includes the body. Trusted panes can omit `--from` for missions and opening agents; `tmux-peers --me` prints the name only.
 - Direct long messages support `tmux-ask --summary TEXT` with stdin or positional bodies, retaining the full text behind a `tmux-read` pointer. Nameless `--reply` answers the latest requester; existing file input stays compatible.
 - Role spawns report their resolved agent, args and source, record `@role` and warn about implicit inheritance or dropped role args. `--plain` silences the inheritance warning. All seven roles and their args are snapshotted per chain; new launch flags and `chain-config set` configure them.
 - `tmux-spawn --mission ID --open` combines mission ownership, spawn logging and opening the pane. Composite mission status/completion commands can notify peers; notes and reports with `--mission` append local progress. `tmux-agents ci [--watch] [REF]` summarizes GitHub Actions results.
-
 - `tmux-agents board [--watch [SECS]]` shows project missions, live owner trees, saved models, states and progress in a pane, with unassigned agents and a two-second watch default.
 
 ## v1.24.1 (2026-11-16)
