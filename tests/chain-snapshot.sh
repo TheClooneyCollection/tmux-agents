@@ -100,6 +100,34 @@ role_spawn() {
 }
 
 
+# A plain launch with only an agent override must retain option/default args.
+unset TMUX_AGENTS_CHAIN_WORKER_ARGS TMUX_AGENTS_CHAIN_RUNNER_ARGS
+export TMUX_AGENTS_CHAIN_WORKER=codex TMUX_AGENTS_CHAIN_RUNNER=claude
+tmux set-option -g @tmux_agents_chain_worker_args '--model option-worker'
+for kind in claude codex; do
+  plain="$(tmux new-window -d -P -F '#{pane_id}' -c "$tmp/project" -e TMUX_AGENTS_CHAIN_WORKER=codex -e TMUX_AGENTS_CHAIN_RUNNER=claude "'$B/tmux-agents-start' '$kind'; exec cat")"
+  check "$kind plain launcher starts" wait_ready "$plain"
+  # The child bash expands its own positional argument.
+  # shellcheck disable=SC2016
+  check "$kind absent args remain absent" bash -c '! grep -q "^TMUX_AGENTS_CHAIN_WORKER_ARGS=" "$1"' _ "$SPAWN_ARGS_LOG/${plain#%}.env"
+done
+for layout in hidden split; do
+  split_args=()
+  [ "$layout" != split ] || split_args=(--split main)
+  role_spawn --role worker --name "option-$layout" ${split_args[@]+"${split_args[@]}"}
+  helper="$(pane_of "codex-project-option-$layout")"
+  check "$layout override helper starts" wait_ready "$helper"
+  check "$layout override uses option args" suffix_is "$helper" --model option-worker
+  # The child bash expands its own positional argument.
+  # shellcheck disable=SC2016
+  check "$layout forwarding preserves absent args" bash -c '! grep -q "^TMUX_AGENTS_CHAIN_WORKER_ARGS=" "$1"' _ "$SPAWN_ARGS_LOG/${helper#%}.env"
+done
+role_spawn --role runner --name legacy-default
+legacy="$(pane_of claude-project-legacy-default)"
+check 'role-only override starts runner' wait_ready "$legacy"
+check 'role-only override retains default args' suffix_is "$legacy" --model haiku
+unset TMUX_AGENTS_CHAIN_WORKER TMUX_AGENTS_CHAIN_RUNNER
+
 # Start with every additional launch flag and snapshot all seven roles.
 for role in main designer interface worker reviewer runner researcher; do
   tmux set-option -g "@tmux_agents_chain_${role}_args" "--model snapshot-$role"

@@ -170,10 +170,20 @@ check 'role with --for starts' wait_ready "$owned"
 check 'role with --for keeps owner' test "$(tmux show-options -pqv -t "$owned" @parent)" = "$member_pane"
 
 # The alternative ordering accepts an agent after --role, before a task.
-role_spawn --role runner codex --name after-role -- --model supplied
+role_spawn --role runner codex --name after-role -- --model supplied 2>"$tmp/warning"
+check 'explicit args suppress dropped-args warning' test ! -s "$tmp/warning"
 after_role="$(pane_of codex-project-after-role)"
 check 'agent after role starts' wait_ready "$after_role"
 check 'replacement args survive override' suffix_is "$after_role" --model supplied
+
+check 'PATH command after role requires quoted task' rejects_with 'quote the task text' --role worker git rebase onto main
+check 'unknown word after role requires quoted task' rejects_with 'quote the task text' --role worker please inspect code
+role_spawn --role worker --name quoted-task 'git rebase onto main'
+quoted="$(pane_of codex-project-quoted-task)"
+check 'quoted task retains configured worker' wait_ready "$quoted"
+check 'quoted command text reaches agent prompt' grep -Fq 'git rebase onto main' "$(args_file "$quoted")"
+TMUX_AGENTS_CODEX_HOMES="extra=$tmp/profile" role_spawn --role worker extra --name role-profile
+check 'profile after role remains supported' wait_ready "$(pane_of codex-project-role-profile)"
 
 tmux set-option -p -t %0 @role main
 record_set "$(pane_agent_id %0)" kind claude

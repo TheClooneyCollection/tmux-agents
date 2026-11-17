@@ -1594,9 +1594,11 @@ build_agent_command() {
     export "$key=${!key:-}"
     chain_pins+=("$key" "${!key}")
     key="${key}_ARGS"
-    # Empty args are significant only with a non-empty role snapshot.
-    export "$key=${!key:-}"
-    chain_pins+=("$key" "${!key}")
+    # Preserve absence: a role-only override still resolves option/default args.
+    if [ "${!key+x}" = x ]; then
+      export "${key?}"
+      chain_pins+=("$key" "${!key}")
+    fi
   done
   export TMUX_AGENTS_CODEX_HOMES="${codex_homes:-}"
   local pin

@@ -27,13 +27,13 @@ TMUX_AGENTS_SUB_AUTO to off to keep the agent's permission defaults.
 Other executable command names on PATH are accepted without agent-specific
 flags or an initial task; send their first task with tmux-ask at their prompt.
 Every word after -- is an agent argument; -- no longer introduces task text.
-Task text keeps its positional, stdin and --message-file forms. To combine a
-task with agent args, supply the task on stdin or with --message-file. A lone
+To combine a task with agent args, supply the task on stdin. Positional task
+text also works; --message-file remains available for compatibility. A lone
 multi-word value after -- warns because it may be old task text; arbitrary
 arguments cannot be reliably distinguished from task text.
 
   --from ME     your own name (needed where $TMUX_PANE is wrong, e.g. Codex)
-  --message-file PATH read literal text from one regular file (max 1 MiB; no symlinks);
+  --message-file PATH compatibility: read literal text from one regular file (max 1 MiB; no symlinks);
                        conflicts with positional task text; stdin is ignored;
                        only for new agents, not --resume or --list-closed
   -- ARGS...     pass every remaining argument unchanged to the agent, after
@@ -128,10 +128,15 @@ if [ "${1:-}" = "--run" ]; then
   for role in "${CHAIN_ENV_ROLES[@]}"; do
     for suffix in '' _ARGS; do
       forwarded="TMUX_SPAWN_CHAIN_${role}${suffix}"
+      presence="${forwarded}_PRESENT"
       if [ "${!forwarded+x}" = x ]; then
-        export "TMUX_AGENTS_CHAIN_${role}${suffix}=${!forwarded}"
+        if [ "$suffix" = _ARGS ] && [ "${!presence:-}" != x ]; then
+          unset "TMUX_AGENTS_CHAIN_${role}${suffix}"
+        else
+          export "TMUX_AGENTS_CHAIN_${role}${suffix}=${!forwarded}"
+        fi
       fi
-      unset "$forwarded"
+      unset "$forwarded" "$presence"
     done
   done
   if [ "${TMUX_SPAWN_PATH+x}" = x ]; then export PATH="$TMUX_SPAWN_PATH"; fi
@@ -283,8 +288,12 @@ while [ $# -gt 0 ]; do
       break ;;
     -*) usage >&2; exit 1 ;;
     *)
-      if [ -n "$role" ] && [ -z "$agent" ] && name_kind_for "$1" >/dev/null 2>&1; then
-        agent="$1"; shift
+      if [ -n "$role" ] && [ -z "$agent" ]; then
+        case "$1" in
+          *[[:space:]]*) task_arg_given=1; task="$*"; break ;;
+          *) full_agent_kind "$1" || die "unknown role agent '$1'; use claude, codex or a configured profile, or quote the task text"
+             agent="$1"; shift ;;
+        esac
       else task_arg_given=1; task="$*"; break; fi ;;
   esac
 done
@@ -302,7 +311,7 @@ if [ -n "$role" ]; then
   case "$resolution_source" in env) resolution_source=chain ;; explicit) resolution_source=positional ;; esac
   if [ -n "$explicit_agent" ]; then
     resolution_source=positional
-    if [ "$agent" != "${!role_agent_var}" ] && [ -n "${!role_args_var}" ]; then
+    if [ "$agent_args_given" -eq 0 ] && [ "$agent" != "${!role_agent_var}" ] && [ -n "${!role_args_var}" ]; then
       printf 'tmux-spawn: warning: %s overrides role %s; role args dropped (pass -- ARGS to supply them)\n' "$agent" "$role" >&2
     fi
   fi
@@ -418,6 +427,7 @@ open_window() {
   for env_role in "${CHAIN_ENV_ROLES[@]}"; do
     for env_key in "TMUX_AGENTS_CHAIN_$env_role" "TMUX_AGENTS_CHAIN_${env_role}_ARGS"; do
       env_args+=(-e "TMUX_SPAWN_${env_key#TMUX_AGENTS_}=${!env_key:-}")
+      case "$env_key" in *_ARGS) env_args+=(-e "TMUX_SPAWN_${env_key#TMUX_AGENTS_}_PRESENT=${!env_key+x}") ;; esac
     done
   done
   [ -z "${TMUX_SPAWN_BIN:-}" ] || env_args+=(-e "TMUX_SPAWN_LAUNCH_BIN=$TMUX_SPAWN_BIN")
@@ -438,6 +448,7 @@ open_split() {
   for env_role in "${CHAIN_ENV_ROLES[@]}"; do
     for env_key in "TMUX_AGENTS_CHAIN_$env_role" "TMUX_AGENTS_CHAIN_${env_role}_ARGS"; do
       env_args+=(-e "TMUX_SPAWN_${env_key#TMUX_AGENTS_}=${!env_key:-}")
+      case "$env_key" in *_ARGS) env_args+=(-e "TMUX_SPAWN_${env_key#TMUX_AGENTS_}_PRESENT=${!env_key+x}") ;; esac
     done
   done
   [ "$split_direction" != --below ] || direction=-v
