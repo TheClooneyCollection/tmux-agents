@@ -18,6 +18,7 @@ mkdir -p "$tmp/project"
 cd "$tmp/project"
 export XDG_STATE_HOME="$tmp/state" TMUX=/tmp/test,1,0 TMUX_PANE=%0
 unset TMUX_AGENTS_PREFIX
+export NO_COLOR=1
 export BOARD_FIXTURE="$tmp/panes" BOARD_CALLS="$tmp/calls" BOARD_GIT_CALLS="$tmp/git-calls"
 export BOARD_FAIL_ONCE="$tmp/fail-once"
 cat > "$tmp/bin/tmux" <<'STUB'
@@ -57,6 +58,12 @@ row(5,'tool-project-untracked',tracked='0')
 row(6,'codex-other-outside',project='other')
 row(7,'codex-project-dead',dead='1')
 row(8,'codex-project-message','%0',waiting='123')
+row(15,'codex-project-working','%0')
+rows[-1][8]='report-15 汉字 e\u0301 \x01 control'
+row(16,'codex-project-idle','%0',state='idle')
+row(17,'codex-project-needs','%0',state='needs_you')
+row(18,'codex-project-free-working')
+row(19,'codex-project-free-permission',perm='123')
 # A direct child remains unassigned when it works in another directory.
 row(10,'claude-project-designer','%9',state='idle')
 rows[-1][7]='work'; rows[-1][9]=str(p/'elsewhere')
@@ -74,29 +81,29 @@ rows[-1][7]='work'; rows[-1][9]=''
 a=base64.b64encode(b'--model\0test-model\0').decode()
 (p/'state/tmux-agents/test/sessions/a000000000001').write_text('kind=codex-profile\ncli_args='+a+'\n')
 missions=p/'state/tmux-agents/missions/project'
-(missions/'M3.mission').write_text('id=M3\ntitle=Mission=title\nowner=claude-project-owner\nstatus=active\ncreated=1794891234\nupdated=1794892931\nbranch=feat/board\nfuture=ignored\n')
+(missions/'M3.mission').write_text('id=M3\ntitle=Mission=title\nowner=claude-project-owner\nstatus=active\ncreated=1794891235\nupdated=1794892931\nbranch=feat/board\nfuture=ignored\n')
 (missions/'M4.mission').write_text('id=M4\ntitle=Offline\nowner=claude-project-interface\nstatus=design\ncreated=1794891234\nupdated=1794892931\n')
 (missions/'M10.mission').write_text('id=M10\ntitle=Later\nowner=absent-owner\nstatus=done\ncreated=1794891234\nupdated=1794892931\n')
 (missions/'board.md').write_text('| M99 | Ignore legacy | claude-project-owner | active | today |\n')
 
 PY
 "$here/bin/tmux-agents" board > "$tmp/out"
-grep -Eq '^M3 · Mission=title · active · [0-9]+[smhd] ago$' "$tmp/out"
-grep -Fq '  owner [claude / default] idle' "$tmp/out"
-grep -Fq '    child [codex-profile / test-model] done' "$tmp/out"
-grep -Fq '      grand [codex / default] needs-you' "$tmp/out"
-grep -Fq 'permission [codex / default] permission' "$tmp/out"
-grep -Fq 'message [codex / default] message waiting' "$tmp/out"
-grep -Fq 'untracked [tool / default] -' "$tmp/out"
-grep -Fq '(owner not live)' "$tmp/out"
-grep -Fq 'free [codex / default] idle' "$tmp/out"
-[ "$(grep -Fc 'owner [claude / default]' "$tmp/out")" = 1 ]
-if grep -Eq 'empty-path|outside|dead \[' "$tmp/out"; then echo 'FAIL foreign/dead agent'; exit 1; fi
+grep -Eq '^M3  Mission=title  active · [0-9]+[smhd] ago$' "$tmp/out"
+grep -Fq '  ○ owner  claude · default  idle' "$tmp/out"
+grep -Fq '    ✓ child  codex-profile · test-model  done' "$tmp/out"
+grep -Fq '      ◆ grand  codex · default  needs you' "$tmp/out"
+grep -Fq 'permission  codex · default  permission' "$tmp/out"
+grep -Fq 'message  codex · default  message waiting' "$tmp/out"
+grep -Fq 'untracked  tool · default  -' "$tmp/out"
+grep -Fq 'owner absent-owner not live' "$tmp/out"
+grep -Fq 'free  codex · default  idle' "$tmp/out"
+[ "$(grep -Fc 'owner  claude · default' "$tmp/out")" = 1 ]
+if grep -Eq 'empty-path|outside|dead  codex' "$tmp/out"; then echo 'FAIL foreign/dead agent'; exit 1; fi
 [ "$(grep -c '^list-panes ' "$tmp/calls")" = 1 ]
 [ "$(grep -c '^show-option ' "$tmp/calls")" = 1 ]
 grep -q '^list-panes -a -F ' "$tmp/calls"
 if grep -q 'M99' "$tmp/out"; then echo 'FAIL legacy board read'; exit 1; fi
-[ "$(grep '^M[0-9]' "$tmp/out" | cut -d ' ' -f 1 | tr '\n' ' ')" = 'M3 M4 M10 ' ]
+[ "$(grep '^M[0-9]' "$tmp/out" | cut -d ' ' -f 1 | tr '\n' ' ')" = 'M3 M10 M4 ' ]
 # Worktree invocation reads exactly the CLI's main-project records.
 (
  cd "$tmp/linked"
@@ -104,26 +111,60 @@ if grep -q 'M99' "$tmp/out"; then echo 'FAIL legacy board read'; exit 1; fi
  TMUX_PANE=%13 "$here/bin/tmux-agents" board > "$tmp/linked-out"
 )
 grep -Fq 'Mission=title' "$tmp/mission-out"
-grep -Fq "M3 · Mission=title · active" "$tmp/linked-out"
+grep -Fq "M3  Mission=title  active" "$tmp/linked-out"
 python3 - "$tmp/out" <<'GROUPS'
 from pathlib import Path
 import sys
 s=Path(sys.argv[1]).read_text()
-assert 'claude-project-designer [claude / default]' in s.split('unassigned')[1], s
-assert 'linked [codex / default]' in s.split('unassigned')[1], s
-m4=s.split('M4 ·')[1].split('M10 ·')[0]
-assert '  interface [claude / default]' in m4, m4
-assert '    codex-project-worker [codex / default]' in m4, m4
+assert 'claude-project-designer  claude · default' in s.split('unassigned')[1], s
+assert 'linked  codex · default' in s.split('unassigned')[1], s
+assert 'Owner:' not in s, s
+children=[line.split()[1] for line in s.splitlines() if line.startswith('    ') and not line.startswith('      ')][:6]
+assert children == ['permission', 'message', 'needs', 'working', 'idle', 'child'], children
+roots=[line.split()[1] for line in s.split('▸ unassigned')[1].splitlines() if line.startswith('  ') and not line.startswith('    ')]
+assert roots == ['free-permission', 'free-working', 'main', 'free', 'untracked', 'linked'], roots
+m4=s.split('M4  ')[1].split('▸ unassigned')[0]
+assert '  ○ interface  claude · default' in m4, m4
+assert '    ○ codex-project-worker  codex · default' in m4, m4
 GROUPS
+# Exercise the renderer contract directly; the CLI owns terminal colour policy.
+python3 - "$here/bin" "$tmp" <<'COLOUR'
+import os, re, subprocess, sys, unicodedata
+from pathlib import Path
+here, tmp = map(Path, sys.argv[1:])
+env = dict(os.environ, BOARD_MISSION_DIR=str(tmp/'state/tmux-agents/missions/project'))
+sgr = re.compile(r'\x1b\[[0-9;]*m')
+def render(width, colour, spin):
+    rows=[r.split('\t') for r in (tmp/'panes').read_text().splitlines()]
+    for row in rows: row[28]=str(width)
+    (tmp/'panes').write_text('\n'.join('\t'.join(r) for r in rows)+'\n')
+    return subprocess.check_output(['perl', str(here/'tmux-agents-board.pl'), str(here)],
+        env=dict(env, BOARD_COLOR=str(colour), BOARD_SPIN=str(spin))).decode()
+for width in (2, 8, 24, 45, 140):
+    plain=render(width, 0, 0)
+    coloured=render(width, 1, 0)
+    assert '\x1b[' in coloured, (width, coloured)
+    assert sgr.sub('', coloured) == plain, (width, coloured, plain)
+    assert render(width, 0, 1) == plain
+    assert all(sum(0 if unicodedata.combining(c) else 2 if unicodedata.east_asian_width(c) in ('W','F') else 1 for c in line)<=width for line in plain.splitlines()), (width, plain)
+plain=render(140, 0, 0)
+spinning=render(140, 1, 1)
+assert spinning.count('\x01') == 2, spinning
+assert sgr.sub('', spinning).replace('\x01', '⠿') == plain
+assert '⠿ working  codex · default  report-15' in plain, plain
+assert '\x1b[1;97;41m⚠' in spinning
+assert '\x1b[1;30;48;5;214mneeds you' in spinning
+assert '\x1b[38;5;245mcodex · default' in spinning
+COLOUR
 rm "$tmp/state/tmux-agents/missions/project/"*.mission
 "$here/bin/tmux-agents" board > "$tmp/out"
 grep -Fq 'No mission records' "$tmp/out"
-grep -Fq 'owner [claude / default]' "$tmp/out"
+grep -Fq 'owner  claude · default' "$tmp/out"
 # A missing directory behaves like an empty record set; board.md was ignored above.
 rm -rf "$tmp/state/tmux-agents/missions/project"
 "$here/bin/tmux-agents" board > "$tmp/out"
 grep -Fq 'No mission records' "$tmp/out"
-grep -Fq 'free [codex / default]' "$tmp/out"
+grep -Fq 'free  codex · default' "$tmp/out"
 # Home project labels use home, while agent naming uses ~.
 python3 - "$tmp/panes" "$tmp/home-panes" <<'PYHOME'
 from pathlib import Path
@@ -133,7 +174,7 @@ r[2]='claude-~-owner'; r[7]='agents-home'
 Path(sys.argv[2]).write_text('\t'.join(r)+'\n')
 PYHOME
 (cd "$HOME"; BOARD_FIXTURE="$tmp/home-panes" "$here/bin/tmux-agents" board) > "$tmp/out"
-grep -Fq 'owner [claude / default]' "$tmp/out"
+grep -Fq 'owner  claude · default' "$tmp/out"
 if grep -Fq 'claude-~-owner' "$tmp/out"; then echo 'FAIL home prefix'; exit 1; fi
 # Width follows the current pane on each invocation, including UTF-8 truncation.
 python3 - "$tmp/panes" <<'PY'

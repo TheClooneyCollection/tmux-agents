@@ -68,6 +68,7 @@ for my $r (@rows) {
  push @data,join("\t",'A',$r->[1],$kind,$model,row_project($r));
 }
 my $missing=1;
+my @missions;
 
 if (opendir my $dir, $mission_dir) {
  my @files=sort { length($a) <=> length($b) || $a cmp $b }
@@ -86,8 +87,11 @@ if (opendir my $dir, $mission_dir) {
                qw(id title owner status created updated);
   next unless "$record{id}.mission" eq $file && $record{created} =~ /^[0-9]+$/ && $record{updated} =~ /^[0-9]+$/;
   $missing=0;
-  push @data,join("\t",'M',@record{qw(id title owner status updated)});
+  push @missions, { %record };
  }
+}
+for my $record (sort { $b->{created} <=> $a->{created} || substr($b->{id},1) <=> substr($a->{id},1) } @missions) {
+ push @data,join("\t",'M',@{$record}{qw(id title owner status updated created)});
 }
 push @data,join("\t",'B',$project,$width,$missing);
 store(\%projects,$cache) if $cache;
