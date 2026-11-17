@@ -5,7 +5,7 @@ description: Talk to other AI agents (Codex, Claude, etc.) running in connected 
 
 # tmux-agents
 
-Run `tmux-agents status` first to orient: identity, peers, roles, missions, unread-note counts, queued messages and handoff state. Use `--notes` to read and consume notes; after a clear use `--handoff` to read the project handoff. `resume` aliases `status`. If the command is missing, use the tmux-agents-setup skill.
+Run `tmux-agents status` first to orient: identity, peers, roles, missions, unread-note counts, queued messages and handoff state. Use `--notes` to read and consume notes; use `--handoff` to explicitly read the project handoff. `resume` aliases `status`. If the command is missing, use the tmux-agents-setup skill.
 
 ## Your name
 
@@ -38,13 +38,13 @@ A supplied spawn task is **not sent**. Read the printed result, retain the actua
 ## Commands
 
 - `tmux-agents chain-config [ROLE] [--main AGENT] [--interface AGENT] [--worker AGENT] [--designer AGENT] [--reviewer AGENT] [--runner AGENT] [--researcher AGENT] [--args] [--sources]`: query main, designer, interface, worker, reviewer, runner or researcher; `secondary` aliases interface (also `--secondary`). TSV is role/agent, then args (`-` when empty) and source when requested. A role alone prints its agent. Read standalone as data, never `eval`; no `--from` needed. See agent-chain for instruction-file preferences and launcher snapshots.
-- `tmux-agents chain-config set ROLE AGENT [-- ARGS]`: update live role defaults and print persistent tmux.conf lines; existing chain snapshots stay unchanged.
+- `tmux-agents chain-config set ROLE AGENT [-- ARGS]`: update live role defaults and print persistent tmux.conf lines; existing chain snapshots stay unchanged. Only the user or main runs this setter; Codex prompts for approval. Args are space-separated words without shell quoting.
 - `tmux-agents ci [--watch] [REF]`: summarize GitHub Actions for a commit (default HEAD), optionally waiting for completion.
 - `tmux-agents open NAME`: main opens an agent's pane for the user, such as the mission designer.
 - `tmux-spawn --role ROLE`: start a new helper with the role's configured agent, args and default name; inspect `tmux-agents chain-config --args`. Main is user-started; roles cannot be applied on resume.
 - `tmux-peers`: your name and the agents you can reach. Names come from here. Add `--ids` to see stable agent IDs when identifying an agent across renames or reopenings.
 - `tmux-ask PEER "message"`: send a request; use the direct long-message forms below.
-- `tmux-ask --reply "answer"`: answer the latest requester. Use `--reply PEER "answer"` when choosing among requesters; preserve `--any` when supplied.
+- `tmux-ask --reply -- "answer"`: Codex replies to the latest requester. Nameless replies are safe only with a single open request; otherwise use `--reply PEER "answer"`. Copy the exact command from the generated request footer and preserve `--any` when supplied.
 - `tmux-ask --notice PEER "message"`: interrupt with information needing no reply, such as a rule change or CI failure.
 - `tmux-ask --note PEER --mission ID "progress"`: store a quiet update without a prompt, turn or reply obligation, and append a local mission progress log. Omit `--mission` outside a mission. Notes support `--summary` and authorized `--any`, but not `--reply` or `--notice`; closed receivers retain them by agent ID.
 - `tmux-ask --summary "short result" PEER "full report"`: retain the full positional or stdin body for seven days and deliver only the summary plus a `tmux-read` pointer. Combine with `--reply`, `--note` or `--notice` as appropriate.
@@ -75,7 +75,7 @@ User settings, defaults and environment overrides: [Configuration](../../docs/co
 Pass the body directly, without a temporary file. Claude uses quoted heredoc stdin:
 
 ```sh
-tmux-ask --reply --summary 'Review complete; two findings.' <<'MSG'
+tmux-ask --reply NAME --summary 'Review complete; two findings.' <<'MSG'
 Full report with paths, findings and validation results.
 Shell syntax such as $HOME stays literal.
 MSG
@@ -84,11 +84,11 @@ MSG
 Codex passes one quoted multi-line positional argument:
 
 ```sh
-tmux-ask --reply --summary 'Review complete; two findings.' 'Full report with paths.
+tmux-ask --reply --summary 'Review complete; two findings.' -- 'Full report with paths.
 Findings and validation results.'
 ```
 
-Quote shell metacharacters as data. The same body forms work for `tmux-spawn --role ROLE`; put positional briefs before `-- ARGS`. Keep named `--reply PEER` when the latest requester is not the intended receiver. Existing file input remains compatible, but routine briefs and reports use these direct forms.
+Quote shell metacharacters as data. The same body forms work for `tmux-spawn --role ROLE`; put positional briefs before `-- ARGS`. Copy the generated request footer command. Use named `--reply PEER` when more than one request is open. Existing file input remains compatible, but routine briefs and reports use these direct forms.
 
 ## Shell panes
 
@@ -113,7 +113,7 @@ tmux-spawn --role designer --mission M5 --open 'Discuss the approved goal and wr
 
 `--mission ID` validates the mission before spawning, assigns the new agent as owner and logs `spawned NAME (role)`. Use it for mission ownership transfers, not for every worker on the same mission. `--open` shows the new pane to the user. `--role` records the canonical role in `@role`; `secondary` becomes `interface`.
 
-Inspect the resolution line after `spawned ...`: `role=ROLE agent=AGENT args="ARGS" source=SRC`. Sources are `default`, `option`, `chain`, `positional` or `inherited`. A plain spawn prints `role=none agent=KIND args="" source=inherited`. Without `--role` or an explicit agent, chain callers get an inheritance warning; `--plain` silences it. Use a bare AGENT only when the user asks for a different agent. `--role R AGENT` overrides the role agent and warns if role args are dropped; `-- ARGS` supplies replacement args (bare `--` clears them).
+Inspect the resolution line after `spawned ...`: `role=ROLE agent=AGENT args="ARGS" source=SRC`. Sources are `default`, `option`, `chain`, `positional` or `inherited`. A plain spawn prints `role=none agent=KIND args="" source=inherited`. Without `--role` or an explicit agent, chain callers get an inheritance warning; `--plain` silences it. Use a bare AGENT only when the user asks for a different agent. `--role R WORD` accepts only `claude`, `codex` or configured profiles as the override; use a leading AGENT for another executable. The override replaces the role agent and warns if role args are dropped; `-- ARGS` supplies replacement args (bare `--` clears them).
 
 - It opens a hidden window in the project's session (`agents-<project>`), connects it to you and sends the brief as a request for Claude/Codex. Without a role or explicit agent it inherits your recorded agent kind and Codex profile (falling back to the pinned agent or configured `CODEX_HOME` for unrecorded callers). Pass `claude`, `codex`, a Codex profile from `TMUX_AGENTS_CODEX_HOMES` or `@tmux_agents_codex_homes`, or an executable basename on PATH first only when the user asks for a different agent. Claude/Codex sub agents default to auto mode (Claude `--permission-mode auto`, Codex auto review). `@tmux_agents_sub_auto off` or `TMUX_AGENTS_SUB_AUTO=off` uses agent defaults for new and resumed agents, including members; it does not affect `tmux-agents start`.
 - **Long-lived members.** Add `--member` for a standing team member, including with `--split` or `--for`. Only a top-level caller (no `@parent` and no `@member`) can spawn members; the restriction checks you, not the `--for` owner. It keeps its owner and explicit dismissal still closes its subtree. Members stay out of the default sub-agent list, ordinary chip counts and `--done` cleanup; `ctrl-a` shows them as `member of <owner>`. Permission, needs-you and message-waiting attention still pins them in the list and chip. Closed members share the closed section, and resume preserves membership. Ordinary helpers spawned by members do not inherit membership. There is no conversion command for an existing agent.
@@ -125,7 +125,7 @@ Inspect the resolution line after `spawned ...`: `role=ROLE agent=AGENT args="AR
 - **Turn state.** A running turn shows working; ending it shows idle for a top-level agent or done for a sub agent, even when CI or background work continues. Plain progress reports start work from idle or done. A non-working parent shows live `waiting on <names>` for its nearest working descendants, including members; this adds no worked time. Notices run as turns too, but preserve existing needs-you attention.
 - **Need the user** (a question, a choice, missing information)? Run `tmux-agent-report --needs-you "<reason>"` before asking, including before a question tool or form. Codex has no hook that detects these questions. Attention survives turn end and notice-only turns; normal progress or a non-notice turn start clears it. A sub agent owned by an agent sends its question to that owner with `tmux-ask`; in a chain, route decisions through the owner as the agent-chain skill describes.
 - A sub agent spawned without a task starts as `○ idle`; its first request or progress report starts work. Ending an idle turn does not ask the user for attention.
-- Finish each request with `tmux-ask --reply "answer"`, preserving `--any` when supplied. After replying, end your turn; the reply kind does not end it for you.
+- Finish each request with the generated footer command, preserving `--any` when supplied. Codex uses `tmux-ask --reply -- "answer"` only with a single open request; otherwise name the requester. After replying, end your turn; the reply kind does not end it for you.
 - **Information.** Use `--note` for anything that can wait, which is the default, and `--notice` only to interrupt with a rule change or a failure. Send a request when you want work done and a reply.
 - **Close sub agents you're done with.** Once you have everything you need from one (its reply read, any report files read, no follow-ups planned), close it with `tmux-dismiss --from ME <name>`. Closing also closes all its descendants, deepest first, and keeps each session record for reopening. Keep it open while you might still ask follow-ups. Use `--keep-children` only to retain its children as unowned agents. `--done` skips members and subtrees containing a member or an agent whose state is unfinished. A done agent can still have a background command running; check its result before cleanup. Keep long-lived members until their role ends; dismiss them explicitly when ending the team.
 - If `tmux-ask` says a sub agent **was closed by the user**, don't retry, and don't reopen it on your own. If you still need that work, spawn a new sub agent and pass along the report paths the old one gave you.
@@ -136,6 +136,8 @@ Inspect the resolution line after `spawned ...`: `role=ROLE agent=AGENT args="AR
 - **Spawning for another agent.** Use `tmux-spawn --role worker --for OWNER --name TASK "brief"` (add `--member` for a standing member). It connects only to OWNER and starts without a task; OWNER gets your brief and the instruction to spawn helpers with `--role`. Let OWNER assign its tasks and handle routine cleanup. An ancestor can still dismiss its subtree.
 - **When someone spawns a sub agent or member for you** ("I spawned X for you"): it's your sub agent or member now. Introduce yourself to it (who you are, your role, how you'll work together) and send it its first task in one `tmux-ask` (for other executables, first verify they are at their input prompt), then reply to whoever spawned it that you did. Treat it like any sub agent of yours from then on.
 - The user browses sub agents with `prefix + a` (`tmux-agents`).
+
+When wrapping up with open sub agents, add `tmux-agents status` to the `HANDOFF.md` "Resume steps" section. The separately maintained wrap-up skill owns resume after a context clear.
 
 ## Sending a request
 
@@ -186,5 +188,5 @@ Replies use `[reply from X to Y ...]` and `[end of reply from X to Y]` the same 
 
 ## Codex sandbox
 
-Only for Codex, including configured profiles. In code mode, `exec_command` is still a shell tool; a JavaScript wrapper does not bypass shell parsing or sandbox permissions. Use one quoted multi-line positional argument instead of a heredoc, with one tmux command per tool call. The Codex sandbox blocks the tmux socket. tmux-agents' rules file (`~/.codex/rules/tmux-agents.rules`) allows the commands agents use, including `tmux-agents status`, `tmux-agents resume`, `tmux-agents ci` and `tmux-agents chain-config`, so they should run without a prompt. It does not allow all `tmux-agents` subcommands. For a new Codex profile, rerun the installer for that existing home to install skills and copy the rules file; setting `CODEX_HOME` alone is insufficient.
+Only for Codex, including configured profiles. In code mode, `exec_command` is still a shell tool; a JavaScript wrapper does not bypass shell parsing or sandbox permissions. Use one quoted multi-line positional argument instead of a heredoc, with one tmux command per tool call. The Codex sandbox blocks the tmux socket. tmux-agents' rules file (`~/.codex/rules/tmux-agents.rules`) allows the commands agents use, including `tmux-agents status`, `tmux-agents resume`, `tmux-agents ci` and read-only `tmux-agents chain-config` queries. The `chain-config set` mutation prompts for approval. It does not allow all `tmux-agents` subcommands. For a new Codex profile, rerun the installer for that existing home to install skills and copy the rules file; setting `CODEX_HOME` alone is insufficient.
 If a tmux socket permission denial persists after using quoted arguments, retry only that command with narrowly escalated permissions (outside the sandbox) and a short justification such as "send message to peer agent via tmux".

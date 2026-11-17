@@ -8,7 +8,7 @@ Agent examples use `ME` and `PEER` as placeholders for actual full names. Claude
 
 `tmux-agents status [--notes] [--handoff] [--missions full] [PEER]` gathers the routine orientation checks; `resume` is an alias. It shows your identity, role, parent, depth and kind; peers with state, age and waiting descendants; the configured roles; open project missions with the last three log lines for missions you own; unread-note counts and senders; queued-message counts; and the project-root `HANDOFF.md` state. Empty sections are omitted. Role lookup uses `@role`, falling back to the name suffix. `tmux-peers --me` prints just your name.
 
-`--notes` prints unread notes and marks them read. `--missions full` expands mission details. Plain `status` never prints the handoff body: it reports absent/present, tracking and ignore state, and warns if tracked. `--handoff` explicitly includes the body. After a clear, run `tmux-agents status --handoff`; this restores context, not permission to restart every old task. `status PEER` shows that agent's state and last five screen lines.
+`--notes` prints unread notes and marks them read. `--missions full` expands mission details. Plain `status` never prints the handoff body: it reports absent/present, tracking and ignore state, and warns if tracked. `--handoff` explicitly includes the body. Resume after a context clear belongs to the separately maintained wrap-up skill; `status` remains a read-only orientation command. `status PEER` shows that agent's state and last five screen lines.
 
 ## Opening an agent
 
@@ -172,7 +172,7 @@ Digests apply to all tracked idle or done agents, including interface agents and
 Send long messages directly. Claude uses quoted heredoc stdin:
 
 ```sh
-tmux-ask --reply --summary 'Review complete; details retained.' <<'MSG'
+tmux-ask --reply NAME --summary 'Review complete; details retained.' <<'MSG'
 Full report, paths and validation results.
 Shell syntax such as $HOME stays literal.
 MSG
@@ -181,7 +181,7 @@ MSG
 Codex uses one quoted multi-line positional argument:
 
 ```sh
-tmux-ask --reply --summary 'Review complete; details retained.' 'Full report with paths.
+tmux-ask --reply --summary 'Review complete; details retained.' -- 'Full report with paths.
 Validation results and remaining work.'
 ```
 
@@ -189,7 +189,7 @@ Validation results and remaining work.'
 
 In Codex code mode, `exec_command` is still a shell tool: JavaScript does not bypass shell parsing or sandbox permissions. Quote shell metacharacters as data and run one tmux command per tool call. If a socket permission denial persists, retry only that command with narrowly escalated permissions.
 
-Answer with `tmux-ask --reply "answer"` to the latest requester; use `--reply PEER "answer"` when choosing a different requester. Preserve `--any` when supplied. Replies are a message kind, with no request-ID matching. Each delivered header carries an `m…` token to identify that input. Use `tmux-read` only for an explicit pointer; a header token alone has no archived content.
+Copy the exact command in the generated request footer. Codex can answer with `tmux-ask --reply -- "answer"`; Claude uses `tmux-ask --reply NAME` with quoted heredoc stdin. Nameless replies target the latest requester and are safe only with a single open request; otherwise use `--reply PEER "answer"`. Preserve `--any` when supplied. Replies are a message kind, with no request-ID matching. Each delivered header carries an `m…` token to identify that input. Use `tmux-read` only for an explicit pointer; a header token alone has no archived content.
 
 Typing or scrolling delays delivery. `queued` means sent: do not resend. Leaving copy mode or becoming idle allows delivery in order; [configuration](configuration.md) controls idle, copy-mode and attention thresholds. Long waits show `✉`. If the receiver disappears, the message stays saved and the sender is notified; reopening a resumable receiver retries its messages.
 
@@ -209,7 +209,7 @@ Use the same direct stdin or quoted positional brief forms as messages. Put posi
 
 ### Start a helper
 
-Without `--role` or an explicit agent, helpers inherit the named caller's recorded agent kind and Codex profile, ahead of the calling process's environment. Without a recorded kind, the pinned agent or configured `CODEX_HOME` supplies the default. Plain `codex` uses its default home. Use a bare agent selector only for a user-requested agent override; `--role R AGENT` is also accepted. For other executables, a supplied spawn task is not sent: use the printed full name and resend the actual brief with `tmux-ask` once the agent is at its prompt. See [manual task delivery](agents.md#sending-the-first-task). They open hidden, one window each in a project session such as `agents-api`. Use the full name printed by spawn; [naming rules](#renaming-agents) apply.
+Without `--role` or an explicit agent, helpers inherit the named caller's recorded agent kind and Codex profile, ahead of the calling process's environment. Without a recorded kind, the pinned agent or configured `CODEX_HOME` supplies the default. Plain `codex` uses its default home. Use a bare agent selector only for a user-requested agent override; `--role R WORD` accepts only `claude`, `codex` or configured profiles; other executables use a leading AGENT selector. For other executables, a supplied spawn task is not sent: use the printed full name and resend the actual brief with `tmux-ask` once the agent is at its prompt. See [manual task delivery](agents.md#sending-the-first-task). They open hidden, one window each in a project session such as `agents-api`. Use the full name printed by spawn; [naming rules](#renaming-agents) apply.
 
 `tmux-spawn --role ROLE` selects a role's configured agent, model arguments and name; `--name` overrides the name. A positional agent wins over the role agent and warns when role args are dropped. `-- ARGS` replaces role args; bare `--` clears them. Roles apply only to new helpers, not main or resumed agents. Inspect them with `tmux-agents status` or `tmux-agents chain-config --args --sources`. The new pane records its canonical role in `@role`.
 
@@ -272,11 +272,9 @@ For a user question or decision, run `tmux-agent-report --needs-you "reason"` be
 
 Done agents show their last report as `done · <text>` in list activity and the status chip. With no report, the list keeps `no report yet` and the chip shows `done`. The list truncates the combined text to its activity column; tmux clips the chip to available status-line space. Stored activity and preview text stay unchanged.
 
-Manual clearing with Claude `/clear` or Codex `/new` is supported. Tracking and `tmux-spawn --resume` follow the newest conversation when its hooks report it. Only a verified Codex thread switch treats its first turn end as current, drops an absent prior delivery token; later notifications retain the normal stale-delivery guard. Existing pane names, members and connections stay in place; re-brief the chain through its existing owners.
+Manual clearing with Claude `/clear` or Codex `/new` is supported. Tracking and `tmux-spawn --resume` follow the newest conversation when its hooks report it. Only a verified Codex thread switch treats its first turn end as current, drops an absent prior delivery token, and leaves any cross-conversation reply obligation unchanged without sending a stop reminder; later notifications retain the normal stale-delivery guard. Existing pane names, members and connections stay in place.
 
-After clearing, say "cleared, resume please" or "清完了，继续" to use the agent-chain skill's rejoining flow. Main restores each mission interface's role (including old secondary names), and interface restores its workers' roles. Main runs `tmux-agents status --handoff` to review roles, missions and the project-root `HANDOFF.md` saved with wrap-up. It lists important handoff items for selection and continues only work the user selected; restoring roles does not restart every old task. The handoff stays locally excluded from Git and is never committed. Remove handled entries and delete the file when everything is completed, explicitly dropped or saved in an approved durable record.
-
-The rejoining main delegates updating its uniquely matched agent row to interface or runner with `tmux-agents main-sequence set NAME resume=ID`, then verifies it with `main-sequence list`. `ID` is the new conversation ID, not the stable agent ID. Claude's prompt hook records it at turn start; Codex's first new-thread turn end records it later, so interface can finish that update after main's post-clear turn. Until the fresh ID is confirmed, the update stays pending. This does not create missing rows or change plain shell/command rows.
+The wrap-up skill owns handoff and resume after a context clear. An agent wrapping up with open sub agents records `tmux-agents status` in the `HANDOFF.md` "Resume steps" section.
 
 Helpers report progress with `tmux-agent-report "running tests"`. This starts work from idle or done. Every ended turn returns to idle or done, including a turn waiting for CI, a background command or another agent. A notice-only turn runs as working from idle or done, but preserves existing needs-you attention. Codex has no turn-start hook: directly typed work may show idle until a report or turn-end notification. Codex runtime approval prompts have no permission hook. Spawned Codex helpers and profiles detect the startup `Folder access` / `Trust this folder?` screen, show `⚠ permission` and notify their parent once that the task has not started. Open the pane and make the trust choice yourself; tmux-agents never confirms it. The permission marker clears when the dialog closes.
 
@@ -343,7 +341,7 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 | `tmux-rename --from ME PEER NAME [--exact]` | Rename yourself or a descendant. |
 | `tmux-disconnect [name]` | User unlinks one peer or all. |
 | `tmux-peers [--ids] [--me]` | Show identity and connections; `--me` prints just your name. |
-| `tmux-ask [--any] [--reply\|--notice\|--note] [PEER] [--summary TEXT] [msg...]` | Send a direct positional/stdin body; summary retains full text behind a pointer. Nameless replies use the latest requester. `--any` permits unlinked targets. |
+| `tmux-ask [--any] [--reply\|--notice\|--note] [PEER] [--summary TEXT] [msg...]` | Send a direct positional/stdin body; summary retains full text behind a pointer. Nameless replies use the latest requester; use only with one open request and put `--` before a positional body. `--any` permits unlinked targets. |
 | `tmux-notes [--all] [--since 10m\|2h] [--keep-unread] [--count]` | Read quiet notes; default reads and marks unread entries, while `--count` only counts unread notes. Bare `tmux-notes --count` is the fast statusline form using `$TMUX_PANE`. |
 | `tmux-read ID` | Read any retained message by ID (7-day retention; no tmux connection needed). |
 | `tmux-ask --pending` | Inspect queued/undelivered messages. |
@@ -357,7 +355,7 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 | `tmux-spawn --resume PEER` / `--resume-id ID [--here]` | Reopen a conversation, optionally in the current shell pane. |
 | `tmux-agent-report [--needs-you] [--mission ID] "text"` | Report progress or user attention; optionally log mission progress. |
 | `tmux-agents status [--notes] [--handoff] [--missions full] [PEER]` | Orient or inspect a peer; `resume` is an alias. |
-| `tmux-agents chain-config set ROLE AGENT [-- ARGS]` | Update live role defaults and print tmux.conf lines. |
+| `tmux-agents chain-config set ROLE AGENT [-- ARGS]` | User or main only; Codex prompts. Update live defaults and print tmux.conf lines; args are space-separated without quoting. |
 | `tmux-agents ci [--watch] [REF]` | Summarize checks for a commit, optionally waiting. |
 | `tmux-agents` | Open the agent list. |
 | `tmux-dismiss --from ME PEER` | Close a descendant and its subtree. |

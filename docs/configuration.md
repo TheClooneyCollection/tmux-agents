@@ -143,7 +143,7 @@ Default args are empty for main, designer, worker and reviewer, `--model sonnet`
 
 `tmux-agents status` includes the role table. `chain-config` shows resolved configuration, not live membership; `tmux-peers` shows members. Outside a chain snapshot, it shows the settings a new chain will use.
 
-`tmux-agents chain-config set ROLE AGENT [-- ARGS]` validates the selection, updates the live `@tmux_agents_chain_<role>` and `_args` tmux options, and prints `set -g` lines to persist in tmux.conf. Existing snapshots keep their launch choices. Configure a profile before selecting it; do not silently replace its name with plain `codex`.
+Only the user or main runs `tmux-agents chain-config set ROLE AGENT [-- ARGS]`; Codex prompts for approval. Args are space-separated words without shell quoting. The setter validates the selection, updates the live `@tmux_agents_chain_<role>` and `_args` tmux options, and prints `set -g` lines to persist in tmux.conf. Existing snapshots keep their launch choices. Configure a profile before selecting it; do not silently replace its name with plain `codex`.
 
 ```sh
 tmux-agents chain-config --sources

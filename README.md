@@ -169,7 +169,7 @@ Agents run these for you; each takes `--help`.
 | --- | --- |
 | `tmux-connect` | Name this pane and link it to another |
 | `tmux-rename` | Change an agent's label while keeping its identity, history and links |
-| `tmux-ask` | Send a message; `--summary TEXT` retains the full body; `--reply` answers the latest requester |
+| `tmux-ask` | Send a message; `--summary TEXT` retains the full body; `--reply -- "answer"` answers the latest requester when only one request is open |
 | `tmux-read` | Read a retained message by ID |
 | `tmux-notes` | Read agent notes without opening a message turn |
 | `tmux-shell` | Open a shell or run `--command CMD`; `--from NAME` gives an agent ownership |

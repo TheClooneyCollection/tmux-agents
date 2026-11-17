@@ -1,6 +1,6 @@
 ---
 name: agent-chain
-description: Run mission-based agent teams through tmux-agents. Use for "start the chain", "end the chain", rejoining after a clear ("cleared, resume please" or "清完了，继续"), or an assigned chain role.
+description: Run mission-based agent teams through tmux-agents. Use for "start the chain", "end the chain", or an assigned chain role.
 ---
 
 # Agent chain
@@ -40,7 +40,7 @@ tmux-spawn --role runner 'Run tmux-agents ci --watch and reply with the result.'
 tmux-spawn --role researcher 'Check the specified behavior and return evidence.'
 ```
 
-`--mission` transfers ownership, so reserve it for the mission owner. `--name` replaces the role's default name. `-- ARGS` replaces role args; a bare `--` clears them. Explicit AGENT overrides are for user-requested changes and warn when role args are dropped. Use `tmux-agents chain-config set ROLE AGENT [-- ARGS]` to change live defaults and obtain persistent tmux.conf lines. A running chain retains the all-role snapshot taken at launch; inspect that snapshot with `status`. Apply instruction-file preferences at launch through role flags or settings, not by silently replacing the configured profile at each spawn. See [role settings](../../docs/configuration.md#chain-roles). Other executables need [manual brief delivery](../../docs/agents.md#sending-the-first-task).
+`--mission` transfers ownership, so reserve it for the mission owner. `--name` replaces the role's default name. `-- ARGS` replaces role args; a bare `--` clears them. Explicit AGENT overrides are for user-requested changes and warn when role args are dropped. Only the user or main changes live defaults with `tmux-agents chain-config set ROLE AGENT [-- ARGS]`; Codex prompts for approval. Args are space-separated words without shell quoting. The command prints persistent tmux.conf lines. A running chain retains the all-role snapshot taken at launch; inspect that snapshot with `status`. Apply instruction-file preferences at launch through role flags or settings, not by silently replacing the configured profile at each spawn. See [role settings](../../docs/configuration.md#chain-roles). Other executables need [manual brief delivery](../../docs/agents.md#sending-the-first-task).
 
 Interface is main's `--member` at depth 1. Its workers, reviewer and runner are ordinary sub agents at depth 2 and cannot spawn further. A depth-2 agent needing research asks its interface to dispatch it. Only main is long-lived. Hidden windows are the default; use `--split` only when the user asks for a layout.
 
@@ -71,23 +71,11 @@ A small follow-up joins its open mission. Agents update mission state and send n
 
 Follow the [message rules](../tmux-agents/SKILL.md#receiving-a-message): notes by default in both directions, replies for awaited results, requests for decisions (state the default and what is blocked). Main does not restate interface messages the user already sees.
 
-Pass long briefs and reports directly: Claude uses quoted heredoc stdin; Codex one quoted multi-line argument. Add `--summary` for large reports so the receiver gets a summary and retained `tmux-read` pointer. Reply with `tmux-ask --reply "answer"` to the latest requester, naming the receiver when needed. Forward the original pointer and message kind, not the body. Keep each tmux command standalone.
+Pass long briefs and reports directly: Claude uses quoted heredoc stdin; Codex one quoted multi-line argument. Add `--summary` for large reports so the receiver gets a summary and retained `tmux-read` pointer. Copy the exact reply command from the generated request footer. Codex uses `tmux-ask --reply -- "answer"`; Claude uses `tmux-ask --reply NAME` with quoted heredoc stdin. Nameless replies are safe only with a single open request; otherwise name the requester. Forward the original pointer and message kind, not the body. Keep each tmux command standalone.
 
 Codex checks `tmux-agents status --notes` at turn start. Main reads notes on request or at a natural pause. `waiting on` reflects working descendants; idle/done means the turn ended. Inspect the last report or `tmux-peek` before chasing a slow result. Direct user instructions win; tell the affected agents what changed.
 
-## Rejoining after a restart or clear
-
-Treat "cleared, resume please" or "清完了，继续" after a context clear as a request to restore the existing chain's roles and review its handoff. The user need not repeat the role or procedure. Follow the tmux-agents identity rules, then run `tmux-agents status --handoff`. It shows identity, roles, members, missions and the handoff body; role lookup uses `@role`, falling back to the name suffix. If identity or role is unclear, ask only for the missing information. Keep existing names and connections; do not spawn a replacement chain or reopen an old conversation to restore roles.
-
-Recognise old `secondary` names as interfaces. Main re-briefs each mission interface on its role, mission ID, plan path and current member names, asking it to restore its workers' roles in turn. Interface and worker rejoin their roles and wait for assigned work; they do not automatically restart old tasks. Report surviving background work, worktrees and uncommitted changes so a fresh context does not duplicate or discard them.
-
-Main reviews the missions and project-root `HANDOFF.md` shown by `status --handoff`. Plain `status` prints only the handoff state. Present a short numbered list of important outcomes, unfinished choices and live work the user needs to know about. Continue work explicitly selected by the user before the clear; otherwise wait for their selection, such as "do 2 and 3", or a new task. A role-restoration request alone is not permission to resume every old task. If no handoff exists, say so and ask for the current goal rather than inventing lost context.
-
-Main delegates its existing project-launcher resume-field refresh to interface or runner. Run `tmux-agents main-sequence list`, match the project directory and window name to one agent row, then use `tmux-agents main-sequence set NAME resume=ID` and verify with `list`. Use the new conversation ID from the session record keyed by main's verified stable agent ID, not that agent ID itself or an old ID copied from the handoff. Claude records it at prompt start; Codex records it only at the new thread's first turn end. For Codex, wait until main finishes its post-clear turn and the fresh thread binding is confirmed; keep the delegated update pending until then. Do not claim it is updated before verification. Missing or ambiguous rows require clarification; leave shell and command rows unchanged and do not add a new row automatically.
-
-`HANDOFF.md` is temporary and must never be committed. Before creating or updating it, check that it is untracked and locally excluded from Git; preserve unrelated contents. Remove an entry only once completed, explicitly dropped or transferred to a user-approved durable record. Delete the file when all its entries are handled, not merely after reading it. Use wrap-up again before another clear to refresh the remaining handoff.
-
-Manual clearing with Claude `/clear` or Codex `/new` is supported: tracking and `tmux-spawn --resume` follow the new conversation when its hooks report it. Restoring roles does not itself clear any agent's context.
+Resume after a context clear is handled by the wrap-up skill, maintained separately.
 
 ## Ending the chain
 

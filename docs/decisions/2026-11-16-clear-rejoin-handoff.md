@@ -1,5 +1,7 @@
 # Rejoin roles and select handoffs after a clear
 
+**Superseded (2026-11-17).** The separately maintained wrap-up skill now owns resume after a context clear. The agent-chain rejoin flow and its triggers are retired; see [Streamlined commands](2026-11-17-streamlined-commands.md). The original decision below is historical.
+
 ## Context
 
 The user clears agent contexts manually and wants a short instruction to restore the existing chain. Some outcomes should be recorded, some tasks continued and others left behind. Restoring the chain must not silently restart all old work.

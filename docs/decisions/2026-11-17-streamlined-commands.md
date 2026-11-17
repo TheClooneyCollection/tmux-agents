@@ -7,7 +7,7 @@
 - `tmux-agents status [--notes] [--handoff] [--missions full] [PEER]`, alias `resume`, shows identity, peers and states, configured roles, open missions and owned mission logs, unread-note counts/senders, queued-message counts and handoff state. `--notes` reads and consumes notes. Default status never prints `HANDOFF.md` contents; `--handoff` opts in. A peer argument shows its state and last five screen lines.
 - Trusted Claude/pinned Codex panes may omit `--from`, including in `mission` and `open`. Unpinned Codex must supply its verified identity. `tmux-peers --me` prints only the name.
 - Long messages use Claude quoted heredoc stdin or one Codex quoted multi-line positional argument. `tmux-ask --summary TEXT` retains the full body and delivers the summary plus a `tmux-read` pointer. Existing `--message-file` remains compatible but is no longer the taught workflow. Nameless `tmux-ask --reply` addresses the latest requester; named replies remain available.
-- Spawn writes canonical `@role` (`secondary` becomes `interface`); `start chain` writes `@role main`. Readers fall back to the name suffix for older panes. Keep existing names on starting/rejoining a chain.
+- Spawn writes canonical `@role` (`secondary` becomes `interface`); `start chain` writes `@role main`. Readers fall back to the name suffix for older panes. Keep existing names on starting a chain.
 - After the existing `spawned ...` stdout line, every spawn prints `role=ROLE agent=AGENT args="ARGS" source=SRC`. SRC is `default`, `option`, `chain`, `positional` or `inherited`; `chain` means per-chain snapshot environment. Plain spawn prints `role=none agent=KIND args="" source=inherited`.
 - A caller with `@role` or any `TMUX_AGENTS_CHAIN_*` snapshot, omitting both role and positional AGENT, gets stderr `tmux-spawn: no --role; inheriting KIND. Use --role ROLE to follow chain-config (or --plain to silence)`. `--plain` silences it.
 - `--role R AGENT` selects AGENT. When dropping role args, stderr is `tmux-spawn: warning: AGENT overrides role R; role args dropped (pass -- ARGS to supply them)`. `-- ARGS` supplies replacement args; bare `--` clears them.
@@ -18,6 +18,10 @@
 - `tmux-agents ci [--watch] [REF]` summarizes GitHub Actions for the selected commit (default HEAD), optionally waits, and includes failure log tails within 20 output lines.
 
 Agent Fleet Command is sunset. The local mission board replaces it; remove its skill integration, inbox checks and mirroring from current workflows. Historical decision and release records remain unchanged.
+
+The old agent-chain rejoin flow and its clear/resume triggers are retired. Resume belongs to the separately maintained wrap-up skill. When wrapping up with open sub agents, write `tmux-agents status` in the handoff's "Resume steps" section. The status command and its `resume` alias remain read-only orientation tools. This supersedes the [clear/rejoin decision](2026-11-16-clear-rejoin-handoff.md).
+
+Reply recipes copy the generated request footer: Codex uses `--reply -- "answer"`, Claude uses named `--reply NAME` with quoted heredoc stdin. Nameless replies are safe only with a single open request. Only the user or main runs `chain-config set`, which prompts in Codex and accepts space-separated args without shell quoting. After `--role R`, only `claude`, `codex` or configured profiles are recognized as agent overrides; other executables use the leading selector.
 
 **Why.** One command should carry each routine action. Explicit role resolution exposes account/model mistakes, direct bodies avoid scratch-file ceremony, and summaries keep large reports out of the receiver's context until needed.
 

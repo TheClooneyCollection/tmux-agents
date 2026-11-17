@@ -169,7 +169,7 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 | --- | --- |
 | `tmux-connect` | 给当前 pane 命名并连接到另一个 pane |
 | `tmux-rename` | 修改 agent 标签，保留身份、历史和连接 |
-| `tmux-ask` | 发送消息；`--summary TEXT` 保留全文；`--reply` 回复最近的请求者 |
+| `tmux-ask` | 发送消息；`--summary TEXT` 保留全文；`--reply -- "answer"` 在只有一个待回复请求时回复最近的请求者 |
 | `tmux-read` | 按 ID 读取保留的消息全文 |
 | `tmux-notes` | 读取静默 agent note，不触发消息回合 |
 | `tmux-shell` | 打开 shell 或运行 `--command CMD`；`--from NAME` 指定所属 agent |
