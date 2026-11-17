@@ -43,6 +43,7 @@ arguments cannot be reliably distinguished from task text.
                 an existing prefix is kept; clashes add -2, -3...
                 profiles use codex as <agent>, home uses ~ as <dir>
                 (without --name: <agent>-<dir>-<N>)
+  --role ROLE   choose agent, args and default name; see tmux-agents chain-config --args
   --member      start a long-lived member (top-level callers only); --done keeps it
   --exact       use --name verbatim, without its agent/directory prefix
   --for OWNER   spawn it for OWNER, an agent you're connected to: it becomes
@@ -220,6 +221,7 @@ if [ "${1:-}" = "--run" ]; then
 fi
 
 agent="" name="" task="" message_file="" FROM_PANE="" resume="" resume_id="" list_closed=0 parent_name="" for_name="" here_resume=0
+role=""
 agent_args=() agent_args_given=0 args_separator=0
 agent_args_encoded=""
 task_arg_given=0
@@ -240,6 +242,9 @@ while [ $# -gt 0 ]; do
     --name)
       [ -n "${2:-}" ] || die "--name needs a name"
       name="$2"; name_given=1; shift 2 ;;
+    --role)
+      [ -n "${2:-}" ] || die "--role needs a role"
+      role="$2"; shift 2 ;;
     --exact) exact=1; shift ;;
     --member) member=1; shift ;;
     --message-file)
@@ -272,6 +277,19 @@ while [ $# -gt 0 ]; do
     *) task_arg_given=1; task="$*"; break ;;
   esac
 done
+if [ -n "$role" ]; then
+  [ -z "$resume$resume_id" ] && [ "$here_resume" -eq 0 ] && [ "$list_closed" -eq 0 ] || die "--role is only for new agents"
+  chain_role_canon "$role" role
+  [ "$role" != main ] || die "main is started by the user, not spawned"
+  chain_roles_resolve "$role"
+  role_agent_var="chain_$role"
+  role_args_var="chain_${role}_args"
+  [ -n "$agent" ] || agent="${!role_agent_var}"
+  if [ "$agent_args_given" -eq 0 ] && [ "$agent" = "${!role_agent_var}" ]; then
+    read -r -a agent_args <<< "${!role_args_var}"
+  fi
+  [ "$name_given" -eq 1 ] || name="$role"
+fi
 [ -z "$message_file" ] || [ "$task_arg_given" -eq 0 ] || die "--message-file conflicts with positional task text"
 [ -z "$message_file" ] || { [ -z "$resume$resume_id" ] && [ "$list_closed" -eq 0 ]; } || die "--message-file is only for a new sub agent"
 if [ -n "$message_file" ]; then
