@@ -68,7 +68,7 @@ cd tmux-agents
 ./install.sh            # --dry-run to see what it does first
 ```
 
-Try an isolated install with `./install.sh --home /tmp/tmux-agents-home`. Linked worktrees require `--home` unless you explicitly override the guard with `--force`.
+Try an isolated install with `./install.sh --home /tmp/tmux-agents-home`. Linked worktrees require `--home` unless you explicitly override the guard with `--force`. Codex homes outside `$HOME` also need `--force`, which backs up and replaces conflicting real files.
 
 `install.sh`:
 

@@ -21,13 +21,16 @@ Requires tmux 3.2+ and bash; the agent list also needs fzf. Other commands work 
 To try installation safely, run `./install.sh --home /tmp/tmux-agents-home`.
 The installer creates that home, keeps inherited `CODEX_HOME`, `TMUX_AGENTS_CODEX_HOMES`
 entries and `BIN_DIR` only when they resolve inside it, and defaults commands to
-`DIR/.local/bin`. It skips tmux settings discovery and turn-state migration, and
+`DIR/.local/bin`. It skips turn-state migration, and
 prints configuration paths for the sandbox. `--dry-run` previews without writing.
 Without `--home`, linked worktrees and destinations outside `$HOME` are refused
 before any write, including in dry-run mode. `--force` explicitly overrides those
-guards for a normal install; sandbox installs still cannot write outside their home.
-A set-but-empty `TMUX_AGENTS_CODEX_HOMES` disables account discovery from tmux;
-unset it to retain the normal option/global-environment fallback.
+guards for a normal install and also backs up and replaces conflicting real files.
+Codex homes outside `$HOME` therefore need `--force`. Sandbox installs still cannot
+write outside their home, and `/` is refused as HOME even with `--force`.
+All installs discover Codex accounts only from environment variables, never tmux
+settings; export the account map before installing profiles configured only in tmux.
+Runtime discovery is unchanged: empty account maps still fall back to tmux settings.
 
 ## Configuration
 

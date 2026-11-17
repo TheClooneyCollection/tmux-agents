@@ -217,7 +217,7 @@ check 'option wins over global fallback' test "$result" = "option=$tmp/option"
 TMUX_AGENTS_CODEX_HOMES="override=$tmp/env" resolve_codex_homes result
 check 'environment wins over option' test "$result" = "override=$tmp/env"
 TMUX_AGENTS_CODEX_HOMES='' resolve_codex_homes result
-check 'empty environment disables discovery' test -z "$result"
+check 'empty environment falls through to option' test "$result" = "option=$tmp/option"
 install
 check 'sandbox ignores tmux option account' test ! -d "$tmp/option/skills"
 check 'sandbox ignores tmux global account' test ! -d "$tmp/global/skills"

@@ -33,6 +33,7 @@ install() {
 }
 if install; then echo 'FAIL: outside targets accepted'; exit 1; fi
 check 'refusal names isolated install flag' contains "$tmp/output" '--home DIR'
+check 'force hint explains replacement of real files' contains "$tmp/output" 'back up/replace real files'
 check 'refusal precedes writes' test ! -e "$tmp/home/.claude"
 if install --dry-run; then echo 'FAIL: dry-run skipped guard'; exit 1; fi
 check 'dry-run also refuses' contains "$tmp/output" 'write target outside HOME'
@@ -66,6 +67,21 @@ install --home "$tmp/new-home"
 check 'sandbox creates missing home' test -d "$tmp/new-home/.local/bin"
 install --home "$tmp/dry-home" --dry-run
 check 'sandbox dry-run makes no directories' test ! -e "$tmp/dry-home"
+# Even force cannot turn / into an isolation boundary. Dry-run prevents writes
+# if this regression reappears, including for the explicit HOME=/ case.
+if install --home / --force --dry-run; then echo 'FAIL: root sandbox accepted'; exit 1; fi
+check 'root sandbox refused' contains "$tmp/output" 'HOME must not resolve to /'
+if env -i PATH="$tmp/stubs:$PATH" HOME=/ TMUX_AGENTS_CODEX_HOMES='' \
+  /bin/bash "$tmp/copy/install.sh" --force --dry-run > "$tmp/output" 2>&1; then
+  echo 'FAIL: root HOME accepted'; exit 1
+fi
+check 'root HOME refused' contains "$tmp/output" 'HOME must not resolve to /'
+# Glob characters in account paths are literal, even when they match siblings.
+mkdir -p "$tmp/home/profile*" "$tmp/home/profile-other" "$tmp/glob-cwd/literal=$tmp/home/profile-other"
+(cd "$tmp/glob-cwd" && env -i PATH="$tmp/stubs:$PATH" HOME="$tmp/home" TMUX_AGENTS_CODEX_HOMES="literal=$tmp/home/profile*" \
+  /bin/bash "$tmp/copy/install.sh" --home "$tmp/home") > "$tmp/output" 2>&1
+check 'literal glob account receives skills' test -L "$tmp/home/profile*/skills/tmux-agents"
+check 'glob sibling remains untouched' test ! -e "$tmp/home/profile-other/skills"
 # A HOME-internal configuration directory can itself lead outside.
 mkdir -p "$tmp/linked-home"
 ln -s "$tmp/outside" "$tmp/linked-home/.claude"
@@ -74,6 +90,13 @@ check 'sandbox force cannot escape home' contains "$tmp/output" 'write target ou
 # Exercise a true linked worktree, not the checkout running this suite.
 git init -q "$tmp/repo"
 git -C "$tmp/repo" -c user.name=Test -c user.email=test@example.com commit -qm fixture --allow-empty
+# A tarball copy nested inside a dotfiles repository is not a linked worktree.
+mkdir "$tmp/repo/copy"
+(cd "$tmp/copy" && tar -cf "$tmp/copy.tar" .)
+tar -xf "$tmp/copy.tar" -C "$tmp/repo/copy"
+env -i PATH="$tmp/stubs:$PATH" HOME="$tmp/home" TMUX_AGENTS_CODEX_HOMES='' \
+  /bin/bash "$tmp/repo/copy/install.sh" > "$tmp/output" 2>&1
+check 'tarball under outer repository installs normally' test "$tmp/home/.local/bin/tmux-ask" -ef "$tmp/repo/copy/bin/tmux-ask"
 git -C "$tmp/repo" worktree add -q -b fixture "$tmp/worktree"
 cp -R "$tmp/copy/". "$tmp/worktree/"
 if env -i PATH="$tmp/stubs:$PATH" HOME="$tmp/home" CODEX_HOME="$tmp/outside/codex" \
@@ -101,15 +124,18 @@ printf '#!/bin/sh\nexec "%s" -S "%s" "$@"\n' "$real_tmux" "$socket" > "$tmp/stub
 "$real_tmux" -L "$sock" set-environment -g TMUX_AGENTS_CODEX_HOMES "sentinel=$tmp/outside/codex"
 env -i PATH="$tmp/stubs:$PATH" HOME="$tmp/home" TMUX="$TMUX" TMUX_AGENTS_CODEX_HOMES='' \
   /bin/bash "$tmp/copy/install.sh" > "$tmp/output" 2>&1
-check 'empty map ignores tmux option' test ! -e "$tmp/outside/extra/skills"
+check 'installer empty map ignores tmux option' test ! -e "$tmp/outside/extra/skills"
 "$real_tmux" -L "$sock" set -gu @tmux_agents_codex_homes
 env -i PATH="$tmp/stubs:$PATH" HOME="$tmp/home" TMUX="$TMUX" TMUX_AGENTS_CODEX_HOMES='' \
   /bin/bash "$tmp/copy/install.sh" > "$tmp/output" 2>&1
-check 'empty map ignores tmux global env' test ! -e "$tmp/outside/codex/skills"
+check 'installer empty map ignores tmux global env' test ! -e "$tmp/outside/codex/skills"
 "$real_tmux" -L "$sock" set -g @tmux_agents_codex_homes "sentinel=$tmp/outside/extra"
 env -i PATH="$tmp/stubs:$PATH" HOME="$tmp/home" TMUX="$TMUX" \
   /bin/bash "$tmp/copy/install.sh" --home "$tmp/home" > "$tmp/output" 2>&1
 check 'sandbox ignores tmux settings with unset map' test ! -e "$tmp/outside/extra/skills"
+env -i PATH="$tmp/stubs:$PATH" HOME="$tmp/home" TMUX="$TMUX" \
+  /bin/bash "$tmp/copy/install.sh" > "$tmp/output" 2>&1
+check 'normal install ignores tmux settings with unset map' test ! -e "$tmp/outside/extra/skills"
 snapshot > "$tmp/after"
 check 'sentinels remain byte-for-byte unchanged' cmp -s "$tmp/before" "$tmp/after"
 printf '%s checks, 0 failures\n' "$count"

@@ -68,7 +68,7 @@ cd tmux-agents
 ./install.sh            # 先加 --dry-run 看看它会做什么
 ```
 
-使用 `./install.sh --home /tmp/tmux-agents-home` 试装到隔离目录。linked worktree 必须使用 `--home`，除非显式用 `--force` 覆盖保护检查。
+使用 `./install.sh --home /tmp/tmux-agents-home` 试装到隔离目录。linked worktree 必须使用 `--home`，除非显式用 `--force` 覆盖保护检查。位于 `$HOME` 之外的 Codex home 也需要 `--force`；该选项还会备份并替换冲突的真实文件。
 
 `install.sh` 会：
 

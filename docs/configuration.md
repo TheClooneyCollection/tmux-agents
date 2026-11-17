@@ -102,7 +102,7 @@ Use space-separated `name=path` pairs for several profiles. An environment overr
 export TMUX_AGENTS_CODEX_HOMES="work=$HOME/.codex-work"
 ```
 
-A set-but-empty `TMUX_AGENTS_CODEX_HOMES` disables account discovery from tmux. Unset it to use the tmux option or global environment fallback.
+An empty `TMUX_AGENTS_CODEX_HOMES` retains runtime discovery through the tmux option or global environment fallback. The installer only reads the environment; export the account map before installing profiles configured only in tmux. Codex homes outside `$HOME` require `--force`, which also backs up and replaces conflicting real files.
 
 The legacy `set-environment -g TMUX_AGENTS_CODEX_HOMES ...` fallback applies only when neither a local override nor the option is set. It does not override an environment value already inherited by a running agent.
 

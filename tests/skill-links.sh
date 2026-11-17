@@ -77,8 +77,7 @@ check 'duplicate configured homes warn once' test "$(grep -Fc "$tmp/env/skills/a
 check 'current home duplicated in map warns once' test "$(grep -Fc "$CODEX_HOME/skills/agent-chain" "$tmp/err")" = 1
 export TMUX_AGENTS_CODEX_HOMES=''
 run --chip-layout on
-check 'empty environment disables option' absent "$tmp/err" "$tmp/option/skills/agent-chain"
-unset TMUX_AGENTS_CODEX_HOMES
+check 'empty environment falls back to option' contains "$tmp/err" "$tmp/option/skills/agent-chain"
 tmux -L "$sock" set -gu @tmux_agents_codex_homes
 run --chip-layout on
 check 'unset option falls back to global environment' contains "$tmp/err" "$tmp/global/skills/agent-chain"

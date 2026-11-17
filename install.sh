@@ -47,7 +47,7 @@ inside_home() {
   resolved="$(resolved_path "$1")" || return 1
   case "$resolved" in "$home_root"|"${home_root%/}/"*) return 0 ;; *) return 1 ;; esac
 }
-refuse() { echo "refusing install: $*; use --home DIR for an isolated install (or --force to override)" >&2; exit 1; }
+refuse() { echo "refusing install: $*; use --home DIR for an isolated install (or --force to override normal-install guards and back up/replace real files)" >&2; exit 1; }
 
 if [ -n "$sandbox_home" ]; then
   case "$sandbox_home" in /*) HOME="$sandbox_home" ;; *) HOME="$PWD/$sandbox_home" ;; esac
@@ -56,12 +56,20 @@ if [ -n "$sandbox_home" ]; then
   echo "sandbox home: $HOME"
 fi
 home_root="$(resolved_path "$HOME")"
+if [ "$home_root" = / ]; then
+  echo 'refusing install: HOME must not resolve to /; use --home DIR below /' >&2
+  exit 1
+fi
+# Installation discovers accounts only from its environment, never live tmux.
+export TMUX_AGENTS_INSTALL_NO_TMUX=1
 if [ -n "$sandbox_home" ]; then
-  # A set-but-empty map deliberately disables all tmux settings discovery.
+  # Filter whitespace-separated account entries without expanding glob characters.
   filtered_map=''
+  set -f
   for entry in ${TMUX_AGENTS_CODEX_HOMES:-}; do
     if inside_home "${entry#*=}"; then filtered_map="${filtered_map:+$filtered_map }$entry"; fi
   done
+  set +f
   export TMUX_AGENTS_CODEX_HOMES="$filtered_map"
   if [ -n "${CODEX_HOME:-}" ] && ! inside_home "$CODEX_HOME"; then unset CODEX_HOME; fi
   if [ -n "${BIN_DIR:-}" ] && ! inside_home "$BIN_DIR"; then unset BIN_DIR; fi
@@ -72,15 +80,20 @@ bin_dir="${BIN_DIR:-$HOME/.local/bin}"
 if [ "$force" -eq 0 ] && [ -z "$sandbox_home" ]; then
   git_dir="$(git -C "$here" rev-parse --git-dir 2>/dev/null || true)"
   git_common_dir="$(git -C "$here" rev-parse --git-common-dir 2>/dev/null || true)"
-  if [ -n "$git_dir" ] && [ "$git_dir" != "$git_common_dir" ]; then
-    refuse 'checkout is a linked git worktree'
+  if [ -n "$git_dir" ] && [ -n "$git_common_dir" ]; then
+    # Git may return one absolute path and one relative to the checkout.
+    git_dir="$(cd "$here" && cd -P "$git_dir" && pwd -P)"
+    git_common_dir="$(cd "$here" && cd -P "$git_common_dir" && pwd -P)"
+    [ "$git_dir" = "$git_common_dir" ] || refuse 'checkout is a linked git worktree'
   fi
 fi
 # Discover and validate every destination before linking or removing anything.
 codex_map=''
 resolve_codex_homes codex_map
 codex_homes=("${CODEX_HOME:-$HOME/.codex}" "$HOME/.codex")
+set -f
 for e in $codex_map; do codex_homes+=("${e#*=}"); done
+set +f
 # Sandbox installs must never escape through pre-existing directory symlinks,
 # even with --force. Individual command/skill links are replaced, not followed.
 if [ "$force" -eq 0 ] || [ -n "$sandbox_home" ]; then
