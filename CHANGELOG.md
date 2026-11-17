@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `tmux-agents board [--watch [SECS]]` shows project missions, live owner trees, saved models, states and progress in a pane, with unassigned agents and a two-second watch default.
+
 ## v1.24.1 (2026-11-16)
 
 - Digest notices now suggest `tmux-notes --from NAME --all --keep-unread`, so their already-read notes remain visible and reviewing them does not consume newer unread arrivals.

@@ -385,3 +385,19 @@ Values cannot contain tabs or line breaks. For text starting with `--`, put all
 options first, then `--` and the positional arguments, for example:
 `tmux-agents mission add --from my-agent -- "--flag documentation"`.
 Lists use numeric ID order; allocation also reserves IDs with surviving log files.
+
+## Mission board
+
+Run `tmux-agents board` to print the current project's missions and live agents,
+or `tmux-agents board --watch` to keep a pane updated every two seconds.
+`--watch SECS` changes the interval (positive whole seconds); press `q` or Ctrl-C
+to quit. The view adapts to the pane width.
+
+Missions come from `${XDG_STATE_HOME:-~/.local/state}/tmux-agents/missions/<project>/M<N>.mission`,
+one `key=value` record per mission. Required keys are `id`, `title`, `owner`,
+`status`, `created` and `updated`; timestamps are epoch seconds. Optional `branch`
+and `worktree`, and unknown keys, do not affect the view. Use the owner's full
+agent name. Each mission shows its live owner and descendants, including kind,
+saved `--model` (or `default`), state and latest progress. Other live project
+agents appear under `unassigned`. A missing directory or missing records still
+shows live agents. The legacy `board.md` is ignored; no mission CLI is needed.

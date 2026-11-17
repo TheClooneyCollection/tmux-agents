@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Read-only mission board; refreshes share the agent list's state and width logic.
+set -euo pipefail
+here="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
+watch=0 interval=2
+case "${1:-}" in
+  --help|-h) echo 'usage: tmux-agents board [--watch [SECS]]'; exit 0 ;;
+  --watch) watch=1; shift; if [ "$#" -gt 0 ]; then interval="$1"; shift; fi ;;
+esac
+if [ "$#" -gt 0 ] || ! [[ "$interval" =~ ^[0-9]+$ ]] || [ "$interval" -eq 0 ]; then
+  echo 'usage: tmux-agents board [--watch [SECS]] (positive whole seconds)' >&2; exit 2
+fi
+if [ "$watch" = 1 ] && { [ ! -t 0 ] || [ ! -t 1 ]; }; then
+  echo 'tmux-agents board: --watch requires a terminal' >&2; exit 2
+fi
+# Restore the cursor and original screen even when interrupted during a refresh.
+# shellcheck disable=SC2329
+restore() { printf '\033[?25h\033[?1049l'; }
+if [ "$watch" = 1 ]; then
+  trap restore EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  printf '\033[?1049h\033[?25l'
+fi
+while :; do
+  frame="$(BOARD_WATCH="$watch" perl "$here/tmux-agents-board.pl" "$here")"
+  if [ "$watch" = 0 ]; then printf '%s\n' "$frame"; break; fi
+  # Build a complete frame before moving the cursor. Clear only stale line tails.
+  printf '\033[H'
+  while IFS= read -r line; do printf '%s\033[K\n' "$line"; done <<<"$frame"
+  printf '\033[J'
+  key=''
+  if IFS= read -r -s -n 1 -t "$interval" key; then [ "$key" != q ] || break
+  fi
+done

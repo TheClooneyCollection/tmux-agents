@@ -211,6 +211,19 @@ function color(s) {
     if (s=="✓ done") return "\033[38;5;114m" s "\033[0m"
     return "\033[38;5;240m" s "\033[0m"
 }
+function live_status(p, status) {
+    if (command_id[p]!="" && command_id[p]!="-") { rank=3; status=command_status[p] }
+    else if (dead[p]==1) { rank=5; status="✗ exited" }
+    else if (perm[p]!="-") { rank=0; status="⚠ permission" }
+    else if (waiting[p]!="-") { rank=1; status="✉ message waiting" }
+    else if (isshell[p]) { rank=3; status="shell" }
+    else if (!tracked[p]) { rank=3; status="-" }
+    else if (state[p]=="needs_you") { rank=1; status="◆ needs you" }
+    else if (state[p]=="idle") { rank=3; status="○ idle" }
+    else if (state[p]=="done") { rank=4; status="✓ done" }
+    else { rank=2; status="⠿ working" }
+    return status
+}
 END {
     if (ENVIRON["LIST_PREVIEW"]=="1") {
         preview_width=ENVIRON["FZF_PREVIEW_COLUMNS"]
@@ -221,6 +234,7 @@ END {
         printf "\033[0m\n"
         exit
     }
+    if (ENVIRON["LIST_BOARD"]=="1") { board_render(); exit }
     live_waits()
     if (ENVIRON["LIST_CHIP"]=="1") {
         for (i=1;i<=np;i++) {
@@ -243,16 +257,7 @@ END {
     for (i=1;i<=np;i++) {
         p=order[i]
         if (!((name[p]!="-" && (mode=="all" || parent[p]!="-" || isshell[p] || (dead[p]!=1 && tracked[p] && state[p]=="needs_you"))) || waiting[p]!="-")) continue
-        if (command_id[p]!="" && command_id[p]!="-") { rank=3; status=command_status[p] }
-        else if (dead[p]==1) { rank=5; status="✗ exited" }
-        else if (perm[p]!="-") { rank=0; status="⚠ permission" }
-        else if (waiting[p]!="-") { rank=1; status="✉ message waiting" }
-        else if (isshell[p]) { rank=3; status="shell" }
-        else if (!tracked[p]) { rank=3; status="-" }
-        else if (state[p]=="needs_you") { rank=1; status="◆ needs you" }
-        else if (state[p]=="idle") { rank=3; status="○ idle" }
-        else if (state[p]=="done") { rank=4; status="✓ done" }
-        else { rank=2; status="⠿ working" }
+        status=live_status(p)
         section=index(session[p],prefix)==1 ? substr(session[p],length(prefix)+1) : project[path[p]]
         rowproject=section
         report=(command_id[p]!="" && command_id[p]!="-" ? command_text[p] : activity[p])
@@ -339,4 +344,42 @@ END {
         printf "\033[0m"
         printf "%c",30
     }
+}
+
+# Board records are generated from the same snapshot and saved session args.
+$1=="B" { board_project=$2; board_width=$3+0; board_missing=$4; board_height=$5+0; next }
+$1=="M" { missions[++nm]=$2; mission_title[nm]=$3; mission_owner[nm]=$4; mission_status[nm]=$5; mission_update[nm]=$6; next }
+$1=="A" { board_kind[$2]=$3; board_model[$2]=$4; board_project_of[$2]=$5; next }
+function board_line(s) { if (board_height>0 && ++board_lines>=board_height) return; gsub(/[[:cntrl:]]/," ",s); print fit(s,board_width) }
+function board_tree(p, depth, visited, unassigned, j, child, short, status, line, kindprefix) {
+    if (index(visited,"|" p "|" ) || (unassigned && assigned[p])) return
+    visited=visited "|" p "|"; assigned[p]=1
+    short=name[p]; kindprefix=board_kind[p] "-" board_project_of[p] "-"
+    # Codex profile records keep their profile kind but names use codex-.
+    if (index(short,"codex-" board_project_of[p] "-")==1) kindprefix="codex-" board_project_of[p] "-"
+    if (index(short,kindprefix)==1) short=substr(short,length(kindprefix)+1)
+    status=live_status(p)
+    sub(/^[^ ]+ /,"",status); if (status=="needs you") status="needs-you"
+    line=sprintf("%*s",depth*2+2,"") short " [" board_kind[p] " / " board_model[p] "] " status
+    if (activity[p]!="-" && activity[p]!="") line=line " · " activity[p]
+    board_line(line)
+    for (j=1;j<=np;j++) { child=order[j]; if (board_live(child) && parent[child]==p && (!unassigned || board_project_of[child]==board_project)) board_tree(child,depth+1,visited,unassigned) }
+}
+function board_live(p) { return name[p]!="-" && name[p]!="" && dead[p]!=1 && !isshell[p] }
+function board_render( m,j,p,root) {
+    if (board_width<2) board_width=80
+    board_line("Mission board · " board_project)
+    if (board_missing==1) board_line("No mission records (M<N>.mission)")
+    for (m=1;m<=nm;m++) {
+        board_line("")
+        board_line(missions[m] " · " mission_title[m] " · " mission_status[m] " · " mission_update[m])
+        board_line("Owner: " mission_owner[m]); root=""
+        for (j=1;j<=np;j++) { p=order[j]; if (board_live(p) && name[p]==mission_owner[m]) { root=p; break } }
+        if (root!="") board_tree(root,0,"")
+        else board_line("  (owner not live)")
+    }
+    board_line(""); board_line("unassigned")
+    # Roots first, then any remaining cyclic/orphan graph components.
+    for (j=1;j<=np;j++) { p=order[j]; if (board_live(p) && board_project_of[p]==board_project && !assigned[p] && !(board_live(parent[p]) && board_project_of[parent[p]]==board_project)) board_tree(p,0,"",1) }
+    for (j=1;j<=np;j++) { p=order[j]; if (board_live(p) && board_project_of[p]==board_project && !assigned[p]) board_tree(p,0,"",1) }
 }
