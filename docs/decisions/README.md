@@ -7,6 +7,7 @@ Each file: the context, the decision, why, and what was rejected. Name new ones 
 | Date | Decision |
 | --- | --- |
 | 2026-11-17 | [Mission board in a pane](2026-11-17-mission-board.md) |
+| 2026-11-17 | [Open a named agent for the user](2026-11-17-agent-open.md) |
 | 2026-11-16 | [Rejoin roles and select handoffs after a clear](2026-11-16-clear-rejoin-handoff.md) |
 | 2026-11-16 | [Quiet agent notes and idle digests](2026-11-16-quiet-notes.md) |
 | 2026-11-15 | [Track manual clears and owned work](2026-11-15-manual-clear-tracking.md) |

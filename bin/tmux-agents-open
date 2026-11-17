@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Open a live named agent on the caller's most recently active session client.
+set -euo pipefail
+here="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
+. "$here/lib.sh"
+usage() { echo 'usage: tmux-agents open NAME --from ME'; }
+FROM_PANE=""
+name=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    --from)
+      [ "$#" -ge 2 ] && [ -n "$2" ] || die '--from needs a name'
+      [ -z "$FROM_PANE" ] || die 'duplicate --from'
+      FROM_PANE="$2"; shift 2 ;;
+    -*) die "unknown option: $1" ;;
+    *) [ -z "$name" ] || die 'expected one agent name'; name="$1"; shift ;;
+  esac
+done
+[ -n "$name" ] && [ -n "$FROM_PANE" ] || { usage >&2; exit 1; }
+require_tmux
+caller="$(find_pane "$FROM_PANE")"
+[ -n "$caller" ] || die "no agent named '$FROM_PANE'"
+pane="$(find_pane "$name")"
+[ -n "$pane" ] || die "no agent named '$name'"
+for agent_pane in "$caller" "$pane"; do
+  require_agent_pane "$agent_pane"
+  [ "$(tmux display-message -p -t "$agent_pane" '#{pane_dead}')" = 0 ] || die "agent pane $agent_pane is not live"
+done
+session="$(tmux display-message -p -t "$caller" '#{session_id}')"
+client="$(tmux list-clients -F '#{client_name}	#{session_id}	#{client_activity}' |
+  awk -F '	' -v session="$session" '$2 == session && (!found || $3 + 0 > latest) {found=1; latest=$3 + 0; client=$1} END {print client}')"
+[ -n "$client" ] || die "no client showing the session of '$FROM_PANE'"
+target_session="$(tmux display-message -p -t "$pane" '#{session_name}')"
+if is_agents_session "$target_session"; then
+  # Quote the viewer command for tmux's shell without interpolating agent names.
+  shell_quote() { printf "'%s'" "${1//\'/\'\\\'\'}"; }
+  viewer="$(shell_quote "$here/tmux-agents") --view $(shell_quote "$pane") $(shell_quote "$client") window sub"
+  tmux display-popup -c "$client" -E -w 90% -h 90% -T " $name  (prefix + d: back to the list) " "$viewer"
+  printf 'opened %s in a popup\n' "$name"
+else
+  tmux switch-client -c "$client" -t "$pane"
+  tmux display-message -c "$client" -d 4000 "jumped to $name · prefix + L to go back"
+  printf 'opened %s\n' "$name"
+fi

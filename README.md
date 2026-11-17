@@ -129,6 +129,7 @@ Or let your agent show you: say "tmux-agents quick start".
 
 Ask your agent in plain language; it runs the `--from` examples below. `ME`, `PEER` and `CHILD` stand for its own name, the connected agent's name and the full sub-agent name printed by the commands. Run launch and configuration commands in a tmux shell.
 
+- **Show an agent to the user.** Run `tmux-agents open NAME --from ME` to open its popup or jump to its pane. [Opening an agent](docs/guide.md#opening-an-agent).
 - **Run a project command.** Press `prefix + C-s` to choose history or type a command; `prefix + S` opens a plain shell. Successful commands close after a short countdown; failures leave a prompt. Use `prefix + a` to inspect results and `ctrl-x` to clear them. [Shell panes](docs/guide.md#shell-panes).
 - **Track your own agent's work.** Run `tmux-agents start claude` or `tmux-agents start codex` to get state and worked-time tracking. [Starting agents](docs/guide.md#starting-agents).
 - **Get a second opinion.** With Codex in another pane in this window, tell Claude "connect codex and ask it to review this diff". It runs `tmux-connect --from ME codex`, then `tmux-ask --from ME PEER "Review the current diff"`. You can also connect panes with `prefix + A`. [Connecting agents](docs/guide.md#connecting-agents).

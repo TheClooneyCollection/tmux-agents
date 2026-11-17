@@ -129,6 +129,7 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 
 直接用自然语言告诉 agent 要做什么，它会执行下面带 `--from` 的示例。`ME`、`PEER` 和 `CHILD` 分别代表它自己的名字、已连接 agent 的名字，以及命令打印的完整子 agent 名字。启动和配置命令则在 tmux 的 shell 中运行。
 
+- **向用户展示 agent。** 运行 `tmux-agents open NAME --from ME`，打开其 popup 或跳转到其 pane。见[打开 agent](docs/guide.md#opening-an-agent)。
 - **运行项目命令。** 按 `prefix + C-s` 选择历史命令或输入新命令；`prefix + S` 打开普通 shell。命令成功后短暂倒计时关闭，失败则留下 shell 提示符。用 `prefix + a` 查看结果，`ctrl-x` 清除记录。见 [shell pane](docs/guide.md#shell-panes)。
 - **跟踪自己正在使用的 agent。** 运行 `tmux-agents start claude` 或 `tmux-agents start codex`，即可记录状态和工作时长。见[启动 agent](docs/guide.md#starting-agents)。
 - **让另一个 agent 帮忙 review。** 同一窗口的另一个 pane 已有 Codex 时，对 Claude 说“连接 codex，让它 review 当前 diff”。它会先运行 `tmux-connect --from ME codex`，再运行 `tmux-ask --from ME PEER "Review the current diff"`。也可以用 `prefix + A` 连接 pane。见[连接 agent](docs/guide.md#connecting-agents)。
