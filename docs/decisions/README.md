@@ -8,6 +8,7 @@ Each file: the context, the decision, why, and what was rejected. Name new ones 
 | --- | --- |
 | 2026-11-17 | [Polish the mission board](2026-11-17-board-visual-polish.md) |
 | 2026-11-17 | [Print the full mission board on every refresh](2026-11-17-board-full-refresh.md) |
+| 2026-11-17 | [Streamlined commands and visible role choices](2026-11-17-streamlined-commands.md) |
 | 2026-11-17 | [Mission board in a pane](2026-11-17-mission-board.md) |
 | 2026-11-17 | [Open a named agent for the user](2026-11-17-agent-open.md) |
 | 2026-11-16 | [Rejoin roles and select handoffs after a clear](2026-11-16-clear-rejoin-handoff.md) |

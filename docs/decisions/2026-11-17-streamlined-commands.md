@@ -1,0 +1,22 @@
+# Streamlined commands and visible role choices
+
+**Context.** Routine orientation, long messages and mission handoffs required repeated identity lookups, temporary files and separate state updates. Plain spawns could inherit the caller's agent instead of the user's configured worker profile, while the skill's hardcoded model table hid that mismatch.
+
+**Decision.** Use one orientation command and direct message bodies. Role selection is the normal spawn path. Keep existing forms compatible.
+
+- `tmux-agents status [--notes] [--handoff] [--missions full] [PEER]`, alias `resume`, shows identity, peers and states, configured roles, open missions and owned mission logs, unread-note counts/senders, queued-message counts and handoff state. `--notes` reads and consumes notes. Default status never prints `HANDOFF.md` contents; `--handoff` opts in. A peer argument shows its state and last five screen lines.
+- Trusted Claude/pinned Codex panes may omit `--from`, including in `mission` and `open`. Unpinned Codex must supply its verified identity. `tmux-peers --me` prints only the name.
+- Long messages use Claude quoted heredoc stdin or one Codex quoted multi-line positional argument. `tmux-ask --summary TEXT` retains the full body and delivers the summary plus a `tmux-read` pointer. Existing `--message-file` remains compatible but is no longer the taught workflow. Nameless `tmux-ask --reply` addresses the latest requester; named replies remain available.
+- Spawn writes canonical `@role` (`secondary` becomes `interface`); `start chain` writes `@role main`. Readers fall back to the name suffix for older panes. Keep existing names on starting/rejoining a chain.
+- After the existing `spawned ...` stdout line, every spawn prints `role=ROLE agent=AGENT args="ARGS" source=SRC`. SRC is `default`, `option`, `chain`, `positional` or `inherited`; `chain` means per-chain snapshot environment. Plain spawn prints `role=none agent=KIND args="" source=inherited`.
+- A caller with `@role` or any `TMUX_AGENTS_CHAIN_*` snapshot, omitting both role and positional AGENT, gets stderr `tmux-spawn: no --role; inheriting KIND. Use --role ROLE to follow chain-config (or --plain to silence)`. `--plain` silences it.
+- `--role R AGENT` selects AGENT. When dropping role args, stderr is `tmux-spawn: warning: AGENT overrides role R; role args dropped (pass -- ARGS to supply them)`. `-- ARGS` supplies replacement args; bare `--` clears them.
+- `start chain` resolves all roles and args once, exports `TMUX_AGENTS_CHAIN_<ROLE>` and `_ARGS`, and spawn forwards them. Roles are `MAIN`, `DESIGNER`, `SECONDARY` (interface's legacy name), `WORKER`, `REVIEWER`, `RUNNER` and `RESEARCHER`. Launch flags include `--designer`, `--reviewer`, `--runner` and `--researcher` alongside existing roles. Live settings do not rewrite running snapshots.
+- `tmux-agents chain-config set ROLE AGENT [-- ARGS]` validates like existing role flags, sets live `@tmux_agents_chain_<role>` and `_args`, and prints persistent `set -g` lines. Status shows the resolved roles; the chain skill no longer hardcodes an agent/model column.
+- `tmux-spawn --mission ID` validates first, assigns the new agent as owner and logs `spawned NAME (role)`. `--open` opens its pane for the user. `--for` notices add: `Spawn helpers with tmux-spawn --role <role>; never a bare agent name.`
+- `tmux-agents mission set ID --status S [--notify PEER] [--notice]` optionally notifies after changing state. `mission done ID TEXT [--notify NAME]` combines done status, completion log and optional note. `tmux-ask --note ... --mission ID` and `tmux-agent-report --mission ID TEXT` append local progress logs; Fleet Command remains an optional mirror. Dismissal stays separate and follows the awaited reply.
+- `tmux-agents ci [--watch] [REF]` summarizes GitHub Actions for the selected commit (default HEAD), optionally waits, and includes failure log tails within 20 output lines.
+
+**Why.** One command should carry each routine action. Explicit role resolution exposes account/model mistakes, direct bodies avoid scratch-file ceremony, and summaries keep large reports out of the receiver's context until needed.
+
+**Rejected.** Reading handoff bodies by default; new `--message-file -`, `--rm` or `tmux-agents scratch` interfaces; temporary files for routine briefs/reports; silent role overrides; hardcoded model choices in the chain skill; automatic dismissal as part of mission completion.
