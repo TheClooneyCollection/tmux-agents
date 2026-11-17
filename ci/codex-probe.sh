@@ -85,6 +85,8 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 unset TMUX TMUX_PANE
+# The probe server and its helpers must not write to the real XDG state.
+export XDG_STATE_HOME="$tmp/state/root"
 mkdir -p "$tmp/tools" "$tmp/agent-bin" "$tmp/state"
 probe_path="$tmp/tools:$selected_bin:$original_path"
 printf 'tmux-agents under test: %s (%s; checkout git describe: %s)\n' "$agents" "$tested_kind" "$checkout_version"
