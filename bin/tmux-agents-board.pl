@@ -3,6 +3,7 @@
 use strict;
 use warnings;
 use MIME::Base64 qw(decode_base64);
+use Storable qw(retrieve store);
 my ($here) = @ARGV;
 my @fields = ('P', '#{pane_id}', '#{?@agent,#{@agent},-}', '#{pane_dead}',
  '#{?@perm_since,#{@perm_since},-}', '#{?@state,#{@state},-}', '#{?@parent,#{@parent},-}',
@@ -16,13 +17,9 @@ open my $tmux, '-|', 'tmux', 'list-panes', '-a', '-F', join("\t", @fields) or di
 my @rows;
 while (<$tmux>) { chomp; push @rows, [split /\t/, $_, -1]; }
 close $tmux or die "tmux-agents board: cannot read pane snapshot\n";
-my $prefix = $ENV{TMUX_AGENTS_PREFIX};
-if (!defined $prefix) {
- open my $option, '-|', 'tmux', 'show-option', '-gqv', '@tmux_agents_session_prefix' or die "tmux: $!\n";
- $prefix=<$option> // ''; chomp $prefix; close $option;
-}
-$prefix ||= 'agents';
-my %projects;
+my $prefix = $ENV{TMUX_AGENTS_PREFIX} || 'agents';
+my $cache=$ENV{BOARD_PROJECT_CACHE};
+my %projects=($cache && -s $cache) ? %{retrieve($cache)} : ();
 sub project {
  my ($path) = @_;
  return $projects{$path} if exists $projects{$path};
@@ -91,6 +88,8 @@ if (opendir my $dir, $mission_dir) {
  }
 }
 push @data,join("\t",'B',$project,$width,$missing,($ENV{BOARD_WATCH} && $self ? $self->[29] : 0));
+store(\%projects,$cache) if $cache;
+$ENV{LIST_NOW}=time;
 $ENV{LIST_BOARD}=1; $ENV{LC_ALL}='C';
 open my $awk,'|-','awk','-f',"$here/tmux-agents-list.awk" or die "awk: $!\n";
 print {$awk} join("\n",@data),"\n";

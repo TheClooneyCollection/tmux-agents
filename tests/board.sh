@@ -6,14 +6,23 @@ tmp="$(mktemp -d "${TMPDIR:-/tmp}/tmux-agents-board.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin" "$tmp/state/tmux-agents/test/sessions" "$tmp/state/tmux-agents/missions/project"
 export XDG_STATE_HOME="$tmp/state" TMUX=/tmp/test,1,0 TMUX_PANE=%0
-export BOARD_FIXTURE="$tmp/panes" BOARD_CALLS="$tmp/calls" TMUX_AGENTS_PREFIX=agents
+unset TMUX_AGENTS_PREFIX
+export BOARD_FIXTURE="$tmp/panes" BOARD_CALLS="$tmp/calls" BOARD_GIT_CALLS="$tmp/git-calls"
+export BOARD_FAIL_ONCE="$tmp/fail-once"
 cat > "$tmp/bin/tmux" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$BOARD_CALLS"
+if [ "$1" = show-option ]; then printf 'agents\n'; exit 0; fi
 [ "$1" = list-panes ] || exit 1
+if [ -f "$BOARD_FAIL_ONCE" ]; then rm "$BOARD_FAIL_ONCE"; exit 1; fi
 cat "$BOARD_FIXTURE"
 STUB
-chmod +x "$tmp/bin/tmux"
+cat > "$tmp/bin/git" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$BOARD_GIT_CALLS"
+printf '/fixture/project\n'
+STUB
+chmod +x "$tmp/bin/tmux" "$tmp/bin/git"
 export PATH="$tmp/bin:$PATH"
 python3 - "$tmp" <<'PY'
 import sys,base64
@@ -43,7 +52,7 @@ missions=p/'state/tmux-agents/missions/project'
 
 PY
 "$here/bin/tmux-agents" board > "$tmp/out"
-grep -Fq 'M3 · Mission=title · active · 1794892931' "$tmp/out"
+grep -Eq '^M3 · Mission=title · active · [0-9]+[smhd] ago$' "$tmp/out"
 grep -Fq '  owner [claude / default] idle' "$tmp/out"
 grep -Fq '    child [codex-profile / test-model] done' "$tmp/out"
 grep -Fq '      grand [codex / default] needs-you' "$tmp/out"
@@ -54,7 +63,8 @@ grep -Fq '(owner not live)' "$tmp/out"
 grep -Fq 'free [codex / default] idle' "$tmp/out"
 [ "$(grep -Fc 'owner [claude / default]' "$tmp/out")" = 1 ]
 if grep -Eq 'outside|dead \[' "$tmp/out"; then echo 'FAIL foreign/dead agent'; exit 1; fi
-[ "$(wc -l < "$tmp/calls" | tr -d ' ')" = 1 ]
+[ "$(grep -c '^list-panes ' "$tmp/calls")" = 1 ]
+[ "$(grep -c '^show-option ' "$tmp/calls")" = 1 ]
 grep -q '^list-panes -a -F ' "$tmp/calls"
 if grep -q 'M99' "$tmp/out"; then echo 'FAIL legacy board read'; exit 1; fi
 [ "$(grep '^M[0-9]' "$tmp/out" | cut -d ' ' -f 1 | tr '\n' ' ')" = 'M3 M4 M10 ' ]
@@ -67,6 +77,17 @@ rm -rf "$tmp/state/tmux-agents/missions/project"
 "$here/bin/tmux-agents" board > "$tmp/out"
 grep -Fq 'No mission records' "$tmp/out"
 grep -Fq 'free [codex / default]' "$tmp/out"
+# Home project labels use home, while agent naming uses ~.
+python3 - "$tmp/panes" "$tmp/home-panes" <<'PYHOME'
+from pathlib import Path
+import sys
+r=Path(sys.argv[1]).read_text().splitlines()[0].split('\t')
+r[2]='claude-~-owner'; r[7]='agents-home'
+Path(sys.argv[2]).write_text('\t'.join(r)+'\n')
+PYHOME
+BOARD_FIXTURE="$tmp/home-panes" "$here/bin/tmux-agents" board > "$tmp/out"
+grep -Fq 'owner [claude / default]' "$tmp/out"
+if grep -Fq 'claude-~-owner' "$tmp/out"; then echo 'FAIL home prefix'; exit 1; fi
 # Width follows the current pane on each invocation, including UTF-8 truncation.
 python3 - "$tmp/panes" <<'PY'
 from pathlib import Path
@@ -88,7 +109,16 @@ if "$here/bin/tmux-agents" board --watch </dev/null > /dev/null 2>&1; then echo 
 # Exercise watch on a pseudo-terminal; wait for the actual frame before quitting.
 python3 - "$here/bin/tmux-agents" <<'WATCH'
 import errno, os, pty, select, subprocess, sys, time
+from pathlib import Path
+# Visible panes force project resolution; all share one path.
+fixture=Path(os.environ['BOARD_FIXTURE'])
+rows=[r.split('\t') for r in fixture.read_text().splitlines()]
+for r in rows: r[7]='work'; r[28]='140'
+fixture.write_text('\n'.join('\t'.join(r) for r in rows)+'\n')
 for key in (b'q', b'\x03'):
+    Path(os.environ['BOARD_CALLS']).write_text('')
+    Path(os.environ['BOARD_GIT_CALLS']).write_text('')
+    if key == b'q': Path(os.environ['BOARD_FAIL_ONCE']).touch()
     master, slave = pty.openpty()
     process = subprocess.Popen([sys.argv[1], 'board', '--watch', '1'], stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
     os.close(slave)
@@ -96,10 +126,20 @@ for key in (b'q', b'\x03'):
     data = b''
     deadline = time.monotonic() + 10
     try:
-        while b'\x1b[J' not in data and time.monotonic() < deadline:
+        frames = 3 if key == b'q' else 1
+        while data.count(b'\x1b[J') < frames and time.monotonic() < deadline:
             if select.select([master], [], [], 1)[0]:
                 data += os.read(master, 65536)
-        assert b'\x1b[J' in data, data
+        assert data.count(b'\x1b[J') >= frames, data
+        if key == b'q':
+            assert b'board: refresh failed (retrying)' in data, data
+            assert b'Mission board' in data, data
+        calls=Path(os.environ['BOARD_CALLS']).read_text().splitlines()
+        assert sum(c.startswith('show-option ') for c in calls)==1, calls
+        assert sum(c.startswith('list-panes ') for c in calls)>=frames, calls
+        assert all(c.startswith(('show-option ', 'list-panes ')) for c in calls), calls
+        git_calls=Path(os.environ['BOARD_GIT_CALLS']).read_text().splitlines()
+        assert len(git_calls)==1, git_calls
         if key == b'\x03':
             # No controlling terminal in this harness: deliver the equivalent signal.
             import signal

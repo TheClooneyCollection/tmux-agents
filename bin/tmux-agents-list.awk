@@ -351,12 +351,13 @@ $1=="B" { board_project=$2; board_width=$3+0; board_missing=$4; board_height=$5+
 $1=="M" { missions[++nm]=$2; mission_title[nm]=$3; mission_owner[nm]=$4; mission_status[nm]=$5; mission_update[nm]=$6; next }
 $1=="A" { board_kind[$2]=$3; board_model[$2]=$4; board_project_of[$2]=$5; next }
 function board_line(s) { if (board_height>0 && ++board_lines>=board_height) return; gsub(/[[:cntrl:]]/," ",s); print fit(s,board_width) }
-function board_tree(p, depth, visited, unassigned, j, child, short, status, line, kindprefix) {
+function board_tree(p, depth, visited, unassigned, j, child, short, status, line, kindprefix, nameproject) {
     if (index(visited,"|" p "|" ) || (unassigned && assigned[p])) return
     visited=visited "|" p "|"; assigned[p]=1
-    short=name[p]; kindprefix=board_kind[p] "-" board_project_of[p] "-"
+    short=name[p]; nameproject=board_project_of[p]=="home" ? "~" : board_project_of[p]
+    kindprefix=board_kind[p] "-" nameproject "-"
     # Codex profile records keep their profile kind but names use codex-.
-    if (index(short,"codex-" board_project_of[p] "-")==1) kindprefix="codex-" board_project_of[p] "-"
+    if (index(short,"codex-" nameproject "-")==1) kindprefix="codex-" nameproject "-"
     if (index(short,kindprefix)==1) short=substr(short,length(kindprefix)+1)
     status=live_status(p)
     sub(/^[^ ]+ /,"",status); if (status=="needs you") status="needs-you"
@@ -372,7 +373,7 @@ function board_render( m,j,p,root) {
     if (board_missing==1) board_line("No mission records (M<N>.mission)")
     for (m=1;m<=nm;m++) {
         board_line("")
-        board_line(missions[m] " · " mission_title[m] " · " mission_status[m] " · " mission_update[m])
+        board_line(missions[m] " · " mission_title[m] " · " mission_status[m] " · " elapsed(now-mission_update[m]) " ago")
         board_line("Owner: " mission_owner[m]); root=""
         for (j=1;j<=np;j++) { p=order[j]; if (board_live(p) && name[p]==mission_owner[m]) { root=p; break } }
         if (root!="") board_tree(root,0,"")

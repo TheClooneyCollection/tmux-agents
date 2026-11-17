@@ -391,7 +391,9 @@ Lists use numeric ID order; allocation also reserves IDs with surviving log file
 Run `tmux-agents board` to print the current project's missions and live agents,
 or `tmux-agents board --watch` to keep a pane updated every two seconds.
 `--watch SECS` changes the interval (positive whole seconds); press `q` or Ctrl-C
-to quit. The view adapts to the pane width.
+to quit. The view adapts to the pane width and shows how long ago each mission
+was updated. Watch retries after a failed refresh; configuration and project
+path lookups are cached for the lifetime of the command.
 
 Missions come from `${XDG_STATE_HOME:-~/.local/state}/tmux-agents/missions/<project>/M<N>.mission`,
 one `key=value` record per mission. Required keys are `id`, `title`, `owner`,

@@ -13,17 +13,30 @@ fi
 if [ "$watch" = 1 ] && { [ ! -t 0 ] || [ ! -t 1 ]; }; then
   echo 'tmux-agents board: --watch requires a terminal' >&2; exit 2
 fi
-# Restore the cursor and original screen even when interrupted during a refresh.
+# Resolve configuration once, before refreshes. Only snapshots run inside the loop.
+if [ -z "${TMUX_AGENTS_PREFIX:-}" ]; then
+  TMUX_AGENTS_PREFIX="$(tmux show-option -gqv @tmux_agents_session_prefix)" || TMUX_AGENTS_PREFIX=''
+fi
+export TMUX_AGENTS_PREFIX="${TMUX_AGENTS_PREFIX:-agents}"
+# Keep path-to-project lookups across frames, private to this invocation.
+project_cache="$(mktemp "${TMPDIR:-/tmp}/tmux-agents-board-projects.XXXXXX")"
+export BOARD_PROJECT_CACHE="$project_cache"
 # shellcheck disable=SC2329
-restore() { printf '\033[?25h\033[?1049l'; }
+restore() {
+  rm -f "$project_cache"
+  if [ "$watch" = 1 ]; then printf '\033[?25h\033[?1049l'; fi
+}
+trap restore EXIT
 if [ "$watch" = 1 ]; then
-  trap restore EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
   printf '\033[?1049h\033[?25l'
 fi
 while :; do
-  frame="$(BOARD_WATCH="$watch" perl "$here/tmux-agents-board.pl" "$here")"
+  if ! frame="$(BOARD_WATCH="$watch" perl "$here/tmux-agents-board.pl" "$here" 2>&1)"; then
+    if [ "$watch" = 0 ]; then printf '%s\n' "$frame" >&2; exit 1; fi
+    frame='board: refresh failed (retrying)'
+  fi
   if [ "$watch" = 0 ]; then printf '%s\n' "$frame"; break; fi
   # Build a complete frame before moving the cursor. Clear only stale line tails.
   printf '\033[H'
