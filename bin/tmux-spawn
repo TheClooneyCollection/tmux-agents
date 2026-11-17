@@ -198,7 +198,7 @@ if [ "${1:-}" = "--run" ]; then
     prompt=""
   fi
   if [ -n "$prompt" ] && [ -n "${7:-}" ]; then
-    turn_message_delivered "$TMUX_PANE" "${14:-}" request "$7"
+    turn_message_delivered "$TMUX_PANE" request "$7"
   fi
   # Plain Codex is an explicit/default-home choice, not the tmux server's
   # inherited account. Configured profiles set their home in the builder.
@@ -643,7 +643,7 @@ record_set "$agent_id" depth "$spawn_depth"
 
 split_gate="tmux-agents-spawn-$$-$RANDOM-$RANDOM"
 if [ -n "$split_pane" ]; then
-  run_command="$(quote_command "$here/tmux-spawn" --run "$agent" "$file" "$sid" new "$agent_id" "$spawn_message_id" "$split_gate" '' '' '' '' "$agent_args_encoded" "$(pane_agent_id "$self")")"
+  run_command="$(quote_command "$here/tmux-spawn" --run "$agent" "$file" "$sid" new "$agent_id" "$spawn_message_id" "$split_gate" '' '' '' '' "$agent_args_encoded")"
   if ! pane="$(open_split "$split_pane" "$cwd" "$run_command" "$spawn_depth")"; then
     rm -f "$file"
     exit 1
@@ -656,7 +656,7 @@ if [ -n "$split_pane" ]; then
   adopt "$pane" "$owner" "$name" split
   location="in a visible split of $split_pane"
 else
-  run_command="$(quote_command "$here/tmux-spawn" --run "$agent" "$file" "$sid" new "$agent_id" "$spawn_message_id" "$split_gate" '' '' '' '' "$agent_args_encoded" "$(pane_agent_id "$self")")"
+  run_command="$(quote_command "$here/tmux-spawn" --run "$agent" "$file" "$sid" new "$agent_id" "$spawn_message_id" "$split_gate" '' '' '' '' "$agent_args_encoded")"
   if ! pane="$(open_window "$session" "$cwd" "$name" "$run_command" "$spawn_depth")"; then
     rm -f "$file"
     exit 1
@@ -672,9 +672,6 @@ if full_agent_kind "$agent"; then
   else agent_start_work "$pane" working; fi
 else
   tmux set-option -p -t "$pane" @tracked 0
-fi
-if [ -n "$spawn_message_id" ]; then
-  turn_message_sent "$self" "$agent_id" request
 fi
 
 if [ -n "$for_name" ]; then

@@ -23,7 +23,7 @@ cleanup() {
     printf '%s\n' "$result" >"$trace_dir/exit-status"
     cp -R "$tmp" "$trace_dir/final-state"
     if [ -d "$queue" ]; then cp -R "$queue" "$trace_dir/final-queue"; fi
-    tmux -L "$sock" list-panes -a -F '#{pane_id} #{@agent_id} #{@agent} #{@state} #{@owed}' >"$trace_dir/final-panes" 2>/dev/null || true
+    tmux -L "$sock" list-panes -a -F '#{pane_id} #{@agent_id} #{@agent} #{@state}' >"$trace_dir/final-panes" 2>/dev/null || true
   fi
   cleanup_test_server || return
   rm -rf "$tmp"
@@ -167,7 +167,6 @@ sleep 1
 request_file="$(grep -l 'resume-third-request' "$queue"/*.msg)"
 request_id="$(sed -n 's/^message_id=//p' "${request_file%.msg}.meta")"
 check 'queued request has its own token' test -n "$request_id"
-check 'queued request does not fill slot early' test -z "$(info "$old" @owed)"
 check 'all three sends really queued' test "$(grep -l '^queued ' "$tmp"/queued-* | wc -l | tr -d ' ')" = 3
 check 'queue retains all three message bodies' test "$(file_count '*.msg')" = 3
 check 'every queued message has metadata' test "$(file_count '*.meta')" = 3
@@ -204,7 +203,6 @@ check 'resume creates a different pane' test "$new" != "$old"
 check 'resume assigns an available label' test "$(info "$new" @agent)" = receiver-2
 check 'resume restores ownership before retry' test "$(info "$new" @parent)" = %0
 check 'resume delivers original messages exactly once, oldest first' wait_for received
-check 'retry fills slot with original token' test "$(info "$new" @owed_msg)" = "$request_id"
 "$B/tmux-agent-report" --pane "$new" --turn-start </dev/null
 check 'Claude processing retried messages starts working' test "$(info "$new" @state)" = working
 check 'successful retry removes saved messages' test "$(receiver_file_count undelivered)" = 0
@@ -218,17 +216,14 @@ spawn --resume receiver-2 >"$tmp/resume-again"
 new="$(pane_of receiver-2)"
 check 'second resumed stub is ready' wait_for ready "$new"
 check 'delivered request is forgotten on second resume' test "$(info "$new" @state)" = "done"
-check 'second resume has no owed slot' test -z "$(info "$new" @owed)"
 check 'second resume does not replay delivered messages' received
 "$B/tmux-ask" --from receiver-2 --reply main 'resumed task completed' >"$tmp/reply"
-check 'reply leaves slot empty' test -z "$(info "$new" @owed)"
 check 'reply does not invent a turn transition' test "$(info "$new" @state)" = "done"
 "$B/tmux-dismiss" --from main receiver-2 >"$tmp/dismiss-completed"
 spawn --resume receiver-2 >"$tmp/resume-completed"
 new="$(pane_of receiver-2)"
 check 'completed resumed stub is ready' wait_for ready "$new"
 check 'resume after answering starts done' test "$(info "$new" @state)" = "done"
-check 'completed resume has no owed slot' test -z "$(info "$new" @owed)"
 check 'completed resume never replays delivered messages' received
 printf '%s checks; failures=%s\n' "$count" "$fail"
 exit "$fail"

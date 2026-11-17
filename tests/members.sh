@@ -108,8 +108,6 @@ else
 fi
 # Explicit main-level dismissal traverses members and their ordinary helpers.
 secondary_id="$(info "$secondary" @agent_id)"
-secondary_request="$(info "$secondary" @owed_msg)"
-check 'for brief created a real secondary obligation' test -n "$secondary_request"
 "$B/tmux-dismiss" --from main secondary >"$tmp/cascade"
 for pane in "$secondary" "$worker" "$helper"; do check "cascade closes $pane" gone "$pane"; done
 check 'closed record preserves member marker' test "$(record_get "$secondary_id" member)" = 1
@@ -123,10 +121,8 @@ check 'resume retains member' test "$(info "$secondary" @member)" = 1
 check 'resume retains depth in process' bash -c 'tmux capture-pane -p -S - -t "$1" | grep -q DEPTH=1' _ "$secondary"
 check 'resume reconnects owner' test "$(info "$secondary" @parent)" = %0
 check 'resume forgets delivered request and starts done' test "$(info "$secondary" @state)" = "done"
-check 'resume has no saved owed slot' test -z "$(info "$secondary" @owed)"
 "$B/tmux-ask" --from secondary --reply main 'worker handoff resolved' >/dev/null
 check 'reply does not change resumed member state' test "$(info "$secondary" @state)" = "done"
-check 'reply leaves slot clear' test -z "$(info "$secondary" @owed)"
 # An ordinary ancestor must not make a nested member eligible for --done.
 spawn --exact --name ordinary
 ordinary="$(pane_of ordinary)"
@@ -201,7 +197,6 @@ check 'profile worker helper depth two' grep -qx 'depth=2' "$(record_for "$codex
 # Turn end settles the member itself, independent of its descendants.
 "$B/tmux-ask" --from codex-secondary --reply codex-main 'chain prepared' >/dev/null
 check 'Codex member remains done while descendants live' test "$(info "$secondary_codex" @state)" = "done"
-check 'Codex member reply clears its owed slot' test -z "$(info "$secondary_codex" @owed)"
 for child in codex-helper profile-worker; do
   "$B/tmux-agent-report" --from "$child" 'finish setup' >/dev/null
   "$B/tmux-agent-report" --pane "$(pane_of "$child")" --turn-end </dev/null

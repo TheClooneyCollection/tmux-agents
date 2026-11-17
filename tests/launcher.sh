@@ -119,22 +119,21 @@ agent_save_work "$new" 105
 add_peer %0 "$new"
 add_peer "$new" %0
 tmux set-option -p -t %0 @parent "$new"
-tmux set-option -p -t "$new" @owed_to old-requester
 tmux set-option -p -t "$new" @attention_since 1
-# Turn and reply-slot markers must be removed before this pane is a shell.
-for marker in turn_began last_delivered owed_msg owed_at owed owed_settled owed_notified owed_asked; do
+# Turn markers must be removed before this pane is a shell.
+for marker in turn_began last_delivered; do
   tmux set -p -t "$new" "@$marker" 1
 done
 tmux send-keys -t "$new" exit Enter
 for ((i=0;i<100;i++)); do tmux capture-pane -p -t "$new" | grep -q SHELL_RETURN && break; sleep .05; done
 check 'child exit clears identity' test -z "$(info "$new" agent_id)"
 check 'child exit clears tracking' test -z "$(info "$new" tracked)"
-for marker in turn_began last_delivered owed_msg owed_at owed owed_settled owed_notified owed_asked; do
+for marker in turn_began last_delivered; do
   check "exit clears $marker before shell reuse" test -z "$(info "$new" "$marker")"
 done
 check 'exit removes peer relationship' test -z "$(info %0 peers)"
 check 'exit detaches children from reused shell pane' test -z "$(info %0 parent)"
-check 'exit clears reply-slot and attention markers' test -z "$(info "$new" owed_to)$(info "$new" attention_since)"
+check 'exit clears attention marker' test -z "$(info "$new" attention_since)"
 check 'record retains worked time' test "$(record_get "$aid" worked)" = "$((prior_work + 5))"
 check 'record closed' test -n "$(record_get "$aid" closed)"
 check 'record tagged top-level' test "$(record_get "$aid" launcher)" = 1

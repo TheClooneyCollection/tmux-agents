@@ -120,7 +120,7 @@ tmux set -p -t %0 @parent "$pane"
 for key in tracked member state_since worked last_turn turns turn_start turn_work turn_active started perm_since msg_waiting_since work_closed work_restored attention_since; do
   tmux set -p -t "$pane" "@$key" 1
 done
-for key in parent closed activity turn_began last_delivered owed_to owed_msg owed_at owed owed_settled owed_notified owed_asked codex_thread; do
+for key in parent closed activity turn_began last_delivered codex_thread; do
   tmux set -p -t "$pane" "@$key" stale
 done
 tmux set -p -t "$pane" @state needs_you
@@ -174,7 +174,7 @@ check 'old conversation preserved' test "$(record_get "$old_id" id)" = old-threa
 check 'peer receives old identity closure' test "$(info %0 closed)" = "retained-id $old_id"
 check 'new record describes preserved name and launcher' test "$(record_get "$new_id" name):$(record_get "$new_id" launcher)" = renamed-label:1
 check 'new record is open' test -z "$(record_get "$new_id" closed)"
-for key in parent closed last_turn turn_start turn_work turn_active perm_since msg_waiting_since work_closed work_restored activity turn_began last_delivered owed_to owed_msg owed_at owed owed_settled owed_notified owed_asked attention_since codex_thread; do
+for key in parent closed last_turn turn_start turn_work turn_active perm_since msg_waiting_since work_closed work_restored activity turn_began last_delivered attention_since codex_thread; do
   check "takeover clears @$key" test -z "$(info "$pane" "$key")"
 done
 # Exiting the new child still does ordinary disconnect-and-clear cleanup.

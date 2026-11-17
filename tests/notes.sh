@@ -46,15 +46,12 @@ sender="$(pane_agent_id %0)"; receiver="$(pane_agent_id %1)"; outsider="$(pane_a
 ask() { "$B/tmux-ask" --from sender --note "$@"; }
 notes() { "$B/tmux-notes" --from receiver "$@"; }
 reject() { if "$@" >"$tmp/error" 2>&1; then fail "unexpected success: $*"; fi; }
-tmux set -p -t %0 @owed 1
-tmux set -p -t %0 @owed_to "$receiver"
 tmux set -p -t %1 @state idle
 tmux set -p -t %1 @tracked 1
 tmux copy-mode -t %1
 ask receiver 'quiet first' >"$tmp/result"
 grep -q 'noted to receiver (%1)' "$tmp/result" || fail 'send result'
 [ "$(notes --count)" = 1 ] || fail 'unread count'
-[ "$(tmux show-option -pqv -t %0 @owed)" = 1 ] || fail 'note cleared owed'
 [ "$(tmux show-option -pqv -t %1 @state)" = idle ] || fail 'note started turn'
 if tmux capture-pane -p -t %1 | grep -q 'quiet first'; then fail 'note pasted'; fi
 [ -z "$(find "$(message_queue_dir)" -name '*.msg' -print 2>/dev/null || true)" ] || fail 'note queued'
@@ -192,9 +189,7 @@ ask --any --mission mission-2 receiver 'still saved' 2>"$tmp/warning"
 grep -q 'mission log failed' "$tmp/warning" || fail 'mission warning'
 notes --keep-unread >"$tmp/read"
 grep -q 'still saved' "$tmp/read" || fail 'mission failure lost note'
-"$B/tmux-ask" --system-note "$pane" 'system quiet'
 notes >"$tmp/read"
-grep -q 'tmux-agents:' "$tmp/read" || fail 'system sender'
 [ "$(notes --count)" = 0 ] || fail 'final count'
 [ -z "$(notes_summary "$receiver" receiver)" ] || fail 'empty summary'
 # Delivered digests consume exactly their observed batch, including the cutoff.

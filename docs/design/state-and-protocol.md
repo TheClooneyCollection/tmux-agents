@@ -26,8 +26,6 @@ Live state uses tmux user options on the panes (`set-option -p`); session record
 | `@activity`, `@perm_since` | Sub agent reports for the [status chip](sub-agents.md#status-chip). |
 | `@turn_began` | Start of the Claude turn, retained through permission and message pauses; cleared at turn end. |
 | `@last_delivered` | Latest delivered message token for matching Codex notify input. |
-| `@owed_to`, `@owed_msg`, `@owed_at` | Latest request sender's agent ID, message token and delivery epoch. The sender stays after clearing. |
-| `@owed`, `@owed_settled`, `@owed_notified`, `@owed_asked` | One-slot stop-notice flags: answer owed, message seen by an ending turn, sender notified, and clarification awaiting a reply. Cleared on pane closure. |
 | `@asking` | `1` while a Claude `AskUserQuestion` or MCP elicitation hook holds the pane at `needs_you`; the next tool event, turn start or turn end clears it. See [Claude questions](sub-agents.md#data-not-screen-scraping). |
 | `@attention_since`, `@codex_thread` | When a tracked agent started needing the user; the Codex thread id of a sub agent, for `notify`. |
 
@@ -139,7 +137,7 @@ State follows running turns, independently of task completion. A turn ends at `i
 
 Claude's `UserPromptSubmit` starts a turn and `Stop` / `StopFailure` ends it. `PreToolUse` also starts work on a tracked idle or done pane, covering promptless re-invocation. `--turn-start` records `@turn_began` when not working; `--tool-start` records it only if unset. Permission and message pauses therefore cannot move the turn boundary.
 
-Codex has no turn-start hook. Actual delivery of any request, reply, notice or system notice starts work and records `@last_delivered`, including retry and reopen. Notify ends the turn unless its `input-messages` omit the latest delivered token, meaning a newer paste still has a turn to run. If input messages or the latest token are unavailable, notify ends the turn without settling a stop-notice slot. A plain progress report starts work on idle or done and covers directly typed Codex tasks.
+Codex has no turn-start hook. Actual delivery of any request, reply, notice or system notice starts work and records `@last_delivered`, including retry and reopen. Notify ends the turn unless its `input-messages` omit the latest delivered token, meaning a newer paste still has a turn to run. If input messages or the latest token are unavailable, notify ends the turn. A plain progress report starts work on idle or done and covers directly typed Codex tasks.
 
 A notice-only turn runs as working from idle or done. Existing `needs_you`, whether explicit or from a hook, survives the entire notice turn. Only a non-notice turn start or normal progress clears that attention. CI watches and background commands do not keep an ended turn working.
 
@@ -151,13 +149,6 @@ Directly typed Codex turns can remain idle until a progress report or notify. Co
 
 The list and chip use their single pane snapshot to walk descendants, including members, stopping at each nearest working agent. They pass through idle, done and needs-you nodes. A non-working parent gets `waiting on <names>` appended to its activity; a working parent retains its own report. Needs-you descendants surface independently and are not themselves waiting targets. Counts use each agent's own state, so a waiting parent accrues no work. Requests to unrelated agents are outside this ownership walk.
 
-### Unanswered-stop notice
-
-Each sub agent has one volatile slot, described by `@owed_*` above. Delivery of a request fills it and clears settled, notified and asked flags. Sending any message to its recorded sender clears the owed flag but retains the sender. A request sent while an answer was owed marks a clarifying question; that sender's reply refills the slot and clears the asked flag. A reply to a follow-up sent after answering does not refill it. Notices, system notices and shell messages never fill it.
-
-At turn end the slot settles only if that turn saw its message: Claude compares `@owed_at <= @turn_began`; Codex requires `@owed_msg` in notify input with usable latest-delivery and owed tokens. An unset Claude turn boundary or missing Codex evidence settles nothing. Once settled, it stays settled. A settled, still-owed slot sends its live agent sender one notice that the sub agent stopped without replying to its last request. Every turn start, including a notice-only nudge, re-arms notification. This warning does not change turn state.
-
-Only the latest sender is remembered. Closing the pane forgets the slot; reopening fills it only from previously undelivered queued messages. A delivered but unanswered request is not restored. A promptless Claude turn is observed at its first tool call, so a message delivered just before that call can produce an early stop notice.
 
 ### Compatibility and migration
 

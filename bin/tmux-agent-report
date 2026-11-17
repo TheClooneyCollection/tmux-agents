@@ -260,13 +260,7 @@ case "$turn" in
       tmux set-option -pu -t "$pane" @notes_digest_at \; \
         set-option -p -t "$pane" @notes_idle_since "$(date +%s)"
     fi
-    stopped="$(turn_end "$pane" "$notify_json" "${notify_rebound:-}")"
-    if [ -n "$stopped" ]; then
-      me="$(pane_name "$pane")" doing="$(tmux show-option -pqv -t "$pane" @activity)"
-      "$(dirname "$0")/tmux-ask" --system-note "$stopped" \
-        "${me:-$pane} stopped without replying to your last request: ${doing:-no report yet}" tmux-agents \
-        </dev/null >/dev/null 2>&1 || true
-    fi
+    turn_end "$pane" "$notify_json" "${notify_rebound:-}"
     "$(dirname "$0")/tmux-agents-notes-digest.sh" --start "$(pane_agent_id "$pane")" >/dev/null 2>&1 || true
     exit 0 ;;
   start)

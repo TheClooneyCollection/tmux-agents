@@ -34,6 +34,8 @@ The dotfiles chain asked this chain to reduce the waste. A design agent produced
 
 19. **Main's rule, formalized.** The user: "basically your focus is interface with user and delegate any expensive tasks out. right? how would you formalize it to a rule?" Approved wording: main talks and decides, it does not do. It may talk with the user, read mission state, write briefs, send messages and make a lookup of one or two tool calls; everything else goes to the cheapest capable agent (runner, researcher, interface, designer). Test: more than two tool calls or any waiting means delegate. When a delegate is stuck, main decides or asks the user, never fixes it itself.
 
+M5 removes unanswered-request stop notes for every role, following entry 15 (4): "remove them after this round".
+
 ## Decisions so far
 
 | Role | Agent / model | Spawned by | Lifetime |

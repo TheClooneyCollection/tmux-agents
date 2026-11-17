@@ -46,7 +46,7 @@ fail=0
 st() { tmux show -pqv -t "$1" "$2"; }
 reset() {
   for p in %0 %1; do
-    for o in @explicit_needs_you @attention_since @asking @perm_since @activity @codex_thread @turn_began @last_delivered @owed @owed_asked @owed_settled @owed_notified; do tmux set -pu -t "$p" "$o" 2>/dev/null; done
+    for o in @explicit_needs_you @attention_since @asking @perm_since @activity @codex_thread @turn_began @last_delivered; do tmux set -pu -t "$p" "$o" 2>/dev/null; done
   done
   tmux set -p -t %1 @tracked 1; tmux set -p -t %1 @state working
 }

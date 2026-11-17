@@ -36,7 +36,7 @@ Part of the [design notes](../../DESIGN.md).
 
 The installer warns about missing fzf but still succeeds. Without it, the agent list shows installation instructions until a key is pressed, then exits with status 1. Redirected or piped input exits immediately with the same status. `tests/fzf-required.sh` checks these paths; connect's fallback picker, list output and status chips remain usable.
 
-- `tests/needs-you.sh` runs real scripts on an isolated server with stub agents and checks explicit needs-you and hook sources, notice preservation and normal turn endings. Turn-state tests cover message-token matching, live waiting and the latest-request stop notice.
+- `tests/needs-you.sh` runs real scripts on an isolated server with stub agents and checks explicit needs-you and hook sources, notice preservation and normal turn endings. Turn-state tests cover message-token matching and live waiting.
 Tests never touch the user's server:
 
 - Run scripts against a separate server (`tmux -L <name> -f /dev/null`) by exporting `TMUX=<socket>,1,0` and `TMUX_PANE=%N`.

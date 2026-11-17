@@ -101,7 +101,6 @@ perl -MFcntl=:flock -e '
   alarm 0;
 ' "$(notes_dir)/.digest-$id.lock"
 stamp="$(cat "$(notes_dir)/$id/.cursor")"
-check 'digest starts a Codex notice turn without debt' test -z "$(option @owed)"
 check 'digest marks included notes read' test "$("$B/tmux-notes" --from main --count)" = 0
 tmux capture-pane -p -S - -t %0 >"$tmp/screen"
 check 'digest includes sender and latest payload' grep -q 'helper (2): automatic digest payload' "$tmp/screen"

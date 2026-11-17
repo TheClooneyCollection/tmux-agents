@@ -93,7 +93,6 @@ import sys
 args = open(sys.argv[1], 'rb').read().split(b'\0')[:-1]
 assert args[-2:] == [b'--resume', ('conversation-' + sys.argv[2]).encode()], args
 PY
-check 'resume starts with an empty unanswered slot' test -z "$(info "$shell_pane" @owed)"
 check 'resume without queued messages starts done' test "$(info "$shell_pane" @state)" = "done"
 tmux send-keys -t "$shell_pane" STOP Enter
 check 'shell regains prompt after resumed agent exits' wait_for option_equals "$shell_pane" @resume_shell 1

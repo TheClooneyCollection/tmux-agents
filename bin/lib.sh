@@ -1118,7 +1118,7 @@ clear_agent() {
     [ "$keep_connections" = 1 ] || remove_word "$other" @peers "$pane"
     [ "$(tmux show-options -pqv -t "$other" @parent)" != "$pane" ] || tmux set-option -pu -t "$other" @parent
   done
-  for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since codex_startup_wait msg_waiting_since work_closed work_restored activity attention_since explicit_needs_you asking codex_thread resume_shell notes_idle_since notes_digest_at notes_digest_sent_at turn_began last_delivered owed_to owed_msg owed_at owed owed_settled owed_notified owed_asked; do
+  for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since codex_startup_wait msg_waiting_since work_closed work_restored activity attention_since explicit_needs_you asking codex_thread resume_shell notes_idle_since notes_digest_at notes_digest_sent_at turn_began last_delivered; do
     case "$key" in agent|peers|peer_names) [ "$keep_connections" != 1 ] || continue ;; esac
     tmux set-option -pu -t "$pane" "@$key" 2>/dev/null || true
   done
@@ -1202,25 +1202,6 @@ pane_is_descendant() {
     cursor="$(tmux show-options -pqv -t "$cursor" @parent)" || return 1
   done
   return "$found"
-}
-
-# Match live-waiting ancestry exclusions with one snapshot and in-memory walks.
-pane_has_working_descendant() {
-  tmux list-panes -a -F '#{pane_id}|#{@parent}|#{pane_dead}|#{@shell}|#{@tracked}|#{@state}|#{@agent}' |
-    awk -F '|' -v root="$1" '
-      { parent[$1]=$2; dead[$1]=$3; shell[$1]=$4; tracked[$1]=$5; state[$1]=$6; name[$1]=$7 }
-      END {
-        for (child in parent) {
-          if (child == root || dead[child] == 1 || shell[child] == 1 || tracked[child] != 1 || name[child] == "" || state[child] != "working") continue
-          ancestor=parent[child]; visited="|" child "|"
-          while ((ancestor in parent) && !index(visited, "|" ancestor "|")) {
-            if (dead[ancestor] == 1 || shell[ancestor] == 1) break
-            if (ancestor == root) exit 0
-            visited=visited ancestor "|"; ancestor=parent[ancestor]
-          }
-        }
-        exit 1
-      }'
 }
 
 # Snapshot the live ownership graph and print the root's subtree deepest
