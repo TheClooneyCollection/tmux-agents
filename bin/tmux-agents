@@ -560,7 +560,7 @@ while [ $# -gt 0 ]; do
     --select) select="${2:-}"; shift 2 ;;
     --scope) scope="${2:-window}"; shift 2 ;;
     --mode) mode="${2:-sub}"; shift 2 ;;
-    *) shift ;;
+    *) die "unknown argument: $1 (run tmux-agents --help)" ;;
   esac
 done
 # The defaults lookup also validates the server; no separate list-sessions.
