@@ -27,13 +27,13 @@ export BOARD_PROJECT_CACHE="$project_cache"
 # shellcheck disable=SC2329
 restore() {
   rm -f "$project_cache"
-  if [ "$watch" = 1 ]; then printf '\033[?25h\033[?1049l'; fi
+  if [ "$watch" = 1 ]; then printf '\033[?25h'; fi
 }
 trap restore EXIT
 if [ "$watch" = 1 ]; then
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  printf '\033[?1049h\033[?25l'
+  printf '\033[?25l'
 fi
 while :; do
   if ! frame="$(perl "$here/tmux-agents-board.pl" "$here" 2>&1)"; then
@@ -41,8 +41,8 @@ while :; do
     frame='board: refresh failed (retrying)'
   fi
   if [ "$watch" = 0 ]; then printf '%s\n' "$frame"; break; fi
-  # Build a complete frame before moving the cursor. Clear only stale line tails.
-  printf '\033[H'
+  # Replace the previous frame and its history; normal-screen output remains scrollable.
+  printf '\033[H\033[2J\033[3J'
   while IFS= read -r line; do printf '%s\033[K\n' "$line"; done <<<"$frame"
   printf '\033[J'
   key=''

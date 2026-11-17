@@ -5,6 +5,8 @@ here="$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/tmux-agents-board.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin" "$tmp/state/tmux-agents/test/sessions" "$tmp/state/tmux-agents/missions/project"
+BOARD_REAL_TMUX="$(command -v tmux)"
+export BOARD_REAL_TMUX
 BOARD_REAL_BASENAME="$(command -v basename)"
 export BOARD_REAL_BASENAME
 BOARD_REAL_GIT="$(command -v git)"
@@ -197,10 +199,10 @@ for key, height in ((b'q', 8), (b'q', len(full)+1), (b'\x03', 40), (b'q', 0)):
         if key == b'q' and not no_project:
             assert b'board: refresh failed (retrying)' in data, data
             assert b'Mission board' in data, data
-        frame=data.split(b'\x1b[H')[-1].split(b'\x1b[J')[0]
+        frame=data.split(b'\x1b[H\x1b[2J\x1b[3J')[-1].split(b'\x1b[J')[0]
         lines=[line.replace(b'\x1b[K', b'').rstrip(b'\r').decode() for line in frame.split(b'\n') if line]
         if no_project:
-            rendered = data.split(b'\x1b[H')[1:]
+            rendered = data.split(b'\x1b[H\x1b[2J\x1b[3J')[1:]
             assert len(rendered) >= frames, data
             for refresh in rendered:
                 assert refresh.split(b'\x1b[J')[0] == expected.encode()+b'\x1b[K\r\n', refresh
@@ -222,7 +224,7 @@ for key, height in ((b'q', 8), (b'q', len(full)+1), (b'\x03', 40), (b'q', 0)):
         else:
             os.write(master, key)
         deadline = time.monotonic() + 5
-        while b'\x1b[?25h\x1b[?1049l' not in data and time.monotonic() < deadline:
+        while b'\x1b[?25h' not in data and time.monotonic() < deadline:
             if select.select([master], [], [], 1)[0]:
                 try:
                     chunk = os.read(master, 65536)
@@ -231,7 +233,7 @@ for key, height in ((b'q', 8), (b'q', len(full)+1), (b'\x03', 40), (b'q', 0)):
                 except OSError as exc:
                     if exc.errno in (errno.EIO, errno.EAGAIN): break
                     raise
-        assert b'\x1b[?25h\x1b[?1049l' in data, data
+        assert b'\x1b[?25h' in data, data
     finally:
         # macOS can keep an exiting PTY child in kernel close until the master closes.
         os.close(master)
@@ -242,5 +244,54 @@ for key, height in ((b'q', 8), (b'q', len(full)+1), (b'\x03', 40), (b'q', 0)):
             raise
     assert code == (130 if key == b'\x03' else 0), (code, data)
     assert process.stderr.read() == b'', data
+    assert b'\x1b[?1049' not in data, data
+# A real, private tmux server verifies scrollback rather than only PTY bytes.
+import shlex
+socket = 'tmux-board-history-' + str(os.getpid())
+tmux = [os.environ['BOARD_REAL_TMUX'], '-L', socket]
+server_env = dict(os.environ)
+server_env.pop('TMUX', None)
+server_env.pop('TMUX_PANE', None)
+def control(*args):
+    return subprocess.check_output(tmux + list(args), env=server_env, text=True)
+def wait_for(read, ready):
+    deadline = time.monotonic() + 10
+    value = read()
+    while not ready(value) and time.monotonic() < deadline:
+        time.sleep(.02)
+        value = read()
+    assert ready(value), value
+    return value
+script = fixture.parent / 'watch-history.sh'
+script.write_text('export ' + ' '.join(k+'='+shlex.quote(v) for k,v in os.environ.items()
+                  if k.startswith('BOARD_') or k in ('PATH', 'XDG_STATE_HOME')) + '\n' +
+                  'cd ' + shlex.quote(os.getcwd()) + '\n' +
+                  shlex.quote(sys.argv[1]) + ' board --watch 1\n' +
+                  "printf 'BOARD-EXIT:%s\\n' \"$?\"\nexec cat\n")
+try:
+    control('-f', '/dev/null', 'new-session', '-d', '-s', 'board', '-x', '140', '-y', '8', 'exec cat')
+    control('has-session')
+    socket_path = control('display-message', '-p', '#{socket_path}').strip()
+    assert socket_path and not socket_path.endswith('/default'), socket_path
+    control('set-option', '-g', 'default-shell', '/bin/sh')
+    control('respawn-pane', '-k', '-t', 'board:0.0', '/bin/sh ' + shlex.quote(str(script)))
+    capture = lambda: control('capture-pane', '-p', '-t', 'board:0.0', '-S', '-')
+    screen = wait_for(capture, lambda s: full[-1] in s)
+    assert 'Mission board · project' in screen, screen
+    assert int(control('display-message', '-p', '-t', 'board:0.0', '#{history_size}')) > 0, screen
+    assert control('display-message', '-p', '-t', 'board:0.0', '#{alternate_on}').strip() == '0'
+    # A later frame replaces scrollback instead of accumulating old boards.
+    fixture.write_text(fixture.read_text().replace('report-0', 'updated-report-0'))
+    screen = wait_for(capture, lambda s: 'updated-report-0' in s and full[-1] in s)
+    assert screen.count('Mission board · project') == 1, screen
+    control('copy-mode', '-t', 'board:0.0')
+    control('send-keys', '-t', 'board:0.0', '-X', 'history-top')
+    assert int(control('display-message', '-p', '-t', 'board:0.0', '#{scroll_position}')) > 0
+    control('send-keys', '-t', 'board:0.0', '-X', 'cancel')
+    control('send-keys', '-t', 'board:0.0', 'q')
+    wait_for(capture, lambda s: 'BOARD-EXIT:0' in s)
+    assert control('display-message', '-p', '-t', 'board:0.0', '#{cursor_flag}').strip() == '1'
+finally:
+    subprocess.run(tmux + ['kill-server'], env=server_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 WATCH
 printf 'PASS: board grouping, states, models, missing file, width and snapshot budget\n'
