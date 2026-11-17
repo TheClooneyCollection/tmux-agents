@@ -1348,6 +1348,13 @@ settings_get() {
 # Shared CLI parsing and resolution for chain-config and start chain.
 # These globals are per invocation, never exported as preferences.
 CHAIN_ROLES=(main designer interface worker reviewer runner researcher)
+CHAIN_ENV_ROLES=(MAIN DESIGNER SECONDARY WORKER REVIEWER RUNNER RESEARCHER)
+
+chain_role_env() {
+  local key
+  case "$1" in interface|secondary) key=SECONDARY ;; *) key="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')" ;; esac
+  printf -v "$2" '%s' "TMUX_AGENTS_CHAIN_$key"
+}
 
 chain_role_canon() {
   local _chain_role="$1"
@@ -1365,7 +1372,7 @@ chain_options_parse() {
   while [ "$#" -gt 0 ]; do
     flag="$1"
     case "$flag" in
-      --main|--interface|--secondary|--worker)
+      --main|--designer|--interface|--secondary|--worker|--reviewer|--runner|--researcher)
         chain_role_canon "${flag#--}" role
         var="chain_${role}_override"
         [ -z "${!var}" ] || die "duplicate $flag"
@@ -1379,19 +1386,20 @@ chain_options_parse() {
 
 # Resolve all roles, or the supplied roles, before printing any results.
 chain_roles_resolve() {
-  local role value source env_key override default args default_args
+  local role value source env_key args_key override default args default_args
   resolve_codex_homes codex_homes
   if [ "$#" = 0 ] || { [ "$#" = 1 ] && [ -z "$1" ]; }; then set -- "${CHAIN_ROLES[@]}"; fi
   for role in "$@"; do
     chain_role_canon "$role" role
-    env_key=""; default=claude; default_args=""
+    default=claude; default_args=""
     case "$role" in
-      main) env_key=TMUX_AGENTS_CHAIN_MAIN ;;
-      interface) env_key=TMUX_AGENTS_CHAIN_SECONDARY; default_args='--model sonnet' ;;
-      worker) env_key=TMUX_AGENTS_CHAIN_WORKER; default=codex ;;
+      interface) default_args='--model sonnet' ;;
+      worker) default=codex ;;
       runner) default_args='--model haiku' ;;
       researcher) default_args='--model sonnet' ;;
     esac
+    chain_role_env "$role" env_key
+    args_key="${env_key}_ARGS"
     override="chain_${role}_override"
     if [ -n "${!override:-}" ]; then
       value="${!override}"; source=explicit
@@ -1408,11 +1416,15 @@ chain_roles_resolve() {
     # Keep profile labels intact for account selection.
     name_kind_for "$value" >/dev/null || die "unknown $role '$value' (source: $source)"
     case "$value" in *$'\t'*|*$'\n'*|*$'\r'*) die "invalid $role '$value' (source: $source)" ;; esac
-    option_get args "@tmux_agents_chain_${role}_args" ""
-    if [ "$role" = interface ] && [ -z "$args" ]; then
-      option_get args @tmux_agents_chain_secondary_args ""
+    if [ -n "${!env_key:-}" ] && [ "${!args_key+x}" = x ] && [ -z "${!override:-}" ]; then
+      args="${!args_key}"
+    else
+      option_get args "@tmux_agents_chain_${role}_args" ""
+      if [ "$role" = interface ] && [ -z "$args" ]; then
+        option_get args @tmux_agents_chain_secondary_args ""
+      fi
+      if [ -z "$args" ] && [ "$value" = "$default" ]; then args="$default_args"; fi
     fi
-    if [ -z "$args" ] && [ "$value" = "$default" ]; then args="$default_args"; fi
     [ "$args" != none ] || args=""
     case "$args" in *$'\t'*|*$'\n'*|*$'\r'*) die "invalid $role args" ;; esac
     printf -v "chain_$role" '%s' "$value"
@@ -1525,8 +1537,11 @@ codex_profile_for_home() {
 # absence, and the exact PATH instead of maintaining a separate unset list.
 launch_env_snapshot() {
   launch_env_names=(PATH CODEX_HOME CLAUDECODE TMUX_SPAWN_BIN TMUX_AGENTS_SUB_AUTO TMUX_AGENTS_KIND
-    TMUX_AGENTS_PINNED TMUX_AGENTS_DEPTH TMUX_AGENTS_CHAIN_MAIN
-    TMUX_AGENTS_CHAIN_SECONDARY TMUX_AGENTS_CHAIN_WORKER TMUX_AGENTS_CODEX_HOMES)
+    TMUX_AGENTS_PINNED TMUX_AGENTS_DEPTH TMUX_AGENTS_CODEX_HOMES)
+  local role
+  for role in "${CHAIN_ENV_ROLES[@]}"; do
+    launch_env_names+=("TMUX_AGENTS_CHAIN_$role" "TMUX_AGENTS_CHAIN_${role}_ARGS")
+  done
   launch_env_values=() launch_env_present=()
   local key
   for key in "${launch_env_names[@]}"; do
@@ -1576,9 +1591,17 @@ build_agent_command() {
   # whichever pane started it; pin this pane's identity for its commands.
   # Pin absent overrides too: a shared daemon must not lend another chain
   # its preferences. Do not promote role option/default values into env.
-  export TMUX_AGENTS_CHAIN_MAIN="${TMUX_AGENTS_CHAIN_MAIN:-}"
-  export TMUX_AGENTS_CHAIN_SECONDARY="${TMUX_AGENTS_CHAIN_SECONDARY:-}"
-  export TMUX_AGENTS_CHAIN_WORKER="${TMUX_AGENTS_CHAIN_WORKER:-}"
+  local role key
+  local chain_pins=()
+  for role in "${CHAIN_ENV_ROLES[@]}"; do
+    key="TMUX_AGENTS_CHAIN_$role"
+    export "$key=${!key:-}"
+    chain_pins+=("$key" "${!key}")
+    key="${key}_ARGS"
+    # Empty args are significant only with a non-empty role snapshot.
+    export "$key=${!key:-}"
+    chain_pins+=("$key" "${!key}")
+  done
   export TMUX_AGENTS_CODEX_HOMES="${codex_homes:-}"
   local pin
   while IFS= read -r -d '' pin; do
@@ -1590,9 +1613,7 @@ build_agent_command() {
     }
   ' TMUX_PANE "${TMUX_PANE:-}" TMUX "${TMUX:-}" \
     TMUX_AGENTS_DEPTH "${TMUX_AGENTS_DEPTH:-0}" TMUX_AGENTS_PINNED 1 \
-    TMUX_AGENTS_KIND "$agent" TMUX_AGENTS_CHAIN_MAIN "$TMUX_AGENTS_CHAIN_MAIN" \
-    TMUX_AGENTS_CHAIN_SECONDARY "$TMUX_AGENTS_CHAIN_SECONDARY" \
-    TMUX_AGENTS_CHAIN_WORKER "$TMUX_AGENTS_CHAIN_WORKER" \
+    TMUX_AGENTS_KIND "$agent" "${chain_pins[@]}" \
     TMUX_AGENTS_CODEX_HOMES "$TMUX_AGENTS_CODEX_HOMES")
   # Only sub agents consume the auto-mode preference; top-level starts keep
   # agent defaults. Read here so tmux options also resolve inside the child.

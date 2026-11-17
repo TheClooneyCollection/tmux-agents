@@ -17,6 +17,7 @@ for kind in claude codex other-agent; do
 set -eu
 printf '%s' "${CODEX_HOME:-}" >"$SPAWN_ARGS_LOG/${TMUX_PANE#%}.home"
 printf '%s\0' "$@" >"$SPAWN_ARGS_LOG/${TMUX_PANE#%}.args"
+env | sort >"$SPAWN_ARGS_LOG/${TMUX_PANE#%}.env"
 printf 'SPAWN STUB READY %s\n' "${0##*/}"
 exec cat >>"$SPAWN_ARGS_LOG/${TMUX_PANE#%}.input"
 STUB
@@ -100,8 +101,10 @@ role_spawn() {
 }
 
 role_spawn --role runner
+check 'default resolution printed separately' grep -Fxq 'role=runner agent=claude args="--model haiku" source=default' "$tmp/spawn"
 runner="$(pane_of claude-project-runner)"
 check 'runner starts Claude stub' wait_ready "$runner"
+check 'runner pane role' test "$(tmux show-options -pqv -t "$runner" @role)" = runner
 check 'runner default model reaches argv' suffix_is "$runner" --model haiku
 runner_id="$(pane_agent_id "$runner")"
 check 'runner effective args are saved' recorded_args_are "$runner_id" --model haiku
@@ -118,9 +121,12 @@ check 'reviewer uses default model' no_model "$reviewer"
 role_spawn --role secondary
 interface="$(pane_of claude-project-interface)"
 check 'secondary alias uses interface name' wait_ready "$interface"
+check 'secondary pane role canonicalized' test "$(tmux show-options -pqv -t "$interface" @role)" = interface
 check 'secondary alias uses interface args' suffix_is "$interface" --model sonnet
 
-spawn_agent codex --role runner --name different </dev/null >"$tmp/spawn"
+spawn_agent codex --role runner --name different </dev/null >"$tmp/spawn" 2>"$tmp/warning"
+check 'positional override explains dropped args' grep -Fxq 'tmux-spawn: warning: codex overrides role runner; role args dropped (pass -- ARGS to supply them)' "$tmp/warning"
+check 'positional resolution' grep -Fxq 'role=runner agent=codex args="" source=positional' "$tmp/spawn"
 different="$(pane_of codex-project-different)"
 check 'positional agent overrides role' wait_ready "$different"
 check 'different positional agent drops role args' no_model "$different"
@@ -162,6 +168,52 @@ role_spawn --role reviewer --name owned --for claude-project-member
 owned="$(pane_of claude-project-owned)"
 check 'role with --for starts' wait_ready "$owned"
 check 'role with --for keeps owner' test "$(tmux show-options -pqv -t "$owned" @parent)" = "$member_pane"
+
+# The alternative ordering accepts an agent after --role, before a task.
+role_spawn --role runner codex --name after-role -- --model supplied
+after_role="$(pane_of codex-project-after-role)"
+check 'agent after role starts' wait_ready "$after_role"
+check 'replacement args survive override' suffix_is "$after_role" --model supplied
+
+tmux set-option -p -t %0 @role main
+record_set "$(pane_agent_id %0)" kind claude
+"$B/tmux-spawn" --from main --name plain </dev/null >"$tmp/spawn" 2>"$tmp/warning"
+plain="$(pane_of claude-project-plain)"
+check 'plain spawn starts' wait_ready "$plain"
+check 'plain chain warning' grep -Fxq 'tmux-spawn: no --role; inheriting claude. Use --role ROLE to follow chain-config (or --plain to silence)' "$tmp/warning"
+check 'plain resolution' grep -Fxq 'role=none agent=claude args="" source=inherited' "$tmp/spawn"
+"$B/tmux-spawn" --from main --plain --name quiet </dev/null >"$tmp/spawn" 2>"$tmp/warning"
+check 'plain flag silences warning' test ! -s "$tmp/warning"
+check 'quiet spawn starts' wait_ready "$(pane_of claude-project-quiet)"
+
+export TMUX_AGENTS_CHAIN_RUNNER=claude TMUX_AGENTS_CHAIN_RUNNER_ARGS='--model snapshot'
+role_spawn --role runner --name snapshot
+snapshot="$(pane_of claude-project-snapshot)"
+check 'snapshot spawn starts' wait_ready "$snapshot"
+check 'snapshot args beat changed option' suffix_is "$snapshot" --model snapshot
+check 'snapshot resolution' grep -Fxq 'role=runner agent=claude args="--model snapshot" source=chain' "$tmp/spawn"
+check 'snapshot agent forwarded' grep -Fxq 'TMUX_AGENTS_CHAIN_RUNNER=claude' "$SPAWN_ARGS_LOG/${snapshot#%}.env"
+check 'snapshot args forwarded' grep -Fxq 'TMUX_AGENTS_CHAIN_RUNNER_ARGS=--model snapshot' "$SPAWN_ARGS_LOG/${snapshot#%}.env"
+export TMUX_AGENTS_CHAIN_RUNNER_ARGS=''
+role_spawn --role runner --name snapshot-empty --split main
+snapshot_empty="$(pane_of claude-project-snapshot-empty)"
+check 'empty snapshot split starts' wait_ready "$snapshot_empty"
+check 'empty snapshot args suppress option and default' no_model "$snapshot_empty"
+unset TMUX_AGENTS_CHAIN_RUNNER TMUX_AGENTS_CHAIN_RUNNER_ARGS
+
+mission_id="$("$B/tmux-agents" mission add --from main 'Spawn mission')"
+role_spawn --role reviewer --name mission-owner --mission "$mission_id"
+mission_owner="$(pane_of claude-project-mission-owner)"
+check 'mission owner starts' wait_ready "$mission_owner"
+"$B/tmux-agents" mission show --from main "$mission_id" --log 3 >"$tmp/mission"
+check 'spawn assigns mission owner' grep -Fq 'claude-project-mission-owner' "$tmp/mission"
+check 'spawn logs canonical role' grep -Fq 'spawned claude-project-mission-owner (reviewer)' "$tmp/mission"
+# A headless test server has no client: --open still creates the helper and
+# surfaces the open command's precise error instead of silently ignoring it.
+check 'open surfaces missing client' rejects_with 'no client showing the session' --role reviewer --name open-request --open
+check 'open failure retains spawned agent' wait_ready "$(pane_of claude-project-open-request)"
+check 'unknown mission rejected'  rejects_with 'unknown mission ID' --role runner --mission M999999 --name invalid-mission
+check 'invalid mission creates no pane' test -z "$(pane_of claude-project-invalid-mission)"
 
 check 'main role rejected' rejects_with 'main is started by the user, not spawned' --role main
 check 'unknown role rejected' rejects_with "unknown chain role 'mystery'" --role mystery

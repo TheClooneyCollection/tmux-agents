@@ -5,7 +5,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 . "$here/lib.sh"
 usage() {
   echo 'usage: tmux-agents start AGENT [--name NAME [--exact]] [-- ARGS...]'
-  echo '       tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--main-resume ID] [--interface AGENT (alias --secondary)] [--worker AGENT]'
+  echo '       tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--main-resume ID] [--interface AGENT (alias --secondary)] [--worker AGENT] [--designer AGENT] [--reviewer AGENT] [--runner AGENT] [--researcher AGENT]'
 }
 case "${1:-}" in -h|--help) usage; exit 0 ;; '') usage >&2; exit 1 ;; esac
 case "${1:-}:${2:-}" in chain:-h|chain:--help) usage; exit 0 ;; esac
@@ -50,7 +50,7 @@ if [ "$kind" = chain ]; then
         chain_resume=""
         shift
         if [ $# -gt 0 ] && [[ $1 != --* ]]; then chain_resume="$1"; shift; fi ;;
-      --main|--interface|--secondary|--worker)
+      --main|--designer|--interface|--secondary|--worker|--reviewer|--runner|--researcher)
         [ $# -ge 2 ] && [ -n "$2" ] || die "$1 needs an agent"
         role_args+=("$1" "$2"); shift 2 ;;
       -*) die "unknown chain argument '$1'" ;;
@@ -109,7 +109,12 @@ if [ -n "$window" ]; then
   if [ -n "$chain_resume" ]; then
     chain_env=("TMUX_START_CHAIN_RESUME=$chain_resume" "CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude}" "CODEX_HOME=${CODEX_HOME:-$HOME/.codex}")
   fi
-  args=(env ${chain_env[@]+"${chain_env[@]}"} "TMUX_AGENTS_CHAIN_MAIN=${TMUX_AGENTS_CHAIN_MAIN:-}" "TMUX_AGENTS_CHAIN_SECONDARY=${TMUX_AGENTS_CHAIN_SECONDARY:-}" "TMUX_AGENTS_CHAIN_WORKER=${TMUX_AGENTS_CHAIN_WORKER:-}" TMUX_START_NAME_EXACT=1 "TMUX_START_CHAIN_WORK=$start_chain_work" "TMUX_START_CODEX_HOMES=$codex_homes" "TMUX_SPAWN_BIN=${TMUX_SPAWN_BIN:-}" "XDG_STATE_HOME=${XDG_STATE_HOME:-$HOME/.local/state}" "$here/tmux-agents-start" "$kind")
+  for role in "${CHAIN_ROLES[@]}"; do
+    chain_role_env "$role" env_key
+    value="chain_$role"; role_args_key="chain_${role}_args"
+    chain_env+=("$env_key=${!value}" "${env_key}_ARGS=${!role_args_key}")
+  done
+  args=(env "${chain_env[@]}" TMUX_START_CHAIN_ROLE=main TMUX_START_NAME_EXACT=1 "TMUX_START_CHAIN_WORK=$start_chain_work" "TMUX_START_CODEX_HOMES=$codex_homes" "TMUX_SPAWN_BIN=${TMUX_SPAWN_BIN:-}" "XDG_STATE_HOME=${XDG_STATE_HOME:-$HOME/.local/state}" "$here/tmux-agents-start" "$kind")
   if ! full_agent_kind "$kind"; then args=(env "PATH=$PATH" "${args[@]}"); fi
   [ -z "$name" ] || args+=(--name "$name")
   args+=(-- "$@")
@@ -185,6 +190,8 @@ elif [ -n "$name" ]; then
   name="$(unique_name "$name")"
 else name="$(name_for "$prefix" "$dir")"; fi
 set_name "$pane" "$name"
+[ "${TMUX_START_CHAIN_ROLE:-}" != main ] || tmux set-option -p -t "$pane" @role main
+unset TMUX_START_CHAIN_ROLE
 record_set "$agent_id" name "$name"
 record_set "$agent_id" kind "$kind"
 record_set "$agent_id" dir "$dir"

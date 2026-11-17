@@ -255,8 +255,8 @@ for role in main secondary worker; do
   check "invalid $role creates no window or identity" test "$(tmux list-panes -a -F '#{pane_id} #{@agent_id} #{@tracked}')" = "$chain_before"
 done
 # Each chain carries its own caller environment, not the tmux server's stale map.
-# The second chain leaves worker unset so option source remains option, even
-# while the server advertises a stale role environment.
+# The second chain snapshots the resolved worker option, even while the
+# server advertises a stale role environment.
 tmux set -g @tmux_agents_chain_worker claude
 tmux set-environment -g TMUX_AGENTS_CHAIN_WORKER stale-worker
 tmux set-environment -g TMUX_AGENTS_CODEX_HOMES 'stale=/does/not/exist'
@@ -282,7 +282,7 @@ from pathlib import Path
 root=Path(sys.argv[1])
 for pane, main, secondary, worker, homes in [
     (sys.argv[2], 'extra', 'codex', 'extra', sys.argv[4]),
-    (sys.argv[3], 'codex', 'extra', '', sys.argv[5]),
+    (sys.argv[3], 'codex', 'extra', 'claude', sys.argv[5]),
 ]:
     args=(root/(pane+'.args')).read_bytes().split(b'\0')[:-1]
     env=json.loads((root/(pane+'.env')).read_text())
@@ -299,7 +299,7 @@ for pane, main, secondary, worker, homes in [
     assert not any(b'approvals_reviewer' in a for a in args)
     prompt=args[-1].decode().lower()
     assert all(role in prompt for role in ['main', 'designer', 'interface', 'worker', 'reviewer', 'runner', 'researcher'])
-    assert 'env' in prompt and ('option' in prompt if not worker else 'extra' in prompt)
+    assert 'env' in prompt and ('option' in prompt if worker == 'claude' else 'extra' in prompt)
     notify=json.loads(next(a for a in args if a.startswith(b'notify=')).split(b'=',1)[1])
     assert notify[1]=='--agent-id'
     subprocess.run(notify+[json.dumps({'type':'agent-turn-complete', 'thread-id':'chain-'+pane,
@@ -322,6 +322,14 @@ for chain_codex in "$chain_a" "$chain_b"; do
   "$B/tmux-agent-report" --pane "$chain_codex" --turn-end </dev/null
   check 'Codex main completed follow-up returns idle' test "$(info "$chain_codex" state)" = idle
 done
+check 'chain main has explicit role' test "$(info "$chain_b" role)" = main
+tmux send-keys -t "$chain_b" exit Enter
+for ((i=0;i<100;i++)); do
+  [ -n "$(info "$chain_b" agent_id)$(info "$chain_b" role)" ] || break
+  sleep .05
+done
+check 'exited chain returns without agent identity' test -z "$(info "$chain_b" agent_id)"
+check 'exited chain clears role from returned shell' test -z "$(info "$chain_b" role)"
 tmux set -gu @tmux_agents_chain_worker
 tmux set-environment -gu TMUX_AGENTS_CHAIN_WORKER
 tmux set-environment -g TMUX_AGENTS_CODEX_HOMES "$TMUX_AGENTS_CODEX_HOMES"

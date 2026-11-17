@@ -63,7 +63,7 @@ for role in main interface worker; do
   check "$role non-codex profile preserved" test "$(TMUX_AGENTS_CODEX_HOMES="extra=$tmp/profile" query "$role" "--$role" extra)" = extra
 done
 check 'defaults include args in fixed order' test "$(query --args)" = $'main\tclaude\t-\ndesigner\tclaude\t-\ninterface\tclaude\t--model sonnet\nworker\tcodex\t-\nreviewer\tclaude\t-\nrunner\tclaude\t--model haiku\nresearcher\tclaude\t--model sonnet'
-check 'new role environment ignored' test "$(TMUX_AGENTS_CHAIN_REVIEWER=codex query reviewer)" = claude
+check 'reviewer environment selects chain agent' test "$(TMUX_AGENTS_CHAIN_REVIEWER=codex query reviewer)" = codex
 check 'secondary query canonical row' test "$(query secondary --args --sources)" = $'interface\tclaude\t--model sonnet\tdefault'
 check 'alias duplicate rejected' reject --secondary claude --interface codex
 check 'reverse alias duplicate rejected' reject --interface codex --secondary claude

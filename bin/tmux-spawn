@@ -44,6 +44,9 @@ arguments cannot be reliably distinguished from task text.
                 profiles use codex as <agent>, home uses ~ as <dir>
                 (without --name: <agent>-<dir>-<N>)
   --role ROLE   choose agent, args and default name; see tmux-agents chain-config --args
+  --plain       silence the plain-spawn warning inside a chain
+  --mission ID  assign the new agent as mission owner and log its spawn
+  --open        open the new agent for the user
   --member      start a long-lived member (top-level callers only); --done keeps it
   --exact       use --name verbatim, without its agent/directory prefix
   --for OWNER   spawn it for OWNER, an agent you're connected to: it becomes
@@ -122,12 +125,14 @@ if [ "${1:-}" = "--run" ]; then
   # part of the returned shell's baseline, including absent chain overrides.
   export TMUX_AGENTS_DEPTH="${TMUX_SPAWN_DEPTH:-0}"
   unset TMUX_SPAWN_DEPTH
-  for role in MAIN SECONDARY WORKER; do
-    forwarded="TMUX_SPAWN_CHAIN_$role"
-    if [ "${!forwarded+x}" = x ]; then
-      export "TMUX_AGENTS_CHAIN_$role=${!forwarded}"
-    fi
-    unset "$forwarded"
+  for role in "${CHAIN_ENV_ROLES[@]}"; do
+    for suffix in '' _ARGS; do
+      forwarded="TMUX_SPAWN_CHAIN_${role}${suffix}"
+      if [ "${!forwarded+x}" = x ]; then
+        export "TMUX_AGENTS_CHAIN_${role}${suffix}=${!forwarded}"
+      fi
+      unset "$forwarded"
+    done
   done
   if [ "${TMUX_SPAWN_PATH+x}" = x ]; then export PATH="$TMUX_SPAWN_PATH"; fi
   unset TMUX_SPAWN_PATH
@@ -221,7 +226,7 @@ if [ "${1:-}" = "--run" ]; then
 fi
 
 agent="" name="" task="" message_file="" FROM_PANE="" resume="" resume_id="" list_closed=0 parent_name="" for_name="" here_resume=0
-role=""
+role="" plain=0 mission="" open_after=0 resolution_source=inherited
 agent_args=() agent_args_given=0 args_separator=0
 agent_args_encoded=""
 task_arg_given=0
@@ -245,6 +250,9 @@ while [ $# -gt 0 ]; do
     --role)
       [ -n "${2:-}" ] || die "--role needs a role"
       role="$2"; shift 2 ;;
+    --plain) plain=1; shift ;;
+    --mission) [ -n "${2:-}" ] || die "--mission needs an ID"; mission="$2"; shift 2 ;;
+    --open) open_after=1; shift ;;
     --exact) exact=1; shift ;;
     --member) member=1; shift ;;
     --message-file)
@@ -274,9 +282,14 @@ while [ $# -gt 0 ]; do
       agent_args=("$@")
       break ;;
     -*) usage >&2; exit 1 ;;
-    *) task_arg_given=1; task="$*"; break ;;
+    *)
+      if [ -n "$role" ] && [ -z "$agent" ] && name_kind_for "$1" >/dev/null 2>&1; then
+        agent="$1"; shift
+      else task_arg_given=1; task="$*"; break; fi ;;
   esac
 done
+explicit_agent="$agent"
+[ -z "$explicit_agent" ] || resolution_source=positional
 if [ -n "$role" ]; then
   [ -z "$resume$resume_id" ] && [ "$here_resume" -eq 0 ] && [ "$list_closed" -eq 0 ] || die "--role is only for new agents"
   chain_role_canon "$role" role
@@ -284,12 +297,22 @@ if [ -n "$role" ]; then
   chain_roles_resolve "$role"
   role_agent_var="chain_$role"
   role_args_var="chain_${role}_args"
+  role_source_var="chain_${role}_source"
+  resolution_source="${!role_source_var}"
+  case "$resolution_source" in env) resolution_source=chain ;; explicit) resolution_source=positional ;; esac
+  if [ -n "$explicit_agent" ]; then
+    resolution_source=positional
+    if [ "$agent" != "${!role_agent_var}" ] && [ -n "${!role_args_var}" ]; then
+      printf 'tmux-spawn: warning: %s overrides role %s; role args dropped (pass -- ARGS to supply them)\n' "$agent" "$role" >&2
+    fi
+  fi
   [ -n "$agent" ] || agent="${!role_agent_var}"
   if [ "$agent_args_given" -eq 0 ] && [ "$agent" = "${!role_agent_var}" ]; then
     read -r -a agent_args <<< "${!role_args_var}"
   fi
   [ "$name_given" -eq 1 ] || name="$role"
 fi
+[ -z "$mission" ] && [ "$open_after" -eq 0 ] || { [ -z "$resume$resume_id" ] && [ "$list_closed" -eq 0 ]; } || die "--mission and --open are only for new agents"
 [ -z "$message_file" ] || [ "$task_arg_given" -eq 0 ] || die "--message-file conflicts with positional task text"
 [ -z "$message_file" ] || { [ -z "$resume$resume_id" ] && [ "$list_closed" -eq 0 ]; } || die "--message-file is only for a new sub agent"
 if [ -n "$message_file" ]; then
@@ -391,7 +414,12 @@ adopt() {
 open_window() {
   local env_args=(-e "TMUX_SPAWN_SUB_EXIT=keep" -e "TMUX_SPAWN_DEPTH=$5" -e "TMUX_SPAWN_CODEX_HOMES=$codex_homes")
   if [ -n "$agent" ] && ! full_agent_kind "$agent"; then env_args+=(-e "TMUX_SPAWN_PATH=$PATH"); fi
-  env_args+=(-e "TMUX_SPAWN_CHAIN_MAIN=${TMUX_AGENTS_CHAIN_MAIN:-}" -e "TMUX_SPAWN_CHAIN_SECONDARY=${TMUX_AGENTS_CHAIN_SECONDARY:-}" -e "TMUX_SPAWN_CHAIN_WORKER=${TMUX_AGENTS_CHAIN_WORKER:-}")
+  local env_role env_key
+  for env_role in "${CHAIN_ENV_ROLES[@]}"; do
+    for env_key in "TMUX_AGENTS_CHAIN_$env_role" "TMUX_AGENTS_CHAIN_${env_role}_ARGS"; do
+      env_args+=(-e "TMUX_SPAWN_${env_key#TMUX_AGENTS_}=${!env_key:-}")
+    done
+  done
   [ -z "${TMUX_SPAWN_BIN:-}" ] || env_args+=(-e "TMUX_SPAWN_LAUNCH_BIN=$TMUX_SPAWN_BIN")
   [ -z "${TMUX_AGENTS_SUB_AUTO:-}" ] || env_args+=(-e "TMUX_SPAWN_AUTO=$TMUX_AGENTS_SUB_AUTO")
   if tmux has-session -t "=$1" 2>/dev/null; then
@@ -406,7 +434,12 @@ open_window() {
 open_split() {
   local direction=-h env_args=(-e "TMUX_SPAWN_SUB_EXIT=$sub_exit" -e "TMUX_SPAWN_DEPTH=$4" -e "TMUX_SPAWN_CODEX_HOMES=$codex_homes")
   if [ -n "$agent" ] && ! full_agent_kind "$agent"; then env_args+=(-e "TMUX_SPAWN_PATH=$PATH"); fi
-  env_args+=(-e "TMUX_SPAWN_CHAIN_MAIN=${TMUX_AGENTS_CHAIN_MAIN:-}" -e "TMUX_SPAWN_CHAIN_SECONDARY=${TMUX_AGENTS_CHAIN_SECONDARY:-}" -e "TMUX_SPAWN_CHAIN_WORKER=${TMUX_AGENTS_CHAIN_WORKER:-}")
+  local env_role env_key
+  for env_role in "${CHAIN_ENV_ROLES[@]}"; do
+    for env_key in "TMUX_AGENTS_CHAIN_$env_role" "TMUX_AGENTS_CHAIN_${env_role}_ARGS"; do
+      env_args+=(-e "TMUX_SPAWN_${env_key#TMUX_AGENTS_}=${!env_key:-}")
+    done
+  done
   [ "$split_direction" != --below ] || direction=-v
   [ -z "${TMUX_SPAWN_BIN:-}" ] || env_args+=(-e "TMUX_SPAWN_LAUNCH_BIN=$TMUX_SPAWN_BIN")
   [ -z "${TMUX_AGENTS_SUB_AUTO:-}" ] || env_args+=(-e "TMUX_SPAWN_AUTO=$TMUX_AGENTS_SUB_AUTO")
@@ -561,6 +594,17 @@ depth="${TMUX_AGENTS_DEPTH:-0}"
 
 # Resolve the named caller, not the shared tool process's stale environment.
 [ -n "$agent" ] || agent="$(inherited_agent "$self")"
+if [ -z "$role$explicit_agent" ] && [ "$plain" -eq 0 ]; then
+  chain_context="$(tmux show-options -pqv -t "$self" @role)"
+  for env_role in "${CHAIN_ENV_ROLES[@]}"; do
+    for env_key in "TMUX_AGENTS_CHAIN_$env_role" "TMUX_AGENTS_CHAIN_${env_role}_ARGS"; do
+      [ -z "${!env_key:-}" ] || chain_context=1
+    done
+  done
+  if [ -n "$chain_context" ]; then
+    printf 'tmux-spawn: no --role; inheriting %s. Use --role ROLE to follow chain-config (or --plain to silence)\n' "$agent" >&2
+  fi
+fi
 
 # The caller needs a name so the sub agent can reply to it.
 me="$(pane_name "$self")"
@@ -568,6 +612,8 @@ if [ -z "$me" ]; then
   me="$(suggest_name "$self")"
   set_name "$self" "$me"
 fi
+
+[ -z "$mission" ] || "$here/tmux-agents" mission show --from "$me" "$mission" >/dev/null
 
 # Membership creation is reserved for top-level callers, regardless of --for.
 if [ "$member" -eq 1 ]; then
@@ -667,6 +713,7 @@ else
   location="hidden in session \"$session\""
 fi
 
+[ -z "$role" ] || tmux set-option -p -t "$pane" @role "$role"
 if full_agent_kind "$agent"; then
   if [ -z "$task" ]; then agent_start_work "$pane" idle
   else agent_start_work "$pane" working; fi
@@ -677,16 +724,26 @@ fi
 if [ -n "$for_name" ]; then
   tmux set-option -p -t "$pane" @activity "waiting for its first task from $owner_name"
 fi
+# Publish ownership before releasing a child that may immediately log progress.
+if [ -n "$mission" ]; then
+  "$here/tmux-agents" mission set --from "$me" "$mission" --owner "$name"
+  "$here/tmux-agents" mission log --from "$name" "$mission" "spawned $name (${role:-none})" --kind progress
+fi
 # Complete every pane-state write before a fast child can exit and clear it.
 if [ -n "$split_gate" ]; then
   tmux wait-for -S "$split_gate"
   trap - EXIT
 fi
 
+finish_spawn() {
+  printf 'role=%s agent=%s args="%s" source=%s\n' "${role:-none}" "$agent" "${agent_args[*]-}" "$resolution_source"
+  [ "$open_after" -eq 0 ] || "$here/tmux-agents" open "$name" --from "$me"
+}
+
 if [ -n "$for_name" ]; then
-  role="sub agent"
-  [ "$member" -eq 0 ] || role="member"
-  msg="I spawned $name ($agent) for you: it is your $role now, connected to you (not to me), and it has no task yet. Introduce yourself to it (who you are, your role, how you'll work together), then send it its first task: tmux-ask --from $owner_name $name. It replies to you; close it with tmux-dismiss --from $owner_name $name when you're done with it."
+  owner_label="sub agent"
+  [ "$member" -eq 0 ] || owner_label="member"
+  msg="I spawned $name ($agent) for you: it is your $owner_label now, connected to you (not to me), and it has no task yet. Introduce yourself to it (who you are, your role, how you'll work together), then send it its first task: tmux-ask --from $owner_name $name. It replies to you; close it with tmux-dismiss --from $owner_name $name when you're done with it. Spawn helpers with tmux-spawn --role <role>; never a bare agent name."
   if ! full_agent_kind "$agent"; then
     msg="$msg Wait until it is at its prompt before sending; no skill or initial task was supplied."
   fi
@@ -702,6 +759,7 @@ $brief"
   else
     printf 'spawned %s (%s) as %s for %s, %s; task was not sent to it. Told %s to send it with tmux-ask once the agent is at its prompt. View: tmux-agents or prefix + a.\n' "$agent" "$pane" "$name" "$owner_name" "$location" "$owner_name"
   fi
+  finish_spawn
   exit 0
 fi
 
@@ -712,3 +770,5 @@ elif [ "$manual_task" = 1 ]; then
 else
   printf 'spawned %s (%s) as %s, %s; send its first task with tmux-ask once it is at its prompt. View: tmux-agents or prefix + a.\n' "$agent" "$pane" "$name" "$location"
 fi
+
+finish_spawn
