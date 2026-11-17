@@ -5,6 +5,8 @@ here="$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/tmux-agents-board.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin" "$tmp/state/tmux-agents/test/sessions" "$tmp/state/tmux-agents/missions/project"
+BOARD_REAL_BASENAME="$(command -v basename)"
+export BOARD_REAL_BASENAME
 BOARD_REAL_GIT="$(command -v git)"
 export BOARD_REAL_GIT
 mkdir -p "$tmp/project"
@@ -29,7 +31,12 @@ cat > "$tmp/bin/git" <<'STUB'
 printf '%s\n' "$*" >> "$BOARD_GIT_CALLS"
 exec "$BOARD_REAL_GIT" "$@"
 STUB
-chmod +x "$tmp/bin/tmux" "$tmp/bin/git"
+cat > "$tmp/bin/basename" <<'STUB'
+#!/usr/bin/env bash
+[ "${BOARD_NO_PROJECT:-0}" = 1 ] && exit 0
+exec "$BOARD_REAL_BASENAME" "$@"
+STUB
+chmod +x "$tmp/bin/tmux" "$tmp/bin/git" "$tmp/bin/basename"
 export PATH="$tmp/bin:$PATH"
 python3 - "$tmp" <<'PY'
 import sys,base64
@@ -157,14 +164,26 @@ for r in rows:
 fixture.write_text('\n'.join('\t'.join(r) for r in rows)+'\n')
 full=subprocess.check_output([sys.argv[1], 'board'], text=True).splitlines()
 assert not any('more rows' in line or 'empty-path' in line for line in full), full
-for key, height in ((b'q', 8), (b'q', len(full)+1), (b'\x03', 40)):
+# An unresolved project prints one line, including on each watch refresh.
+expected = f"board: cannot resolve a project for {os.getcwd()}"
+no_project_env = dict(os.environ, BOARD_NO_PROJECT='1')
+result = subprocess.run([sys.argv[1], 'board'], env=no_project_env, text=True, capture_output=True)
+assert (result.returncode, result.stdout, result.stderr) == (0, expected+'\n', ''), result
+# The renderer also handles an absent mission-directory environment value.
+renderer_env = dict(os.environ)
+renderer_env.pop('BOARD_MISSION_DIR', None)
+renderer = str(Path(sys.argv[1]).with_name('tmux-agents-board.pl'))
+result = subprocess.run(['perl', renderer, str(Path(renderer).parent)], env=renderer_env, text=True, capture_output=True)
+assert (result.returncode, result.stdout, result.stderr) == (0, expected+'\n', ''), result
+for key, height in ((b'q', 8), (b'q', len(full)+1), (b'\x03', 40), (b'q', 0)):
+    no_project = height == 0
     for r in rows: r[29]=str(height)
     fixture.write_text('\n'.join('\t'.join(r) for r in rows)+'\n')
     Path(os.environ['BOARD_CALLS']).write_text('')
     Path(os.environ['BOARD_GIT_CALLS']).write_text('')
-    if key == b'q': Path(os.environ['BOARD_FAIL_ONCE']).touch()
+    if key == b'q' and not no_project: Path(os.environ['BOARD_FAIL_ONCE']).touch()
     master, slave = pty.openpty()
-    process = subprocess.Popen([sys.argv[1], 'board', '--watch', '1'], stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
+    process = subprocess.Popen([sys.argv[1], 'board', '--watch', '1'], stdin=slave, stdout=slave, stderr=subprocess.PIPE, env=no_project_env if no_project else None, start_new_session=True)
     os.close(slave)
     os.set_blocking(master, False)
     data = b''
@@ -175,12 +194,18 @@ for key, height in ((b'q', 8), (b'q', len(full)+1), (b'\x03', 40)):
             if select.select([master], [], [], 1)[0]:
                 data += os.read(master, 65536)
         assert data.count(b'\x1b[J') >= frames, data
-        if key == b'q':
+        if key == b'q' and not no_project:
             assert b'board: refresh failed (retrying)' in data, data
             assert b'Mission board' in data, data
         frame=data.split(b'\x1b[H')[-1].split(b'\x1b[J')[0]
         lines=[line.replace(b'\x1b[K', b'').rstrip(b'\r').decode() for line in frame.split(b'\n') if line]
-        if height == 8:
+        if no_project:
+            rendered = data.split(b'\x1b[H')[1:]
+            assert len(rendered) >= frames, data
+            for refresh in rendered:
+                assert refresh.split(b'\x1b[J')[0] == expected.encode()+b'\x1b[K\r\n', refresh
+            assert process.poll() is None, data
+        elif height == 8:
             hidden=sum(' [' in line for line in full[height-2:])
             assert lines[-1].startswith(f'... {hidden} more rows'), (lines, hidden)
             assert len(lines)==height-1, lines
@@ -190,10 +215,11 @@ for key, height in ((b'q', 8), (b'q', len(full)+1), (b'\x03', 40)):
             assert len(lines)==len(full), (lines, full)
         calls=Path(os.environ['BOARD_CALLS']).read_text().splitlines()
         assert sum(c.startswith('show-option ') for c in calls)==1, calls
-        assert sum(c.startswith('list-panes ') for c in calls)>=frames, calls
+        if not no_project:
+            assert sum(c.startswith('list-panes ') for c in calls)>=frames, calls
         assert all(c.startswith(('show-option ', 'list-panes ')) for c in calls), calls
         git_calls=Path(os.environ['BOARD_GIT_CALLS']).read_text().splitlines()
-        assert len(git_calls)==4, git_calls
+        assert len(git_calls)==(2 if no_project else 4), git_calls
         if key == b'\x03':
             # No controlling terminal in this harness: deliver the equivalent signal.
             import signal
@@ -220,5 +246,6 @@ for key, height in ((b'q', 8), (b'q', len(full)+1), (b'\x03', 40)):
             process.kill()
             raise
     assert code == (130 if key == b'\x03' else 0), (code, data)
+    assert process.stderr.read() == b'', data
 WATCH
 printf 'PASS: board grouping, states, models, missing file, width and snapshot budget\n'

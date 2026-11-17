@@ -2,9 +2,16 @@
 # One pane snapshot, one read per needed record, no per-agent tmux queries.
 use strict;
 use warnings;
+use Cwd qw(getcwd);
 use MIME::Base64 qw(decode_base64);
 use Storable qw(retrieve store);
 my ($here) = @ARGV;
+my $mission_dir=$ENV{BOARD_MISSION_DIR} // '';
+(my $project=$mission_dir) =~ s{.*/}{};
+if ($project eq '') {
+ print 'board: cannot resolve a project for ', (getcwd() // $ENV{PWD} // '.'), "\n";
+ exit 0;
+}
 my @fields = ('P', '#{pane_id}', '#{?@agent,#{@agent},-}', '#{pane_dead}',
  '#{?@perm_since,#{@perm_since},-}', '#{?@state,#{@state},-}', '#{?@parent,#{@parent},-}',
  '#{session_name}', '#{?@activity,#{@activity},-}', '#{pane_current_path}',
@@ -37,8 +44,6 @@ sub row_project {
  return project($r->[9]);
 }
 my ($self)=grep { $_->[1] eq ($ENV{TMUX_PANE}//'') } @rows;
-my $mission_dir=$ENV{BOARD_MISSION_DIR};
-(my $project=$mission_dir) =~ s{.*/}{};
 my $width=$self ? $self->[28] : ($ENV{COLUMNS}//80);
 my $state=($ENV{XDG_STATE_HOME}||"$ENV{HOME}/.local/state").'/tmux-agents';
 my $socket=(split /,/, $ENV{TMUX}//'')[0] // ''; $socket =~ s{.*/}{};
