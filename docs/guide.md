@@ -407,7 +407,7 @@ was updated. Watch retries after a failed refresh; configuration and project
 path lookups are cached for the lifetime of the command. Every refresh prints
 the full board on the normal screen regardless of pane height; use tmux copy-mode
 to scroll. Each refresh clears the previous screen and scrollback, so history
-contains only the current board. Quitting restores the cursor.
+contains only the current board; scrollback from before `--watch` started is cleared too. Quitting restores the cursor.
 
 Missions come from `${XDG_STATE_HOME:-~/.local/state}/tmux-agents/missions/<project>/M<N>.mission`,
 one `key=value` record per mission. Required keys are `id`, `title`, `owner`,
