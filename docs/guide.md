@@ -354,3 +354,29 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 ## Slow popup startup
 
 Slow shell initialization can delay popups before tmux-agents runs. See [performance diagnostics](performance.md) to measure startup and keep interactive setup out of non-interactive shells.
+
+## Project missions
+
+Track project work without a running tmux server. Every command takes `--from NAME`,
+used as the author of log entries and the default owner of a new mission:
+
+```sh
+tmux-agents mission add "Build mission board" --from my-agent --status design
+tmux-agents mission set M1 --from my-agent --status active --branch feat/board
+tmux-agents mission log M1 "Layout approved" --from my-agent --kind decision
+tmux-agents mission show M1 --from my-agent --log 5
+tmux-agents mission list --from my-agent --all --tsv
+```
+
+`add` prints the allocated ID. `set` changes title, owner, status, branch or worktree;
+status changes also append a progress log. `log` accepts progress (default), decision,
+handoff or done. Statuses are design, plan-ready, active, needs-decision,
+ready-to-push and done. `list` hides done missions unless `--all` is supplied. TSV
+columns are id, status, owner, title, branch, worktree, created and updated, without
+a header. `show` includes fields and the last five log entries by default.
+
+Records live in `${XDG_STATE_HOME:-$HOME/.local/state}/tmux-agents/missions/PROJECT/`,
+using the same project name as agent sessions. Updates preserve unknown record
+fields and publish records atomically. Writers use a directory lock; a busy or stale
+`.lock` produces an error. Remove a stale lock only after verifying no writer remains.
+Values cannot contain tabs or line breaks.
