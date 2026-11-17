@@ -3,7 +3,7 @@
 set -euo pipefail
 here="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
 . "$here/lib.sh"
-usage() { echo 'usage: tmux-agents open NAME --from ME'; }
+usage() { echo 'usage: tmux-agents open NAME [--from ME]'; }
 FROM_PANE=""
 name=""
 while [ "$#" -gt 0 ]; do
@@ -17,7 +17,8 @@ while [ "$#" -gt 0 ]; do
     *) [ -z "$name" ] || die 'expected one agent name'; name="$1"; shift ;;
   esac
 done
-[ -n "$name" ] && [ -n "$FROM_PANE" ] || { usage >&2; exit 1; }
+[ -n "$name" ] || { usage >&2; exit 1; }
+[ -n "$FROM_PANE" ] || trusted_pane || die 'untrusted pane: pass --from ME'
 require_tmux
 ensure_agent_ids
 caller="$(self_pane)"

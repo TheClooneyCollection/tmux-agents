@@ -10,7 +10,7 @@ mkdir -p "$tmp/project/sub" "$tmp/stubs"
 for name in tmux codex claude; do
   cat > "$tmp/stubs/$name" <<'STUB'
 #!/bin/sh
-printf 'unexpected process\n' >> "$MISSION_CALLS"
+printf 'unexpected process: %s %s\n' "$0" "$*" >> "$MISSION_CALLS"
 exit 1
 STUB
   chmod +x "$tmp/stubs/$name"
@@ -141,4 +141,5 @@ check 'contention reached retry boundary' test -s "$MISSION_POLLS"
 check 'retried writer releases lock' test ! -d "$dir/.lock"
 rm "$tmp/stubs/sleep"
 check 'no real agent or tmux invocation'  test ! -e "$MISSION_CALLS"
+[ ! -f "$MISSION_CALLS" ] || cat "$MISSION_CALLS"
 exit "$fail"

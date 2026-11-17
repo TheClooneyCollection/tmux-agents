@@ -5,11 +5,39 @@ here="$(cd "$(dirname "$0")" && pwd)"
 . "$here/lib.sh"
 usage() {
   echo 'usage: tmux-agents chain-config [ROLE] [--main AGENT] [--interface AGENT] [--worker AGENT] [--args] [--sources]'
+  echo '       tmux-agents chain-config set ROLE AGENT [-- ARGS]'
   echo 'Roles: main designer interface worker reviewer runner researcher (secondary aliases interface).'
   echo 'TSV role/agent, optionally args then source; one role without flags prints its agent.'
   echo 'Outside tmux (TMUX unset), only environment/defaults apply; an inaccessible TMUX is an error.'
   echo 'Shows the settings new chains start from, not a running chain'\''s members; use tmux-peers for those.'
 }
+# Settings are literal data. Quote persistence output for tmux.conf, not eval.
+config_quote() {
+  local value="$1" quote="'" escaped="'\\''"
+  printf "'%s'" "${value//$quote/$escaped}"
+}
+if [ "${1:-}" = set ]; then
+  shift
+  [ "$#" -ge 2 ] || die 'set requires ROLE AGENT [-- ARGS]'
+  chain_role_canon "$1" selected
+  agent="$2"; shift 2
+  [ -n "$agent" ] || die 'agent must not be empty'
+  role_args=''
+  if [ "$#" -gt 0 ]; then
+    [ "$1" = -- ] || die 'agent arguments must follow --'
+    shift
+    role_args="$*"
+  fi
+  case "$agent$role_args" in *$'\t'*|*$'\n'*|*$'\r'*) die 'role values must not contain tab, LF or CR' ;; esac
+  require_tmux
+  resolve_codex_homes codex_homes
+  name_kind_for "$agent" >/dev/null || die "unknown $selected '$agent'"
+  tmux set-option -g "@tmux_agents_chain_$selected" "$agent"
+  tmux set-option -g "@tmux_agents_chain_${selected}_args" "${role_args:-none}"
+  printf 'set -g @tmux_agents_chain_%s ' "$selected"; config_quote "$agent"; printf '\n'
+  printf 'set -g @tmux_agents_chain_%s_args ' "$selected"; config_quote "${role_args:-none}"; printf '\n'
+  exit 0
+fi
 role="" sources=0 show_args=0
 args=()
 while [ "$#" -gt 0 ]; do
@@ -17,7 +45,7 @@ while [ "$#" -gt 0 ]; do
     -h|--help) usage; exit 0 ;;
     --args) [ "$show_args" = 0 ] || die 'duplicate --args'; show_args=1; shift ;;
     --sources) [ "$sources" = 0 ] || die 'duplicate --sources'; sources=1; shift ;;
-    --main|--interface|--secondary|--worker)
+    --main|--designer|--interface|--secondary|--worker|--reviewer|--runner|--researcher)
       [ "$#" -ge 2 ] && [ -n "$2" ] || die "$1 needs an agent"
       args+=("$1" "$2"); shift 2 ;;
     main|designer|interface|secondary|worker|reviewer|runner|researcher)
@@ -33,6 +61,14 @@ else
   _TMUX_SETTINGS_LOADED=1
   _TMUX_SETTING_KEYS=() _TMUX_SETTING_VALUES=()
 fi
-chain_options_parse "${args[@]+"${args[@]}"}"
+# Initialize role overrides without consuming query flags.
+# shellcheck disable=SC2119
+chain_options_parse
+for ((i=0; i<${#args[@]}; i+=2)); do
+  chain_role_canon "${args[i]#--}" selected
+  variable="chain_${selected}_override"
+  [ -z "${!variable}" ] || die "duplicate ${args[i]}"
+  printf -v "$variable" '%s' "${args[i+1]}"
+done
 chain_roles_resolve "$role"
 chain_roles_print "$role" "$sources" "$show_args"

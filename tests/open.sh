@@ -9,7 +9,7 @@ trap 'rm -rf "$tmp"' EXIT
 mkdir "$tmp/bin"
 export OPEN_TEST_ROOT="$tmp" TMUX_AGENTS_PREFIX=agents
 export PATH="$tmp/bin:$PATH"
-unset TMUX_PANE TMUX_AGENTS_PINNED
+unset TMUX_PANE TMUX_AGENTS_PINNED CLAUDECODE
 export XDG_STATE_HOME="$tmp/state" TMUX="$tmp/socket-open-$$,1,0"
 cat >"$tmp/bin/tmux" <<'STUB'
 #!/usr/bin/env bash
@@ -125,5 +125,8 @@ if OPEN_FAIL=1 run target --from caller >"$tmp/out" 2>"$tmp/err"; then exit 1; f
 if OPEN_FAIL=1 OPEN_SESSION=agents-project run target --from caller >"$tmp/out" 2>"$tmp/err"; then exit 1; fi
 [ ! -s "$tmp/out" ]
 echo 'ok failed switch or popup scheduling does not report success'
-run --help | grep -F 'open NAME --from ME'
+[ "$(TMUX_AGENTS_PINNED=1 TMUX_PANE=%1 run target)" = 'opened target' ]
+[ "$(CLAUDECODE=1 TMUX_PANE=%1 run target)" = 'opened target' ]
+TMUX_PANE=%1 reject target
+run --help | grep -F 'open NAME [--from ME]'
 echo 'PASS: open'

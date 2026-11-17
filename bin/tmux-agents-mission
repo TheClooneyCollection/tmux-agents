@@ -5,9 +5,11 @@ here="$(cd "$(dirname "$0")" && pwd)"
 . "$here/lib.sh"
 usage() {
   cat <<'HELP'
-usage: tmux-agents mission COMMAND --from ME [arguments]
+usage: tmux-agents mission COMMAND [--from ME] [arguments]
   add TITLE [--owner NAME] [--status S] [--branch B] [--worktree W]
   set ID [--title T] [--owner N] [--status S] [--branch B] [--worktree W]
+         [--notify PEER [--notice]]
+  done ID TEXT [--notify NAME]
   log ID TEXT [--kind progress|decision|handoff|done]
   show ID [--log N]
   list [--all] [--tsv]
@@ -22,24 +24,26 @@ valid_value() {
 }
 case "${1:-}" in -h|--help) usage; exit 0 ;; esac
 command="${1:-}"; [ "$#" -gt 0 ] || die 'mission command required'; shift
-case "$command" in add|set|log|show|list) ;; *) die 'unknown mission command' ;; esac
-from='' kind=progress count=5 all=0 tsv=0
+case "$command" in add|set|done|log|show|list) ;; *) die 'unknown mission command' ;; esac
+from='' notify='' notice=0 kind=progress count=5 all=0 tsv=0
 args=() keys=() values=()
 while [ "$#" -gt 0 ]; do
   valid_value "$1"
   case "$1" in
     -h|--help) usage; exit 0 ;;
-    --from|--title|--owner|--status|--branch|--worktree|--kind|--log)
+    --from|--title|--owner|--status|--branch|--worktree|--kind|--log|--notify)
       option="$1"; [ "$#" -ge 2 ] || die "missing value for $option"
       valid_value "$2"
       case "$option" in
         --from) from="$2" ;;
+        --notify) case "$command" in set|done) ;; *) die '--notify requires set or done' ;; esac; [ -n "$2" ] || die '--notify needs a name'; notify="$2" ;;
         --kind) [ "$command" = log ] || die '--kind requires log'; kind="$2" ;;
         --log) [ "$command" = show ] || die '--log requires show'; count="$2" ;;
         *) case "$command:$option" in set:*|add:--owner|add:--status|add:--branch|add:--worktree) ;; *) die "invalid option $option" ;; esac
            keys+=("${option#--}"); values+=("$2") ;;
       esac
       shift 2 ;;
+    --notice) [ "$command" = set ] || die '--notice requires set'; notice=1; shift ;;
     --all|--tsv)
       [ "$command" = list ] || die "$1 requires list"
       case "$1" in --all) all=1 ;; --tsv) tsv=1 ;; esac; shift ;;
@@ -48,7 +52,12 @@ while [ "$#" -gt 0 ]; do
     *) args+=("$1"); shift ;;
   esac
 done
-[ -n "$from" ] || die '--from is required'
+[ "$notice" = 0 ] || [ -n "$notify" ] || die '--notice requires --notify'
+if [ -n "$notify" ] && [ "$command" = set ]; then
+  has_status=0
+  for key in "${keys[@]+"${keys[@]}"}"; do [ "$key" != status ] || has_status=1; done
+  [ "$has_status" = 1 ] || die '--notify requires --status'
+fi
 case "$kind" in progress|decision|handoff|done) ;; *) die 'unknown log kind' ;; esac
 case "$count" in ''|*[!0-9]*) die '--log must be a nonnegative integer' ;; esac
 for ((i=0; i<${#keys[@]}; i++)); do
@@ -57,12 +66,19 @@ for ((i=0; i<${#keys[@]}; i++)); do
     case "${values[i]}" in design|plan-ready|active|needs-decision|ready-to-push|done) ;; *) die 'unknown mission status' ;; esac
   fi
 done
-case "$command:${#args[@]}" in add:1|set:1|log:2|show:1|list:0) ;; *) die 'wrong number of mission arguments' ;; esac
+case "$command:${#args[@]}" in add:1|set:1|done:2|log:2|show:1|list:0) ;; *) die 'wrong number of mission arguments' ;; esac
 case "$command" in
   add) [ -n "${args[0]}" ] || die 'title must not be empty' ;;
-  log) [ -n "${args[1]}" ] || die 'log text must not be empty' ;;
+  log|done) [ -n "${args[1]}" ] || die 'log text must not be empty' ;;
   set) [ "${#keys[@]}" -gt 0 ] || die 'set requires at least one field' ;;
 esac
+if [ -z "$from" ]; then
+  trusted_pane || die 'untrusted pane: pass --from ME'
+  require_tmux
+  FROM_PANE=''
+  from="$(pane_name "$(self_pane)")"
+  [ -n "$from" ] || die 'this pane has no name; pass --from ME'
+fi
 dir="$(mission_directory)"
 file='' tmp='' locked=0
 # Invoked by traps.
@@ -75,7 +91,7 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 case "$command" in
-  add|set|log)
+  add|set|done|log)
     mkdir -p "$dir" || die 'cannot create mission directory'
     attempts=0
     until mkdir "$dir/.lock" 2>/dev/null; do
@@ -124,14 +140,16 @@ case "$command" in
     values=("$id" "${args[0]}" "$from" design "$now" "$now" ${values[@]+"${values[@]}"})
     write_record
     printf '%s\n' "$id" ;;
-  set|log)
+  set|done|log)
+    if [ "$command" = 'done' ]; then keys+=(status); values+=('done'); fi
     now="$(date +%s)"; old_status="$(get status)"; new_status="$old_status"
     for ((i=0; i<${#keys[@]}; i++)); do
       [ "${keys[i]}" != status ] || new_status="${values[i]}"
     done
     keys+=(updated); values+=("$now")
     write_record
-    if [ "$command" = log ]; then
+    if [ "$command" = log ] || [ "$command" = 'done' ]; then
+      [ "$command" != 'done' ] || kind='done'
       printf '%s\t%s\t%s\t%s\n' "$now" "$from" "$kind" "${args[1]}" >> "$dir/$id.log"
     elif [ "$old_status" != "$new_status" ]; then
       printf '%s\t%s\tprogress\tstatus: %s -> %s\n' "$now" "$from" "$old_status" "$new_status" >> "$dir/$id.log"
@@ -150,3 +168,14 @@ case "$command" in
       fi
     done | sort -k1.2,1n ;;
 esac
+
+# Release the record lock before delivery, which may itself write mission logs.
+if [ -n "$notify" ]; then
+  rmdir "$dir/.lock"; locked=0
+  text="$id status: $old_status -> $new_status"
+  [ "$command" != 'done' ] || text="$id done: ${args[1]}"
+  mode=--note
+  [ "$notice" = 0 ] || mode=--notice
+  "$here/tmux-ask" --from "$from" "$mode" "$notify" "$text" ||
+    die "mission saved, but notification to '$notify' failed; retry the notification only"
+fi
