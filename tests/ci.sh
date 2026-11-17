@@ -47,4 +47,13 @@ if CI_OFFLINE=1 run > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
 grep -q 'cannot list CI runs' "$tmp/err"
 if run missing-ref > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
 if run --unknown > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
+# Nonpassing rows must remain visible after the passing-row budget is used.
+: > "$tmp/runs"
+for ((i=1;i<=7;i++)); do printf '%s\tcompleted\tsuccess\tPassing%s\n' "$i" "$i" >> "$tmp/runs"; done
+printf '8\tcompleted\tfailure\tLateFailure\n9\tin_progress\t\tLatePending\n10\tcompleted\tcancelled\tLateCancelled\n' >> "$tmp/runs"
+if run > "$tmp/out"; then exit 1; else [ "$?" = 1 ]; fi
+grep -qx 'LateFailure: failure (8)' "$tmp/out"
+grep -qx 'LatePending: pending (9)' "$tmp/out"
+grep -qx 'LateCancelled: cancelled (10)' "$tmp/out"
+[ "$(grep -c '^Passing' "$tmp/out")" = 5 ]
 echo 'ok CI success, failure, pending, watch, empty and offline'

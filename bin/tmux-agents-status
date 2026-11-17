@@ -28,18 +28,19 @@ if [ "${#records[@]}" -gt 0 ]; then
   kinds="$(awk -F= '$1=="kind" {n=split(FILENAME,a,"/"); print a[n] "\t" substr($0,6)}' "${records[@]}")"
 fi
 caller="${FROM_PANE:-${TMUX_PANE:-}}"
-self="$(printf '%s\n' "$snapshot" | awk -F '\t' -v caller="$caller" '$1==caller || $2==caller {print $1; exit}')"
+self="$(printf '%s\n' "$snapshot" | STATUS_CALLER="$caller" awk -F '\t' 'BEGIN {caller=ENVIRON["STATUS_CALLER"]} $1==caller || $2==caller {print $1; exit}')"
 [ -n "$self" ] || die 'caller is not a live named agent; pass --from ME'
 name="$(printf '%s\n' "$snapshot" | awk -F '\t' -v p="$self" '$1==p {print $2}')"
 [ -n "$name" ] || die 'this pane has no name; run tmux-peers first'
 target="$self"
 if [ -n "$peer" ]; then
-  target="$(printf '%s\n' "$snapshot" | awk -F '\t' -v peer="$peer" '$2==peer && $10!=1 && $12!=1 {print $1; exit}')"
+  target="$(printf '%s\n' "$snapshot" | STATUS_PEER="$peer" awk -F '\t' 'BEGIN {peer=ENVIRON["STATUS_PEER"]} $2==peer && $10!=1 && $12!=1 {print $1; exit}')"
   [ -n "$target" ] || die "no live agent named '$peer'"
   allowed="$(printf '%s\n' "$snapshot" | awk -F '\t' -v p="$self" -v t="$target" '$1==p {print (p==t || index(" " $13 " "," " t " ")>0)}')"
   [ "$allowed" = 1 ] || die "not connected to '$peer'"
 fi
-printf '%s\n' "$snapshot" | awk -F '\t' -v self="$self" -v target="$target" -v peer="$peer" -v kinds="$kinds" '
+printf '%s\n' "$snapshot" | STATUS_PEER="$peer" STATUS_KINDS="$kinds" awk -F '\t' -v self="$self" -v target="$target" '
+BEGIN {peer=ENVIRON["STATUS_PEER"]; kinds=ENVIRON["STATUS_KINDS"]}
 function role(p, r,n,a) {
   r=f[p,3]; if(r=="") {n=split(f[p,2],a,"-");r=a[n]}
   if(r=="secondary") r="interface"
@@ -101,7 +102,7 @@ if [ -n "$missions" ]; then
   dir="$(mission_directory)"
   for record in "$dir"/M*.mission; do
     [ -f "$record" ] || continue
-    if awk -F= -v owner="$name" -v full="$full" '$1=="owner" {mine=substr($0,7)==owner} $1=="status" {done=$2=="done"} END {exit !(mine && (full || !done))}' "$record"; then
+    if STATUS_OWNER="$name" awk -F= -v full="$full" 'BEGIN {owner=ENVIRON["STATUS_OWNER"]} $1=="owner" {mine=substr($0,7)==owner} $1=="status" {done=$2=="done"} END {exit !(mine && (full || !done))}' "$record"; then
       log="${record%.mission}.log"
       if [ -f "$log" ]; then printf '%s recent log:\n' "${log##*/}"; tail -n 3 "$log"; fi
     fi

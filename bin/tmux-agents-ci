@@ -29,11 +29,12 @@ while IFS= read -r row; do
     result="$(gh run view "$id" --json status,conclusion --jq '[.status,.conclusion] | @tsv')" || die 'cannot read CI result'
     state="${result%%$'\t'*}"; result="${result#*$'\t'}"
   fi
+  passing=0
   if [ "$state" != completed ]; then pending=1; result=pending
   else
-    case "$result" in success|skipped|neutral) ;; *) failed=1; [ -n "$failure_id" ] || failure_id="$id" ;; esac
+    case "$result" in success|skipped|neutral) passing=1 ;; *) failed=1; [ -n "$failure_id" ] || failure_id="$id" ;; esac
   fi
-  if [ "$lines" -lt 5 ]; then printf '%s: %s (%s)\n' "$name" "$result" "$id"; lines=$((lines+1)); fi
+  if [ "$passing" = 0 ] || [ "$lines" -lt 5 ]; then printf '%s: %s (%s)\n' "$name" "$result" "$id"; [ "$passing" = 0 ] || lines=$((lines+1)); fi
 done <<< "$runs"
 if [ "$failed" = 1 ]; then
   echo 'CI failed'

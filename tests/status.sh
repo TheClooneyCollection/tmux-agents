@@ -108,4 +108,16 @@ git add -f HANDOFF.md
 run > "$tmp/out"
 grep -q 'HANDOFF.md: WARNING: tracked' "$tmp/out"
 if grep -q PRIVATE "$tmp/out"; then exit 1; fi
+# Legacy pane names are literal, even when they contain awk escape sequences.
+caller='claude-project-\name'
+peer='codex-project-\target'
+tmux set-option -p -t %0 @agent "$caller"
+tmux set-option -p -t %1 @agent "$peer"
+"$here/bin/tmux-agents" mission add Literal --from "$caller" > /dev/null
+"$here/bin/tmux-agents" mission log M3 'literal owner log' --from "$caller"
+run --from "$caller" > "$tmp/out"
+grep -Fq "you: $caller" "$tmp/out"
+grep -q 'literal owner log' "$tmp/out"
+run --from "$caller" "$peer" > "$tmp/out"
+grep -Fq "peer: $peer" "$tmp/out"
 echo 'ok status read-only snapshot, roles, logs, notes, handoff and alias'
