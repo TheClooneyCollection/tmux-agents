@@ -58,7 +58,7 @@ run_connection() {
     /bin/bash -c '. "$1/lib.sh"; require_tmux' test "$B"
 }
 run_connection denied >"$tmp/denied" 2>&1 && { echo 'FAIL denied socket rejected'; fail=1; }
-check 'permission error explains file argv and escalation' grep -q 'permission denied.*--message-file.*narrow escalation' "$tmp/denied"
+check 'permission error explains stdin quoted argv and escalation' grep -q 'permission denied.*stdin.*quoted argument.*narrow escalation' "$tmp/denied"
 run_connection missing >"$tmp/missing" 2>&1 && { echo 'FAIL missing socket rejected'; fail=1; }
 check 'dead socket error suggests reconnect' grep -q 'socket is missing or inactive.*TMUX' "$tmp/missing"
 PATH="$tmp/bin:$PATH" TEST_TMUX_ERROR=noserver TMUX='' /bin/bash -c '. "$1/lib.sh"; require_tmux' test "$B" >"$tmp/no-server" 2>&1 && { echo 'FAIL absent server accepted'; fail=1; }

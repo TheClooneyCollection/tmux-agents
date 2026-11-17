@@ -17,7 +17,7 @@ require_tmux() {
   if [ -n "${TMUX:-}" ]; then
     case "$error" in
       *"Operation not permitted"*|*"Permission denied"*)
-        die "permission denied connecting to the tmux server; retry with plain argv or --message-file, or use narrow escalation if the sandbox requires it" ;;
+        die "permission denied connecting to the tmux server; retry with stdin or one quoted argument, or use narrow escalation if the sandbox requires it" ;;
       *"No such file or directory"*|*"Connection refused"*|*"no server running"*)
         die "the tmux server socket is missing or inactive; check TMUX and start or reconnect to the intended server" ;;
       *) die "could not reach the tmux server: ${error:-tmux list-sessions failed}; check TMUX and socket access" ;;
@@ -25,7 +25,7 @@ require_tmux() {
   fi
   case "$error" in
     *"Operation not permitted"*|*"Permission denied"*)
-      die "permission denied connecting to the tmux server; retry with plain argv or --message-file, or use narrow escalation if the sandbox requires it" ;;
+      die "permission denied connecting to the tmux server; retry with stdin or one quoted argument, or use narrow escalation if the sandbox requires it" ;;
   esac
   die "no tmux server running"
 }
@@ -455,10 +455,10 @@ request_body() {
   receiver_kind="$(request_receiver_kind "${5:-}")"
   case "$receiver_kind" in
     claude)
-      reply_command="$(printf 'reply with:\ntmux-ask --from %s%s --reply <<'\''MSG'\''\n<your reply>\nMSG' "$3" "${4:+ $4}")"
+      reply_command="$(printf 'reply with:\ntmux-ask --from %s%s --reply %s <<'\''MSG'\''\n<your reply>\nMSG' "$3" "${4:+ $4}" "$1")"
       ;;
     *)
-      reply_command="$(printf 'send a reply as one quoted argument (multi-line text is allowed): tmux-ask --from %s%s --reply -- "answer". For a long report, use --reply --summary "short summary" -- "full report" to retain the body and send only the summary plus a tmux-read pointer.' "$3" "${4:+ $4}")"
+      reply_command="$(printf 'send a reply as one quoted argument (multi-line text is allowed): tmux-ask --from %s%s --reply %s "answer". For a long report, use --reply %s --summary "short summary" -- "full report" to retain the body and send only the summary plus a tmux-read pointer.' "$3" "${4:+ $4}" "$1" "$1")"
       ;;
   esac
   printf '[request from %s to %s via tmux-ask · %s]\n%s\n\n(You are %s. When done, %s)\n[end of request from %s to %s]' "$1" "$3" "$token" "$2" "$3" "$reply_command" "$1" "$3"

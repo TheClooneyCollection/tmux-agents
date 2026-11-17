@@ -52,7 +52,7 @@ for i in "${!targets[@]}"; do
     body="$(request_body sender sample "${targets[$i]}" "${flags[$j]}" "$aid")"
     last_lines="$(printf '%s\n' "$body" | tail -n 2)"
     check "${targets[$i]} resolves as $mode" test "$(kind_for "$aid")" = "$mode"
-    command="tmux-ask --from ${targets[$i]}${flags[$j]:+ ${flags[$j]}} --reply"
+    command="tmux-ask --from ${targets[$i]}${flags[$j]:+ ${flags[$j]}} --reply sender"
     check "${targets[$i]} reply options ${flags[$j]:-none}" contains "$body" "$command"
     case "$mode" in
       claude)
@@ -63,8 +63,8 @@ for i in "${!targets[@]}"; do
         if contains "$body" '--message-file'; then fail 'Claude trailer does not switch to message-file'; fi
         ;;
       *)
-        check 'quoted positional reply uses nameless delimiter' contains "$body" "$command -- \"answer\""
-        check 'long reports use summary and inline body' contains "$body" '--reply --summary "short summary" -- "full report"'
+        check 'quoted positional reply names original requester' contains "$body" "$command \"answer\""
+        check 'long reports use summary and inline body' contains "$body" '--reply sender --summary "short summary" -- "full report"'
         check 'reply preserves end marker' contains "$last_lines" "[end of request from sender to ${targets[$i]}]"
         if contains "$body" '--message-file' || contains "$body" "<<'MSG'"; then fail 'positional trailer stays portable'; fi
         ;;
