@@ -9,6 +9,7 @@
 - Direct long messages support `tmux-ask --summary TEXT` with stdin or positional bodies, retaining the full text behind a `tmux-read` pointer. Nameless `--reply` answers the latest requester; existing file input stays compatible.
 - Role spawns report their resolved agent, args and source, record `@role` and warn about implicit inheritance or dropped role args. `--plain` silences the inheritance warning. All seven roles and their args are snapshotted per chain; new launch flags and `chain-config set` configure them.
 - `tmux-spawn --mission ID --open` combines mission ownership, spawn logging and opening the pane. Composite mission status/completion commands can notify peers; notes and reports with `--mission` append local progress. `tmux-agents ci [--watch] [REF]` summarizes GitHub Actions results.
+- Claude questions keep their needs-you state when a permission notification arrives while the question is open.
 - `tmux-agents board [--watch [SECS]]` shows project missions, live owner trees, saved models, states and progress in a pane, with unassigned agents and a two-second watch default.
 
 ## v1.24.1 (2026-11-16)

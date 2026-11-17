@@ -170,9 +170,14 @@ expect "quoted AskUserQuestion inside tool input is not a question" working
 tool start AskUserQuestion
 expect "AskUserQuestion needs the user at once" needs_you
 check "question marks its own attention" test -n "$(st %1 @attention_since)" -a "$(st %1 @asking)" = 1
+"$B/tmux-agent-report" --pane %1 --perm on
+expect "permission notification keeps the question needing the user" needs_you
+check "question permission notification sets no permission overlay" test -z "$(st %1 @perm_since)"
 tool end AskUserQuestion
 expect "answered question resumes work" working
 check "answer clears question markers" test -z "$(st %1 @asking)$(st %1 @attention_since)"
+"$B/tmux-agent-report" --pane %1 --perm on
+check "permission prompt after the answer sets the overlay" test -n "$(st %1 @perm_since)"
 tool start AskUserQuestion
 turn_start "carry on"
 expect "dismissed question cleared by the next prompt" working

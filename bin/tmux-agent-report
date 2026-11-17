@@ -302,6 +302,7 @@ esac
 
 case "$perm" in
   on)
+    [ "$(tmux show-option -pqv -t "$pane" @asking)" != 1 ] || exit 0
     agent_set_wait "$pane" perm "$(date +%s)"
     exit 0 ;;
   off)
