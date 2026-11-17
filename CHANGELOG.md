@@ -11,7 +11,6 @@
 - `tmux-spawn --mission ID --open` combines mission ownership, spawn logging and opening the pane. Composite mission status/completion commands can notify peers; notes and reports with `--mission` append local progress. `tmux-agents ci [--watch] [REF]` summarizes GitHub Actions results.
 - Claude questions keep their needs-you state when a permission notification arrives while the question is open.
 - Add `install.sh --home DIR` for isolated trial installs, filtering inherited outside-home destinations and skipping tmux state migration. Refuse linked-worktree and outside-home installs before writing unless explicitly forced. Installation discovers Codex accounts only from environment variables; runtime account discovery is unchanged. Reject `/` as HOME and compare physical Git directory paths so tarball copies inside another repository remain installable. `--force` also backs up and replaces conflicting real files.
-
 - `tmux-agents board [--watch [SECS]]` shows project missions, live owner trees, saved models, states and progress in a pane, with unassigned agents and a two-second watch default.
 
 ## v1.24.1 (2026-11-16)
