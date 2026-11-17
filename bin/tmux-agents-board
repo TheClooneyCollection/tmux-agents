@@ -36,7 +36,7 @@ if [ "$watch" = 1 ]; then
   printf '\033[?1049h\033[?25l'
 fi
 while :; do
-  if ! frame="$(BOARD_WATCH="$watch" perl "$here/tmux-agents-board.pl" "$here" 2>&1)"; then
+  if ! frame="$(perl "$here/tmux-agents-board.pl" "$here" 2>&1)"; then
     if [ "$watch" = 0 ]; then printf '%s\n' "$frame" >&2; exit 1; fi
     frame='board: refresh failed (retrying)'
   fi

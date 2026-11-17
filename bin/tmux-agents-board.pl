@@ -19,7 +19,7 @@ my @fields = ('P', '#{pane_id}', '#{?@agent,#{@agent},-}', '#{pane_dead}',
  '#{?@msg_waiting_since,#{@msg_waiting_since},-}', '#{window_id}', '#{?@agent_id,#{@agent_id},-}',
  '#{@state_since}', '#{@worked}', '#{@last_turn}', '#{@turns}', '#{@turn_start}', '#{@started}',
  '#{?@member,#{@member},0}', '#{?@tracked,#{@tracked},0}', '#{?@shell,#{@shell},0}',
- '-', '-', '-', '-', '#{pane_width}', '#{pane_height}');
+ '-', '-', '-', '-', '#{pane_width}');
 open my $tmux, '-|', 'tmux', 'list-panes', '-a', '-F', join("\t", @fields) or die "tmux: $!\n";
 my @rows;
 while (<$tmux>) { chomp; push @rows, [split /\t/, $_, -1]; }
@@ -89,7 +89,7 @@ if (opendir my $dir, $mission_dir) {
   push @data,join("\t",'M',@record{qw(id title owner status updated)});
  }
 }
-push @data,join("\t",'B',$project,$width,$missing,($ENV{BOARD_WATCH} && $self ? $self->[29] : 0));
+push @data,join("\t",'B',$project,$width,$missing);
 store(\%projects,$cache) if $cache;
 $ENV{LIST_NOW}=time;
 $ENV{LIST_BOARD}=1; $ENV{LC_ALL}='C';
