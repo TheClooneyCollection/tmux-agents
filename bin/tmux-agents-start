@@ -5,7 +5,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 . "$here/lib.sh"
 usage() {
   echo 'usage: tmux-agents start AGENT [--name NAME [--exact]] [-- ARGS...]'
-  echo '       tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--main-resume ID] [--secondary AGENT] [--worker AGENT]'
+  echo '       tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--main-resume ID] [--interface AGENT (alias --secondary)] [--worker AGENT]'
 }
 case "${1:-}" in -h|--help) usage; exit 0 ;; '') usage >&2; exit 1 ;; esac
 case "${1:-}:${2:-}" in chain:-h|chain:--help) usage; exit 0 ;; esac

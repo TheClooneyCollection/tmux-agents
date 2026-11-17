@@ -141,7 +141,7 @@ Designer, reviewer, runner and researcher agents, and all role args, are option-
 
 Default args are empty for main, designer, worker and reviewer, `--model sonnet` for interface and researcher, and `--model haiku` for runner. Default args apply only when the resolved agent is the role's default agent (Claude except for the Codex worker). An overridden agent gets no default args; an explicit args option still applies. Reviewer uses Opus by default; set the Fable example above only when a Fable review is requested.
 
-The output shows the settings new chains start from, not the members of a running chain: a chain launched with `--secondary codex`, or whose worker came from an instruction-file preference, still reports the plain settings afterwards. Use `tmux-peers` to see the live members.
+The output shows the settings new chains start from, not the members of a running chain: a chain launched with `--interface codex` (`--secondary` is an alias), or whose worker came from an instruction-file preference, still reports the plain settings afterwards. Use `tmux-peers` to see the live members.
 
 ```sh
 tmux-agents chain-config --sources
@@ -162,7 +162,7 @@ set -g @tmux_agents_chain_worker codex-2nd
 
 Rerun `./install.sh` from your installation checkout after adding a profile so its home receives the skills and rules. Merely setting `CODEX_HOME` does not install them.
 
-The main keeps its agent permission defaults. Claude/Codex secondary and worker members use `sub_auto`, which defaults to `on`. Codex main uses identity pins and notify tracking, but has no turn-start hook: the main uses a plain progress report to show directly typed work before turn end. Ended turns show idle even if the task continues later. See [Starting agents](guide.md#starting-agents).
+The main keeps its agent permission defaults. Claude/Codex interface (secondary as an alias) and worker members use `sub_auto`, which defaults to `on`. Codex main uses identity pins and notify tracking, but has no turn-start hook: the main uses a plain progress report to show directly typed work before turn end. Ended turns show idle even if the task continues later. See [Starting agents](guide.md#starting-agents).
 
 Message length is not a setting. `tmux-ask` always pastes ordinary messages in full. Explicit summary text combined with `--message-file` creates a retained attachment for `tmux-read`; retention is fixed at 7 days. See [message delivery](guide.md#how-messages-flow).
 
