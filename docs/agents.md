@@ -6,7 +6,7 @@ Claude, Codex and configured Codex profiles have full integration today, with th
 
 `tmux-agents start AGENT`, `tmux-spawn [AGENT]`, chain role settings and `tmux-agents chain-config` accept `claude`, `codex`, configured Codex profiles and executable basenames on PATH. A configured profile takes precedence over a same-named executable. Supply a command name, not a path or a shell command string. `start chain` retains its special meaning as the chain launcher.
 
-For `tmux-spawn`, put the agent selector before options. A leading single word is validated as an agent selector; use the existing options-first task form for a bare task instead. `tmux-agents start AGENT -- ...` and `tmux-spawn AGENT [options] -- ARGS...` pass explicit agent arguments through unchanged; spawn records them and restores them on resume. Other executables receive no injected initial prompt and no Claude/Codex flags, but still receive arguments after `--`. Validation by `chain-config` does not run the executable, and its role/value/source output is unchanged.
+Prefer `tmux-spawn --role ROLE` for chain helpers. A user-requested agent override can precede options or follow `--role ROLE`; inspect the printed resolution and any role-args warning. A leading single word is validated as an agent selector; use the existing options-first task form for a bare task instead. `tmux-agents start AGENT -- ...` and `tmux-spawn AGENT [options] -- ARGS...` pass explicit agent arguments through unchanged; spawn records them and restores them on resume. Other executables receive no injected initial prompt and no Claude/Codex flags, but still receive arguments after `--`. Validation by `chain-config` does not run the executable, and its role/value/source output is unchanged.
 
 ## Capabilities
 
@@ -38,15 +38,23 @@ tmux-spawn my-agent --from ME --name review
 
 Inspect its pane or preview to confirm the input prompt is ready. Then send the work:
 
+Claude can send the brief with quoted heredoc stdin:
+
 ```sh
-message_dir="${TMPDIR:-/tmp}/tmux-agents/$ME"
-mkdir -p "$message_dir"
-brief_file="$(mktemp "$message_dir/brief.XXXXXX")"
-# write the review brief to "$brief_file"; remove after a successful send
-tmux-ask --from ME PEER --message-file "$brief_file"
+tmux-ask PEER <<'MSG'
+Review the current diff in src/parser.
+Report concrete findings and the checks you ran.
+MSG
 ```
 
-Put the concrete goal, paths and constraints in the file. `--message-file` reads a literal message from one readable regular file up to 1 MiB; symlinks are rejected, positional text cannot be combined with it, and stdin is ignored. Create each message file with `mktemp` under `${TMPDIR:-/tmp}/tmux-agents/$ME/` so agents sharing a working directory cannot overwrite one another or dirty the project; remove it after a successful send or keep the unique file for a retry. Do not assume that the agent can load the tmux-agents or agent-chain skill. The message envelope supplies the sender, receiver and reply command; the agent still needs shell access and permission to execute that command. Use explicit `--from` for its replies and later commands because generic identity pinning is not guaranteed.
+Codex passes one quoted multi-line positional argument:
+
+```sh
+tmux-ask PEER 'Review the current diff in src/parser.
+Report concrete findings and the checks you ran.'
+```
+
+Add `--from ME` for unpinned Codex or an unknown executable whose identity is not pinned. Put the goal, paths and constraints directly in the body; add `--summary TEXT` for a large report to retain its full body and deliver a `tmux-read` pointer. Do not assume that the other agent can load an installed skill. The envelope supplies the sender, receiver and reply command; that agent needs shell access and permission to execute it. Unknown executables use explicit `--from` for replies and later commands.
 
 Normal queue rules still apply after you send: `queued` means the message is retained, so do not send it again. That differs from a spawn task reported as not sent. Use `tmux-ask --pending` to inspect undelivered messages. Closing an unsupported conversation does not make it resumable; a new launch is a new conversation.
 

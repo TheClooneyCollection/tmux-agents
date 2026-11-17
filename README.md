@@ -121,7 +121,7 @@ See [Configuration](docs/configuration.md) for tmux settings, defaults and envir
 4. Press `prefix + a` to watch it. Enter opens it in a popup, `prefix + d` goes back.
 5. Tell your original agent: "start the chain". It becomes the main agent you talk to, with a designer for planning and, after approval, an interface dispatching workers per task (the `agent-chain` skill).
 
-From a shell, `tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--main-resume ID] [--interface AGENT] [--worker AGENT]` opens a new window in DIR (default: the current directory), named after its basename (or `--name NAME`), and starts your selected main, giving a Claude/Codex main the chain request. Use `--target session[:index]` to create the window detached in an existing session, including from outside tmux. Success prints the new pane ID. Each role accepts Claude, Codex, a configured profile or an executable basename on PATH; `secondary` remains an alias for `interface`. Inspect role agents and model arguments with `tmux-agents chain-config --args --sources`. For another independent agent, split the pane manually and run `tmux-agents start codex` in the new pane, then ask either agent to connect them. See [Starting agents](docs/guide.md#starting-agents) for names, profiles, arguments and exit behavior.
+From a shell, `tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--main-resume ID] [--interface AGENT] [--worker AGENT] [--designer AGENT] [--reviewer AGENT] [--runner AGENT] [--researcher AGENT]` opens a new window in DIR (default: the current directory), named after its basename (or `--name NAME`), and starts your selected main, giving a Claude/Codex main the chain request. Use `--target session[:index]` to create the window detached in an existing session, including from outside tmux. Success prints the new pane ID. Each role accepts Claude, Codex, a configured profile or an executable basename on PATH; `secondary` remains an alias for `interface`. Inspect role agents and model arguments with `tmux-agents chain-config --args --sources`. For another independent agent, split the pane manually and run `tmux-agents start codex` in the new pane, then ask either agent to connect them. See [Starting agents](docs/guide.md#starting-agents) for names, profiles, arguments and exit behavior.
 
 Or let your agent show you: say "tmux-agents quick start".
 
@@ -169,12 +169,12 @@ Agents run these for you; each takes `--help`.
 | --- | --- |
 | `tmux-connect` | Name this pane and link it to another |
 | `tmux-rename` | Change an agent's label while keeping its identity, history and links |
-| `tmux-ask` | Send a message; add summary text to `--message-file PATH` for a retained attachment |
+| `tmux-ask` | Send a message; `--summary TEXT` retains the full body; `--reply` answers the latest requester |
 | `tmux-read` | Read a retained message by ID |
 | `tmux-notes` | Read agent notes without opening a message turn |
 | `tmux-shell` | Open a shell or run `--command CMD`; `--from NAME` gives an agent ownership |
-| `tmux-spawn` | Start a sub agent, or a long-lived `--member`, hidden or with `--split` |
-| `tmux-agents` | The agent list (`prefix + a`); `start` launches a tracked agent or chain; `chain-config` queries roles; `chain` picks a project; `main-sequence` opens configured project windows |
+| `tmux-spawn` | Start a helper with `--role`, assign `--mission`, show it with `--open`, or keep a long-lived `--member` |
+| `tmux-agents` | The agent list (`prefix + a`); `start` launches a tracked agent or chain; `status` (alias `resume`) orients; `ci --watch` watches checks; `chain-config` queries/sets roles; `chain` picks a project; `main-sequence` opens configured project windows |
 | `tmux-peers`, `tmux-peek` | Show connections; read another pane |
 | `tmux-dismiss`, `tmux-disconnect` | Close a sub agent; unlink panes |
 | `tmux-agent-report` | Report progress for the status line |

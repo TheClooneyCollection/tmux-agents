@@ -117,13 +117,13 @@ set -g @tmux_agents_chain_reviewer_args "--model fable"
 set -g @tmux_agents_chain_worker work
 ```
 
-Configure the `work` profile first as above. Settings apply to new chains, not existing members or resumed agents. From a shell, override main, interface or worker for this chain:
+Configure the `work` profile first as above. Settings apply to new chains, not existing members or resumed agents. From a shell, override any role with `--main`, `--designer`, `--interface`, `--worker`, `--reviewer`, `--runner` or `--researcher` for this chain:
 
 ```sh
 tmux-agents start chain . --main codex --interface claude --worker work
 ```
 
-The order of preference is this-chain explicit user choice or CLI flag, then an applicable user's `CLAUDE.md`/`AGENTS.md` role preference, then a non-empty environment override, then a non-empty tmux option, then the built-in default. The skill passes instruction-file preferences as explicit overrides; the CLI does not read Markdown. Conflicting instruction files follow the agent's normal instruction hierarchy.
+The order of preference is this-chain explicit user choice or CLI flag, then an applicable user's `CLAUDE.md`/`AGENTS.md` role preference, then a non-empty environment override, then a non-empty tmux option, then the built-in default. Apply instruction-file preferences through launch flags or `chain-config set` before launching; the CLI does not read Markdown. Conflicting instruction files follow the agent's normal instruction hierarchy.
 
 Window placement and naming are per-launch options: `--target session[:index]` creates a detached window in an existing session, and `--name NAME` overrides the directory-derived window name. These options can appear in any order with DIR and the role flags; they do not change role selection or validation. See [Starting agents](guide.md#starting-agents) for socket selection, output and examples.
 
@@ -132,16 +132,18 @@ The main setting only selects the agent launched by `tmux-agents start chain`. T
 ### Inspecting the choices
 
 ```sh
-tmux-agents chain-config [ROLE] [--main AGENT] [--interface AGENT] [--worker AGENT] [--args] [--sources]
+tmux-agents chain-config [ROLE] [--main AGENT] [--interface AGENT] [--worker AGENT] [--designer AGENT] [--reviewer AGENT] [--runner AGENT] [--researcher AGENT] [--args] [--sources]
 ```
 
-This read-only query needs no `--from` and creates no window, pane or agent record. With no role argument, it prints TSV rows in `main`, `designer`, `interface`, `worker`, `reviewer`, `runner`, `researcher` order, with role and agent columns. `--args` adds args (`-` when empty); `--sources` adds `explicit`, `env`, `option` or `default` after args when both are requested. A selected role without either flag prints only its agent. `secondary` is an alias for `interface`, including `--secondary`; using both explicit flags is an error. Explicit flags validate hypothetical choices without changing settings. File preferences passed by the skill appear as `explicit`.
+This read-only query needs no `--from` and creates no window, pane or agent record. With no role argument, it prints TSV rows in `main`, `designer`, `interface`, `worker`, `reviewer`, `runner`, `researcher` order, with role and agent columns. `--args` adds args (`-` when empty); `--sources` adds `positional`, `chain`, `option` or `default` after args when both are requested. A selected role without either flag prints only its agent. `secondary` is an alias for `interface`, including `--secondary`; using both explicit flags is an error. Explicit flags validate hypothetical choices without changing settings. Launch overrides are included in the chain snapshot.
 
-Designer, reviewer, runner and researcher agents, and all role args, are option-only settings, with no environment layer or explicit role flags for those four agents. Interface retains `TMUX_AGENTS_CHAIN_SECONDARY` and checks its own option before the secondary alias. Args use `@tmux_agents_chain_<role>_args`; interface falls back to `@tmux_agents_chain_secondary_args`. Args are literal words separated by spaces, without shell quoting; tabs, newlines and carriage returns are rejected. `none` explicitly clears args.
+Every role has a per-chain snapshot: `TMUX_AGENTS_CHAIN_<ROLE>` and `TMUX_AGENTS_CHAIN_<ROLE>_ARGS`, using `MAIN`, `DESIGNER`, `SECONDARY` (interface's legacy environment name), `WORKER`, `REVIEWER`, `RUNNER` and `RESEARCHER`. `start chain` resolves all seven once and `tmux-spawn` forwards them. Queries inside that chain use its snapshot (source `chain`); changing live defaults does not rewrite running chains or resumed agents. Interface checks its own option before the secondary alias. Args use `@tmux_agents_chain_<role>_args`; interface falls back to `@tmux_agents_chain_secondary_args`. Args are literal words separated by spaces, without shell quoting; tabs, newlines and carriage returns are rejected. `none` explicitly clears args.
 
 Default args are empty for main, designer, worker and reviewer, `--model sonnet` for interface and researcher, and `--model haiku` for runner. Default args apply only when the resolved agent is the role's default agent (Claude except for the Codex worker). An overridden agent gets no default args; an explicit args option still applies. Reviewer uses Opus by default; set the Fable example above only when a Fable review is requested.
 
-The output shows the settings new chains start from, not the members of a running chain: a chain launched with `--interface codex` (`--secondary` is an alias), or whose worker came from an instruction-file preference, still reports the plain settings afterwards. Use `tmux-peers` to see the live members.
+`tmux-agents status` includes the role table. `chain-config` shows resolved configuration, not live membership; `tmux-peers` shows members. Outside a chain snapshot, it shows the settings a new chain will use.
+
+`tmux-agents chain-config set ROLE AGENT [-- ARGS]` validates the selection, updates the live `@tmux_agents_chain_<role>` and `_args` tmux options, and prints `set -g` lines to persist in tmux.conf. Existing snapshots keep their launch choices. Configure a profile before selecting it; do not silently replace its name with plain `codex`.
 
 ```sh
 tmux-agents chain-config --sources
@@ -149,7 +151,7 @@ tmux-agents chain-config worker
 tmux-agents chain-config worker --worker work --sources
 ```
 
-A selected-role query validates that role only; an all-role query and `start chain` validate all three. Invalid choices fail with no partial stdout; launch validation happens before creating a window. Empty explicit values and repeated flags are errors. Empty environment overrides and options fall through to the next source. Outside tmux (`TMUX` unset), queries use environment values and defaults without consulting the default server; options are unavailable. If `TMUX` is set but its socket cannot be reached, the query fails rather than presenting defaults as resolved settings. Role settings have no tmux global-environment fallback.
+A selected-role query validates that role only; an all-role query and `start chain` validate all seven. Invalid choices fail with no partial stdout; launch validation happens before creating a window. Empty explicit values and repeated flags are errors. Empty environment overrides and options fall through to the next source. Outside tmux (`TMUX` unset), queries use environment values and defaults without consulting the default server; options are unavailable. If `TMUX` is set but its socket cannot be reached, the query fails rather than presenting defaults as resolved settings. Role settings have no tmux global-environment fallback.
 
 ### Migrating an instruction-file preference
 
@@ -164,7 +166,7 @@ Rerun `./install.sh` from your installation checkout after adding a profile so i
 
 The main keeps its agent permission defaults. Claude/Codex interface (secondary as an alias) and worker members use `sub_auto`, which defaults to `on`. Codex main uses identity pins and notify tracking, but has no turn-start hook: the main uses a plain progress report to show directly typed work before turn end. Ended turns show idle even if the task continues later. See [Starting agents](guide.md#starting-agents).
 
-Message length is not a setting. `tmux-ask` always pastes ordinary messages in full. Explicit summary text combined with `--message-file` creates a retained attachment for `tmux-read`; retention is fixed at 7 days. See [message delivery](guide.md#how-messages-flow).
+Message length is not a setting. `tmux-ask` always pastes ordinary messages in full. `--summary TEXT` with a positional or stdin body creates a retained attachment for `tmux-read`; retention is fixed at 7 days. See [message delivery](guide.md#how-messages-flow).
 
 ## Project launchers
 
