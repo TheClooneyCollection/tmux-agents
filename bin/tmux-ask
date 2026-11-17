@@ -533,7 +533,6 @@ self="$(self_pane)"
 require_agent_pane "$self"
 if [ -z "$target" ]; then
   requester="$(tmux show-options -pqv -t "$self" @last_requester)"
-  [ -n "$requester" ] || requester="$(tmux show-options -pqv -t "$self" @owed_to)"
   [ -n "$requester" ] || die 'no remembered requester; use --reply NAME'
   target="$(find_pane_by_id "$requester")"
   [ -n "$target" ] || die 'latest requester is unavailable; use --reply NAME'

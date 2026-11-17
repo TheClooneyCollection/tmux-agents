@@ -48,8 +48,10 @@ reply() { "$B/tmux-ask" --from receiver --reply "$@"; }
 # A lone reply argument without stdin explains both unambiguous forms.
 reject reply 'one positional body' </dev/null
 grep -Fq -- '--reply -- "text" or --reply NAME "text"' "$tmp/error" || fail 'ambiguous reply guidance'
-# A receiver with no requests cannot guess where to reply.
+# Retired owed state cannot supply a requester after the last request is absent.
+tmux set -p -t %1 @owed_to "$(pane_agent_id %0)"
 reject reply -- 'no requester'
+tmux set -pu -t %1 @owed_to
 grep -q 'no remembered requester' "$tmp/error" || fail 'missing requester error'
 # Actual delivered requests remember the latest sender, including top-level agents.
 ask receiver 'first request'
