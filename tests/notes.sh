@@ -173,23 +173,13 @@ tmux set -p -t "$pane" @agent receiver
 tmux set -p -t "$pane" @agent_id "$receiver"
 notes --keep-unread >"$tmp/read"
 grep -q 'arrived while closed' "$tmp/read" || fail 'reopened inbox'
-# A PATH stub observes best-effort mission logging, including failure.
-cat > "$tmp/bin/fleet-command" <<'STUB'
-#!/bin/sh
-printf '%s\n' "$@" > "$NOTES_MISSION_LOG"
-exit "${NOTES_MISSION_EXIT:-0}"
-STUB
-chmod +x "$tmp/bin/fleet-command"
-export PATH="$tmp/bin:$PATH" NOTES_MISSION_LOG="$tmp/mission"
+# Mission progress is written to the local store and the note remains readable.
 mission_id="$("$B/tmux-agents-mission" add --from sender 'Note progress')"
 ask --any --mission "$mission_id" receiver 'mission progress'
-grep -qx progress "$tmp/mission" || fail 'mission kind'
-grep -qx "$mission_id" "$tmp/mission" || fail 'mission ID'
-export NOTES_MISSION_EXIT=1
-ask --any --mission "$mission_id" receiver 'still saved' 2>"$tmp/warning"
-grep -q 'mission log failed' "$tmp/warning" || fail 'mission warning'
+"$B/tmux-agents-mission" show --from sender "$mission_id" >"$tmp/mission"
+grep -q $'sender\tprogress\tmission progress' "$tmp/mission" || fail 'local mission log'
 notes --keep-unread >"$tmp/read"
-grep -q 'still saved' "$tmp/read" || fail 'mission failure lost note'
+grep -q 'mission progress' "$tmp/read" || fail 'mission note missing'
 notes >"$tmp/read"
 [ "$(notes --count)" = 0 ] || fail 'final count'
 [ -z "$(notes_summary "$receiver" receiver)" ] || fail 'empty summary'

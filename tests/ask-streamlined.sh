@@ -18,11 +18,6 @@ exec cat
 STUB
 cp "$tmp/bin/claude" "$tmp/bin/codex"
 chmod +x "$tmp/bin/claude" "$tmp/bin/codex"
-cat > "$tmp/bin/fleet-command" <<'STUB'
-#!/bin/sh
-exit 1
-STUB
-chmod +x "$tmp/bin/fleet-command"
 export PATH="$tmp/bin:$PATH" TMUX_SPAWN_BIN="$tmp/bin"
 tmux -L "$sock" -f /dev/null new-session -d cat
 tmux -L "$sock" has-session || fail 'no test server'
@@ -152,7 +147,7 @@ body, received = (pathlib.Path(p).read_text() for p in sys.argv[1:])
 assert received.split('\n', 1)[1].split('\n\n(You are ', 1)[0] == body
 PY
 [ ! -e NEVER ] || fail 'literal shell text executed'
-# Local mission logs work without Fleet; failures do not publish a note/report.
+# Local mission log failures do not publish a note/report.
 mission="$("$B/tmux-agents-mission" add --from sender 'Messaging flow')"
 ask --note --mission "$mission" receiver $'progress line one\nline two'
 "$B/tmux-agents-mission" show --from sender "$mission" >"$tmp/mission"

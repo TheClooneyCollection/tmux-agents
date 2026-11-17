@@ -453,7 +453,7 @@ marked as needing no response, which stops endless back-and-forth.
               stdin is ignored in both modes; put options before the summary
 --from ME: your own name (needed where $TMUX_PANE is wrong, e.g. Codex)
 --note:    store a quiet note without pasting or starting a turn
---mission ID: with --note, log local progress; fleet-command is best-effort
+--mission ID: with --note, append progress to the local mission log
 --notice:  a message that needs no answer (tmux-connect sends one when
            it connects agents in different windows)
 --any:     send to a named pane you aren't connected to (the reply
@@ -590,9 +590,6 @@ if [ "$note" -eq 1 ]; then
   fi
   notes_write "$to_id" "$from_id" "$me" "$message_id" "$msg"
   notes_start_digest "$to_id"
-  if [ -n "$mission" ] && command -v fleet-command >/dev/null 2>&1; then
-    fleet-command --from "$me" log "$mission" "$msg" --kind progress || printf 'warning: note saved, mission log failed\n' >&2
-  fi
   printf 'noted to %s (%s)\n' "$to_name" "${peer:-closed}"
   exit 0
 fi
