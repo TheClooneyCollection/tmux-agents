@@ -3,7 +3,6 @@
 ## Unreleased
 
 - The mission board uses status glyphs and terminal colour (`NO_COLOR` disables it), orders missions newest first and sibling agents by attention, and animates working glyphs at the chip frame rate when the full board fits in the pane.
-
 - `tmux-agents board [--watch [SECS]]` shows project missions, live owner trees, saved models, states and progress in a pane, with unassigned agents and a two-second watch default.
 
 ## v1.24.1 (2026-11-16)

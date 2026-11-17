@@ -14,8 +14,8 @@ Decision (user, 2026-11-17):
 - Missions sort newest created first.
 - In `--watch`, working glyphs spin with the chip's frames at
   `@tmux_agents_chip_fps`. Data still refreshes at the watch interval. A board
-  taller than the pane steps one frame per refresh, so it never clears the
-  screen between refreshes.
+  that fills or exceeds the pane steps one frame per refresh, since tick
+  repaints would scroll it.
 - Colour only on a terminal and only without `NO_COLOR`; piped output stays plain
   text with a static `⠿` for working.
 

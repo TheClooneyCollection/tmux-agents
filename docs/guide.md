@@ -412,7 +412,7 @@ contains only the current board; scrollback from before `--watch` started is cle
 Terminal output uses colour unless `NO_COLOR` is nonempty; piped output stays plain.
 Working glyphs animate in watch mode at `@tmux_agents_chip_fps` (default 10,
 clamped to 1..30); boards that fill or exceed the pane height advance only on
-data refresh, preserving scrollback between refreshes. Missions appear newest
+data refresh, so ticks never scroll the pane. Missions appear newest
 created first, and sibling agents sort by attention state, then working, idle
 and done, keeping pane order for ties.
 
