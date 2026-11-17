@@ -33,14 +33,18 @@ Exiting saves work, clears agent state and returns to the shell. Reusing a named
 For another independent agent, split manually and run `start` there. For a connected helper, ask your agent to use `tmux-spawn --split`.
 
 ```sh
-tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--main-resume ID] [--secondary AGENT] [--worker AGENT]
+tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--main-resume ID] [--interface AGENT] [--worker AGENT]
 ```
 
 This opens a window in DIR (default `$PWD`) and starts the selected main. Without `--target`, it opens and focuses the new window in the current tmux session. With `--target session[:index]`, it creates a detached window in an existing session without changing focus; a bare session uses its next free window index. Target mode needs no caller pane or `TMUX` variable when tmux can reach the existing server. The window name is `--name NAME`, or DIR's basename by default (`root` for the filesystem root). Both `automatic-rename` and `allow-rename` are disabled before the agent starts. Chain `--name` names the window; `start AGENT --name` names the agent pane.
 
-Add `--main-resume ID` to resume only the main conversation; the secondary and worker start fresh. Claude receives `--resume ID`, then the launcher waits for its empty input prompt, submits `/rc`, and sends the chain brief. If `/rc` opens the already-connected Remote Control management dialog, the launcher uses its Esc-to-continue action first. Codex and configured Codex profiles receive `resume ID` with the brief, without `/rc`. Chain naming is unchanged. The option expects a conversation UUID from Claude's project session file or a rollout file in the selected Codex home. Missing, malformed, unavailable or wrong-kind IDs warn on stderr and start a fresh main; unsupported executables also warn and start fresh. Stdout remains only the pane ID. If Claude does not reach an empty prompt within about a minute, a warning appears in its pane and the brief is not sent; resolve startup dialogs and send the brief manually.
+Add `--main-resume ID` to resume only the main conversation; mission agents start fresh. Claude receives `--resume ID`, then the launcher waits for its empty input prompt, submits `/rc`, and sends the chain brief. If `/rc` opens the already-connected Remote Control management dialog, the launcher uses its Esc-to-continue action first. Codex and configured Codex profiles receive `resume ID` with the brief, without `/rc`. Chain naming is unchanged. The option expects a conversation UUID from Claude's project session file or a rollout file in the selected Codex home. Missing, malformed, unavailable or wrong-kind IDs warn on stderr and start a fresh main; unsupported executables also warn and start fresh. Stdout remains only the pane ID. If Claude does not reach an empty prompt within about a minute, a warning appears in its pane and the brief is not sent; resolve startup dialogs and send the brief manually.
 
-A Claude/Codex main receives the chain request; other executables receive no initial prompt, so send the actual brief manually with `tmux-ask` after they reach their prompt. For Claude/Codex, the [agent-chain skill](../skills/agent-chain/SKILL.md) creates its secondary and worker members. Each role accepts Claude, Codex, a configured Codex profile or an executable basename on PATH; defaults are `claude`/`claude`/`codex`. Inspect them with `tmux-agents chain-config --sources`; see [Chain roles](configuration.md#chain-roles) for precedence and instruction-file preferences.
+A Claude/Codex main receives the chain request; other executables receive no initial prompt, so send the actual brief manually with `tmux-ask` after they reach their prompt. For Claude/Codex, the [agent-chain skill](../skills/agent-chain/SKILL.md) starts mission teams: main opens a designer's pane for discussion, then after plan approval spawns an interface member to dispatch independent workers. Reviewer, runner and researcher serve individual tasks. Hidden panes are the default; split only when requested. `secondary` remains an alias for `interface`, including `--secondary`.
+
+Inspect all seven roles and model arguments with `tmux-agents chain-config --args --sources`; roles accept Claude, Codex, configured profiles or executable basenames on PATH. Main/designer/reviewer default to Claude Opus, interface/researcher to Claude Sonnet, worker to Codex and runner to Claude Haiku (prefer scripts for repeatable runs). Fable review or design is opt-in when the user asks. See [Chain roles](configuration.md#chain-roles) for settings and precedence.
+
+Main tracks independent missions without a cap using `tmux-agents mission add --from ME TITLE`, `set --from ME ID --status S --owner O`, `log --from ME ID TEXT --kind K`, `show --from ME ID` and `list --from ME`; `tmux-agents board --watch` shows the live view. Mission state lives in per-mission key=value records, written only through the CLI. Designers mark plans ready; interfaces dispatch approved parts, review before landing and report ready-to-push. After user push approval, main grants one interface the landing turn; that interface rebases, lands with `git merge --ff-only`, pushes, watches CI itself or through runner, sets `done` and replies. Main then dismisses the mission team. Routine updates are notes. See the chain skill for mission flow, worktrees and landing.
 
 Options can appear before or after DIR. All three role choices are validated before creating the window. Success writes exactly the new pane ID followed by a newline to stdout; errors go to stderr with a nonzero exit status.
 
@@ -153,7 +157,7 @@ printf '%s unread' "$unread"
 
 Claude's `UserPromptSubmit` hook supplies an unread-note summary at turn start, with sender counts, the latest first line and the command to read them; it is silent with no unread notes. Codex has no prompt hook, so its skill requires `tmux-notes --from ME` once at the start of each turn. A hook summary leaves notes unread; a successfully delivered digest advances the cursor to its last included note.
 
-Digests apply to all tracked idle or done agents, including secondary agents and sub agents. An idle receiver gets a digest notice after about 5 minutes, including sender counts and latest first lines. It requires new unread notes since the previous digest and skips working, needs-you and permission states. After another idle interval, a new batch gets a digest beginning with `Continuing from last update ...`; it contains only new notes. Both agents reset continuation after user speech, so the next digest starts from the new idle period. Claude uses its user prompt hook, excluding notice hooks. Codex uses a verified turn-end notification whose input array contains no tmux-ask header; an absent array or an older message header does not reset it. No new notes means no digest. It works even when the chip is off. Set the [note digest interval](configuration.md#note-digests) to `0` to disable it.
+Digests apply to all tracked idle or done agents, including interface agents and sub agents. An idle receiver gets a digest notice after about 5 minutes, including sender counts and latest first lines. It requires new unread notes since the previous digest and skips working, needs-you and permission states. After another idle interval, a new batch gets a digest beginning with `Continuing from last update ...`; it contains only new notes. Both agents reset continuation after user speech, so the next digest starts from the new idle period. Claude uses its user prompt hook, excluding notice hooks. Codex uses a verified turn-end notification whose input array contains no tmux-ask header; an absent array or an older message header does not reset it. No new notes means no digest. It works even when the chip is off. Set the [note digest interval](configuration.md#note-digests) to `0` to disable it.
 
 For a message already saved in a file, use `--message-file`:
 
@@ -201,6 +205,8 @@ tmux-spawn --from ME --name auth-review --message-file "$task_file"
 
 Helpers inherit the named caller's recorded agent kind and Codex profile, ahead of the calling process's environment. Without a recorded kind, the pinned agent or configured `CODEX_HOME` supplies the default. Plain `codex` uses its default home. To choose another, put `claude`, `codex`, a configured profile or an executable basename before the options. For other executables, a supplied spawn task is not sent: use the printed full name and resend the actual brief with `tmux-ask` once the agent is at its prompt. See [manual task delivery](agents.md#sending-the-first-task). They open hidden, one window each in a project session such as `agents-api`. Use the full name printed by spawn; [naming rules](#renaming-agents) apply.
 
+`tmux-spawn --role ROLE --from ME` selects a role's configured agent, model arguments and name; `--name` overrides the name. A positional agent wins over the role agent, dropping role args if different. `-- ARGS` replaces role args; bare `--` clears them. Roles apply only to new helpers, not main or resumed agents. Inspect them with `tmux-agents chain-config --args`.
+
 Pass agent CLI arguments after `--`. They follow the flags tmux-agents adds, work with `--split`, `--member` and `--for`, and are saved for `--resume`. On resume, omit `--` to reuse saved args, supply `-- ARGS...` to replace and save them, or use a bare `--` to clear them:
 
 ```sh
@@ -236,7 +242,7 @@ Splits keep the same ownership and depth rules and do not switch your focus. New
 | `ctrl-f` | Resume following new output; selecting another agent also resumes. |
 | `page-up/down` | Page the agent list. |
 
-Names shorten under project headings. Search parts, such as `claude tmux secondary`, rather than a full hyphenated name. A hidden agent's bell displays an alert; it alone proves neither completion nor a blocker.
+Names shorten under project headings. Search parts, such as `claude tmux interface`, rather than a full hyphenated name. A hidden agent's bell displays an alert; it alone proves neither completion nor a blocker.
 
 ### States and worked time
 
@@ -257,9 +263,9 @@ Done agents show their last report as `done · <text>` in list activity and the 
 
 Manual clearing with Claude `/clear` or Codex `/new` is supported. Tracking and `tmux-spawn --resume` follow the newest conversation when its hooks report it. Only a verified Codex thread switch treats its first turn end as current, drops an absent prior delivery token, and leaves any cross-conversation reply obligation unchanged without sending a stop reminder; later notifications retain the normal stale-delivery guard. Existing pane names, members and connections stay in place; re-brief the chain through its existing owners.
 
-After clearing, say "cleared, resume please" or "清完了，继续" to use the agent-chain skill's rejoining flow. Main restores secondary's role, secondary restores worker's role, and main reviews the project-root `HANDOFF.md` saved with wrap-up. It lists important handoff items for selection and continues only work the user selected; restoring roles does not restart every old task. The handoff stays locally excluded from Git and is never committed. Remove handled entries and delete the file when everything is completed, explicitly dropped or saved in an approved durable record.
+After clearing, say "cleared, resume please" or "清完了，继续" to use the agent-chain skill's rejoining flow. Main restores each mission interface's role (including old secondary names), and interface restores its workers' roles. Main reviews the project-root `HANDOFF.md` saved with wrap-up. It lists important handoff items for selection and continues only work the user selected; restoring roles does not restart every old task. The handoff stays locally excluded from Git and is never committed. Remove handled entries and delete the file when everything is completed, explicitly dropped or saved in an approved durable record.
 
-The rejoining main also updates its uniquely matched agent row with `tmux-agents main-sequence set NAME resume=ID`, then verifies it with `main-sequence list`. `ID` is the new conversation ID, not the stable agent ID. Claude's prompt hook records it at turn start; Codex's first new-thread turn end records it later, so secondary can finish that update after main's post-clear turn. Until the fresh ID is confirmed, the update stays pending. This does not create missing rows or change plain shell/command rows.
+The rejoining main delegates updating its uniquely matched agent row to interface or runner with `tmux-agents main-sequence set NAME resume=ID`, then verifies it with `main-sequence list`. `ID` is the new conversation ID, not the stable agent ID. Claude's prompt hook records it at turn start; Codex's first new-thread turn end records it later, so interface can finish that update after main's post-clear turn. Until the fresh ID is confirmed, the update stays pending. This does not create missing rows or change plain shell/command rows.
 
 Helpers report progress with `tmux-agent-report --from ME "running tests"`. This starts work from idle or done. Every ended turn returns to idle or done, including a turn waiting for CI, a background command or another agent. A notice-only turn runs as working from idle or done, but preserves existing needs-you attention. Codex has no turn-start hook: directly typed work may show idle until a report or turn-end notification. Codex runtime approval prompts have no permission hook. Spawned Codex helpers and profiles detect the startup `Folder access` / `Trust this folder?` screen, show `⚠ permission` and notify their parent once that the task has not started. Open the pane and make the trust choice yourself; tmux-agents never confirms it. The permission marker clears when the dialog closes.
 
@@ -292,7 +298,7 @@ Only top-level callers can create members, including for another owner. Existing
 
 `tmux-spawn --from ME --for PEER "brief"` creates a helper owned by that connected peer, linked only to it and initially idle. The owner receives the brief, introduces itself and sends the first task. Add `--member` for a standing member.
 
-Depth always counts from the caller plus one, including `--for`; default maximum is two. Helpers do not inherit membership. A chain's main creates both members at depth 1, leaving depth 2 for worker helpers. See [Starting agents](#starting-agents) and the [chain skill](../skills/agent-chain/SKILL.md) for layout and handoff.
+Depth always counts from the caller plus one, including `--for`; default maximum is two. Helpers do not inherit membership. A chain's main creates its interface member at depth 1; interface creates ordinary workers at depth 2, with no further helpers. See [Starting agents](#starting-agents) and the [chain skill](../skills/agent-chain/SKILL.md) for layout and handoff.
 
 ## Renaming agents
 
@@ -319,7 +325,7 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 | Command | Purpose |
 | --- | --- |
 | `tmux-agents start AGENT [-- AGENT ARGS]` | Launch an independent agent; Claude/Codex have tracking. |
-| `tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--main-resume ID] [--secondary AGENT] [--worker AGENT]` | Start a chain in a new window. |
+| `tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--main-resume ID] [--interface AGENT] [--worker AGENT]` | Start a chain in a new window. |
 | `tmux-agents chain [DIR]` | Pick or launch a project chain. |
 | `tmux-agents main-sequence` | Open or edit configured project windows. |
 | `tmux-connect [target] [--as NAME] [--all]` | User's connection picker or direct target. |
@@ -334,6 +340,8 @@ Agent commands below use actual names for `ME`/`PEER`. See each command's `--hel
 | `tmux-ask --retry [--to PEER]` | Retry saved messages. |
 | `tmux-peek --from ME PEER [lines]` | Read peer output; default 40 lines. |
 | `tmux-shell [--from AGENT] [--client CLIENT] [--pane OPENER]` | Open an independent or explicitly owned shell popup. |
+| `tmux-spawn [AGENT] --role ROLE --from ME` | Spawn using configured role agent, args and name. |
+| `tmux-agents chain-config [ROLE] [--args] [--sources]` | Inspect role settings; `secondary` aliases `interface`. |
 | `tmux-spawn [AGENT] --from ME [--member] [task]` or `--message-file FILE` | Spawn; accepts stdin when no task file is supplied, `--name`, `--split` and `--for`. |
 | `tmux-spawn --list-closed` | List saved conversations. |
 | `tmux-spawn --from ME --resume PEER` / `--resume-id ID [--here]` | Reopen a conversation, optionally in the current shell pane. |

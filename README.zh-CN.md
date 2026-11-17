@@ -119,9 +119,9 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 2. 对原来的 agent 说："让你刚打开的 Codex review 这个 diff"。请求会出现在 Codex 的 pane 里，回复会回到原来的 agent。
 3. 对原来的 agent 说："开一个子 agent 给 parser 加测试"。它在隐藏窗口里运行，状态栏上方那一行会显示它的进度。
 4. 按 `prefix + a` 查看它。按 Enter 用 popup 打开，按 `prefix + d` 返回。
-5. 对原来的 agent 说："start the chain"。它会成为和你对话的 main agent，再开一个负责协调的 secondary 和一个负责实现的 worker，三个并排在你的窗口里（`agent-chain` skill）。
+5. 对原来的 agent 说："start the chain"。它会成为和你对话的 main agent，由 designer 和你讨论计划，获批后再由 interface 按任务派发 worker（`agent-chain` skill）。
 
-在 shell 中运行 `tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--main-resume ID] [--secondary AGENT] [--worker AGENT]`，会在 DIR（默认当前目录）中新开窗口，以目录 basename（或 `--name NAME`）命名，并把启动 chain 的请求交给 Claude/Codex main。使用 `--target session[:index]` 可在已有 session 中后台创建窗口，也可从 tmux 外运行。成功时输出新 pane ID。各角色都可使用 Claude、Codex、已配置的 profile 或 PATH 中的可执行文件 basename，默认是 `claude`/`claude`/`codex`。用 `tmux-agents chain-config --sources` 查看选择及来源。要再开一个独立 agent，可以手动分屏，在新 pane 中运行 `tmux-agents start codex`，再让任一 agent 连接对方。名称、profile、参数和退出行为见[启动 agent](docs/guide.md#starting-agents)。
+在 shell 中运行 `tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--main-resume ID] [--interface AGENT] [--worker AGENT]`，会在 DIR（默认当前目录）中新开窗口，以目录 basename（或 `--name NAME`）命名，并把启动 chain 的请求交给 Claude/Codex main。使用 `--target session[:index]` 可在已有 session 中后台创建窗口，也可从 tmux 外运行。成功时输出新 pane ID。各角色都可使用 Claude、Codex、已配置的 profile 或 PATH 中的可执行文件 basename，`secondary` 仍是 `interface` 的别名。用 `tmux-agents chain-config --args --sources` 查看角色的 agent、模型参数及来源。要再开一个独立 agent，可以手动分屏，在新 pane 中运行 `tmux-agents start codex`，再让任一 agent 连接对方。名称、profile、参数和退出行为见[启动 agent](docs/guide.md#starting-agents)。
 
 也可以让 agent 带你走一遍：对它说 "tmux-agents quick start"。
 
@@ -135,7 +135,7 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 - **让另一个 agent 帮忙 review。** 同一窗口的另一个 pane 已有 Codex 时，对 Claude 说“连接 codex，让它 review 当前 diff”。它会先运行 `tmux-connect --from ME codex`，再运行 `tmux-ask --from ME PEER "Review the current diff"`。也可以用 `prefix + A` 连接 pane。见[连接 agent](docs/guide.md#connecting-agents)。
 - **派出一个能随时查看的子 agent。** 对它说“开一个 Codex 子 agent 给 parser 加测试”。它会运行 `tmux-spawn codex --from ME --name parser-tests "Add parser tests"`；按 `prefix + a` 就能浏览它的 pane 和实时预览。见[子 agent](docs/guide.md#sub-agents)。
 - **关闭已完成的子 agent，以后再接着做。** 让它的父 agent 用 `tmux-dismiss --from ME CHILD` 关闭它，之后用 `tmux-spawn --resume CHILD --from ME` 重开保存的对话。见[重新打开](docs/guide.md#sub-agents)。
-- **让协调和实现各有人负责。** 说“start the chain”，或运行 `tmux-agents start chain . --worker codex`：main agent 和你对话，secondary 负责协调，worker 负责实现。见[启动 agent chain](docs/guide.md#starting-agents)。
+- **让协调和实现各有人负责。** 说“start the chain”，或运行 `tmux-agents start chain . --worker codex`：main agent 和你对话，designer 和你制定计划，获批后 interface 派发 worker。见[启动 agent chain](docs/guide.md#starting-agents)。
 - **使用第二个 Codex 账号。** [配置好该账号的 Codex home](docs/guide.md#more-than-one-codex-account) 后，运行 `tmux set -g @tmux_agents_codex_homes "work=$HOME/.codex-work"`，再运行 `tmux-agents start work`。也可以通过[环境变量](docs/configuration.md) `TMUX_AGENTS_CODEX_HOMES` 覆盖配置。
 - **跨项目询问另一个 agent。** 不同窗口中运行着独立 agent 时，说“连接 stone-age 项目的 codex，让它 review API contract”。它会先运行 `tmux-connect --from ME codex@stone-age`，再运行 `tmux-ask --from ME PEER "Review the API contract"`。见[跨窗口连接](docs/guide.md#connecting-agents)。
 

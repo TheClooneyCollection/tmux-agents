@@ -1,118 +1,74 @@
 ---
 name: agent-chain
-description: Run a chain of three agents through tmux-agents, a main agent that talks to the user, a secondary that coordinates and merges, and a worker that implements. Use when the user says "start the chain", "agent chain", "end the chain", asks to rejoin after clearing context ("cleared, resume please" or "清完了，继续"), or a message assigns a main, secondary or worker role in an agent chain.
+description: Run mission-based agent teams through tmux-agents. Use for "start the chain", "end the chain", rejoining after a clear ("cleared, resume please" or "清完了，继续"), or an assigned chain role.
 ---
 
 # Agent chain
 
-Load the `tmux-agents` skill before using this workflow; follow its identity and messaging rules.
-
-If your brief says you are the secondary or worker, join the existing chain in that role. Never execute "Starting the chain" from a secondary or worker brief.
-
-Three agents work together through tmux-agents: a **main agent** the user talks to, a **secondary** that coordinates, and a **worker** that implements. Each secondary + worker pair serves one [mission](#missions); a main may run several pairs at once and tracks them on a mission board. The user talks to one agent and still sees every agent's work in its own pane.
-
-Names follow `<kind>-<project>-<role>`, e.g. `claude-~-main`, `claude-~-secondary`, `codex-~-worker` at home, or `claude-blog-main` in a project. `tmux-spawn --name <role>` and `tmux-rename` build them from the short role name. Use the names they print, never hard-coded ones.
+Load `tmux-agents` for identity, messaging and lifecycle rules. A role brief joins the existing mission; only the agent receiving "start the chain" becomes main. `secondary` remains an alias for `interface`, including existing agent names.
 
 ## Roles
 
-- **Main agent** (the agent the user started). The agent that receives "start the chain" is the main agent. It talks to the user and the other agents: it clarifies intent, reviews plans with the user when present, and relays decisions. It doesn't investigate or implement.
-- **Secondary**. Coordinates the worker, owns its mission's worktree and record, and updates only its own board row. Small or fully specified tasks go straight to the worker. For open design questions or concerns, it makes the sole exception to its no-spawn role: it spawns a dedicated design agent with `tmux-spawn`. The design agent's default is the smallest plan that solves only confirmed problems; it replies with the plan to the secondary, which sends it to the main for review. After approval, the secondary hands the agreed plan to the worker. It merges the worker's commits, runs the project's steps (importers, backups, server relaunches, tests) and records decisions in docs. Anything that needs a user decision goes to the main agent, not to the user.
-- **Worker** (plus its own sub agents). Implements the agreed plan and investigates only its requirements and details. By default it splits independent implementation parts across its own sub agents (`tmux-spawn`), one per part by file ownership, after agreeing the interfaces between them, then integrates and runs the full checks itself. It works alone only on short, strictly sequential or same-file tasks, and says why. Findings go to the secondary; neither the worker nor its agents redesign the plan. If the plan proves unworkable, the worker stops and reports that to the secondary.
+| Role | Default agent / model | Spawned by | Lifetime |
+| --- | --- | --- | --- |
+| main | claude / Opus 5.5 | user | long-lived |
+| designer | claude / Opus 5.5 | main | per design |
+| interface (secondary) | claude / Sonnet | main after plan approval | per mission |
+| worker | codex | interface | per task |
+| reviewer | claude / Opus 5.5 | interface before landing, or main on request | per review |
+| runner | scripts first; claude / Haiku | main or interface | per task |
+| researcher | claude / Sonnet | whoever needs facts | per task |
 
-## Choosing agents
+- **Main talks and decides; it does not do.** Its long-lived context is the most expensive, so keep it for the user: talk, read mission state, write briefs, send messages and make quick lookups of one or two tool calls. Delegate anything needing more than two calls or any waiting to the cheapest capable role: commands/watches to runner (Haiku), research to researcher (Sonnet), landing to the mission interface, design to designer. If a delegate cannot solve a problem, decide or ask the user; never fix it yourself.
+- **Designer** discusses directly with the user in its pane and writes the smallest plan solving confirmed problems, split by file ownership with fixed interfaces.
+- **Interface** dispatches the plan, one worker per part, and lands its own mission through CI and `done` (below). Send plan gaps to main; main only grants landing turns, one interface at a time.
+- **Worker** implements one part in its own worktree and runs its tests, with no sub agents. Stop and report an unworkable plan to interface.
+- **Reviewer** reviews before landing. Use Fable for review or design only when the user asks, overriding reviewer or designer with `-- --model fable`.
+- **Runner** handles ad hoc commands and CI watching; prefer scripts for repeatable runs.
+- **Researcher** reads code and returns a short summary to whoever requested the facts.
 
-Each role accepts `claude`, `codex`, a configured Codex profile or an executable basename on PATH. Profiles take precedence over same-named executables. Defaults are `claude` / `claude` / `codex` for main / secondary / worker. See [Configuration](../../docs/configuration.md) for profile mappings and role settings.
+Spawn by consumer with `tmux-spawn --role ROLE --from ME --message-file PATH`; use the printed full name. Role settings supply the agent and model: inspect `tmux-agents chain-config --args --sources` as data, never `eval`. `--name` overrides the role name; a positional AGENT precedes `--role` (e.g. `tmux-spawn codex --role reviewer`) and overrides the role agent, and `-- ARGS` replaces role args (bare `--` clears them).
 
-Other executables have [limited support](../../docs/agents.md), with no agent-chain skill integration, automatic tracking, worked time, permission setup or resume. Main and secondary are especially risky because their coordination is not guaranteed. An unknown main receives no initial chain prompt; the user must send the actual brief manually with `tmux-ask` once it reaches its prompt. A spawn task for an unknown secondary is not sent either: the main must retain and manually send the role and actual goal after the prompt is ready. For an unknown worker, its owner sends the first task after verifying its prompt. Do not tell these agents to load this skill; use a self-contained task and explicit sender names. Untracked children supply no working-state signal for live waiting.
+This-chain explicit choices win over applicable instruction-file role preferences, then launcher snapshot/settings. Keep configured profile names. For interface/worker overrides, validate with `tmux-agents chain-config ROLE --interface AGENT` or `--worker AGENT`; do not revalidate an already-running main. See [role settings](../../docs/configuration.md#chain-roles) and [shell launchers](../../docs/guide.md#starting-agents) for configuration and `start chain`. Other executables need [manual brief delivery](../../docs/agents.md#sending-the-first-task), with no skill integration or automatic tracking.
 
-The agent receiving "start the chain" remains main. The main setting only chooses the new agent launched from a shell; instruction-file preferences cannot change that first launch. If the user explicitly wants another main type, explain that they need a new chain window using the launcher.
-
-Before spawning either member, resolve secondary and worker:
-
-- Use the launcher's initial role/value/source snapshot when present. Otherwise query `tmux-agents chain-config secondary --sources` and `tmux-agents chain-config worker --sources` as separate standalone commands. Do not revalidate the main setting: an existing main is already selected.
-- This-chain explicit CLI or user choices win over applicable CLAUDE.md / AGENTS.md role preferences, which win over the snapshot's env / option / default values. Follow your normal instruction hierarchy for file preferences. A file saying the worker uses `codex-2nd` still applies unless this chain explicitly chooses otherwise. The CLI does not read Markdown.
-- Validate both final member choices with selected-role queries before spawning, preserving the snapshot and applying any natural-language or instruction-file overrides:
-  ```sh
-  tmux-agents chain-config secondary --secondary <secondary agent> --sources
-  tmux-agents chain-config worker --worker <worker agent> --sources
-  ```
-  On validation failure, resolve the reported role/profile problem before creating members. Keep profile names as returned; do not replace a profile with `codex`.
-
-The query is read-only and needs no `--from`. Full output is TSV role/value, with `--sources` adding `explicit|env|option|default`. A selected role alone prints its value, for example `tmux-agents chain-config worker`; adding `--sources` prints role/value/source. It shows the settings new chains start from, not the running chain's members; use `tmux-peers` for those. Read the output as data, never `eval` it. Run queries on their own, without command substitution, pipes or shell command chains.
-
-New profiles need the installer run for their existing Codex home so they receive skills and the real rules file. Setting `CODEX_HOME` alone does not install them. The shared launcher carries profile mappings and role environment pins, including for Codex's shared daemon; do not recreate those with skill-level exports. Role settings affect new chains, not existing members or resumed records.
-
-## Starting from a shell
-
-For saved projects, `tmux-agents chain` offers a project picker and `tmux-agents main-sequence` opens configured windows in order. Use `main-sequence list`, `add`, `set` and `unset` to maintain the shared config, including per-window `command` and `resume` fields. Resolve ambiguous matches with a unique window name. See [Project launchers](../../docs/guide.md#project-launchers) for paths, fallback and scan settings.
-
-`tmux-agents start chain [DIR] [--target session[:index]] [--name NAME] [--main AGENT] [--main-resume ID] [--secondary AGENT] [--worker AGENT]` opens a new window in DIR (default `$PWD`), names it after DIR's basename (`root` at the filesystem root) unless `--name NAME` is supplied, and launches the selected main.
-
-Without `--target` it opens and focuses the window in the current session. `--target session[:index]` creates it detached in an existing session; a bare session chooses the next free index. Target mode needs no caller pane or `TMUX` variable when tmux can reach the existing server. Flags can appear in any order. All three role choices are validated before window creation. Success prints exactly the new pane ID and a newline to stdout; errors use stderr and a nonzero exit status. Both window rename options (`automatic-rename` and `allow-rename`) are disabled before agent startup. Chain `--name` names the window, unlike the pane label in `start AGENT --name`. For named servers, select the socket through `TMUX` or a `tmux -L NAME` wrapper; there is no launcher socket flag. See [Starting agents](../../docs/guide.md#starting-agents) for examples.
-
-`--main-resume ID` resumes only the main; members start fresh. Claude receives `/rc` before the chain brief, while Codex receives the brief with `resume ID`. Invalid or unavailable IDs and unsupported executables warn and start a fresh main. See [Starting agents](../../docs/guide.md#starting-agents) for session-store checks and startup recovery.
-
-Claude/Codex receive an initial role snapshot and sources; other executables receive no initial prompt. Shell resolution is explicit flag > nonempty environment > nonempty tmux option > default. The main follows the steps below, preserving explicit choices and applying instruction-file member preferences as above. This convenience command is for starting a new chain from a shell, never for secondary or worker role briefs joining an existing chain.
-
-The main keeps its agent's permission defaults. Spawned Claude/Codex members default to auto mode unless `@tmux_agents_sub_auto off` or `TMUX_AGENTS_SUB_AUTO=off` selects agent defaults.
+Interface is main's `--member` at depth 1. Its workers, reviewer and runner are ordinary sub agents at depth 2 and cannot spawn further. A depth-2 agent needing research asks its interface to dispatch it. Only main is long-lived. Hidden windows are the default; use `--split` only when the user asks for a layout.
 
 ## Starting the chain (main agent)
 
-`<me>` is your current name (`tmux-peers` shows it). The skill-loading briefs below are for Claude/Codex. For other executables, follow the manual task delivery rules above: no supplied spawn brief is sent to the new agent, and an unknown recipient must not be told to load this skill.
-
-The spawn commands below use `--message-file` to keep each role brief in a file. The file must be one readable regular file, not a symlink, and at most 1 MiB; its literal text is sent. Empty content follows normal no-task behavior. This option conflicts with positional task text; stdin is ignored. It cannot be combined with `--resume` or `--list-closed`. Create each message file with `mktemp` under `${TMPDIR:-/tmp}/tmux-agents/$ME/` so agents sharing a working directory cannot overwrite one another or dirty the project; remove it after successful delivery or keep it for a retry.
-
-1. `tmux-rename --from <me> <me> main` renames you to `<kind>-<project>-main`. Use the new name as `<me>` from then on.
-2. Add the first mission's board row and record (see [Missions](#missions)); the briefs below name the record path and mission tag.
-3. Spawn the resolved secondary to your right; use its printed full name as `<secondary>`:
-
-   ```sh
-   message_dir="${TMPDIR:-/tmp}/tmux-agents/$ME"
-   mkdir -p "$message_dir"
-   secondary_brief="$(mktemp "$message_dir/secondary.XXXXXX")"
-   # write the brief to "$secondary_brief"; remove after successful delivery
-   tmux-spawn <secondary agent> --from <me> --member --split <me> --right --name secondary --message-file "$secondary_brief" -- --model sonnet
-   ```
-
-   The trailing `-- --model sonnet` applies when the resolved secondary is `claude`: it coordinates and merges but never clears, so it is the largest token consumer, and Sonnet reads the same cached context for far less. The args are saved, so `--resume` keeps them; a bare `--` on resume clears them. For another secondary agent, drop the trailing args or pass that agent's own model option.
-4. Spawn the worker for the secondary, below it:
-
-   ```sh
-   worker_brief="$(mktemp "$message_dir/worker.XXXXXX")"
-   # write the brief to "$worker_brief"; remove after successful delivery
-   tmux-spawn <worker agent> --from <me> --member --for <secondary> --split <secondary> --below --name worker --message-file "$worker_brief"
-   ```
-
-   The worker becomes the secondary's long-lived member, connected to the secondary only (not to you), and starts without a task. The secondary gets the brief, introduces itself to the worker (including that it is the worker in the agent chain and splits independent parts across sub agents by default) and sends the first task.
-5. Tell the user the three printed names and end your turn. The layout, all in your window: you on the left half, the secondary top right, the worker bottom right. Only the first pair gets this layout; later missions spawn their pairs without `--split`, hidden.
-
-Spawn both from the top-level main agent (no `@parent` and no `@member`); only top-level callers can spawn members. The restriction checks the caller, not the `--for` owner, so the main can give the secondary a worker member. `--for` makes the worker the secondary's member, but depth always counts from the caller plus one. Both chain members are depth 1; the worker's ordinary helpers are depth 2, the normal default limit. Helpers do not inherit membership. The main agent doesn't message the worker; it goes through the secondary (`tmux-ask --any` only if the user asks). Each Claude/Codex brief names the agent's role in the agent chain, so it loads this skill; beyond that, it only needs the other agents' names and the current goal.
-
-The secondary and worker are long-lived members: they stay out of the default sub-agent list, ordinary chip counts and `--done` cleanup. Find them with `ctrl-a` in the agent list, labelled `member of <owner>`; attention still pins them in the list and chip.
+1. Rename yourself with `tmux-rename --from ME ME main`, then use the printed name.
+2. Create missions with the CLI below. Start independent missions immediately, with no cap; anything that does not depend on a pending design or result starts now.
+3. For each mission, follow the flow below. Existing role briefs never start another chain.
 
 ## Missions
 
-One secondary + worker pair per mission, several missions at once, no cap. A small follow-up joins the open mission it belongs to instead of starting a pair. Cost per API call tracks context size and members are never cleared, so a pair that ends with its mission keeps every context small.
+Mission state is `${XDG_STATE_HOME:-$HOME/.local/state}/tmux-agents/missions/<project>/M<N>.mission` (key=value), with optional `M<N>.log`. Only the current owner writes its mission; main may set any mission. Write only through `tmux-agents mission add --from ME TITLE`, `set --from ME ID --status S --owner O`, or `log --from ME ID TEXT --kind K`; read with `tmux-agents mission show --from ME ID`, `list --from ME`, or `tmux-agents board --watch`.
 
-Mission state lives outside the repo, untracked and stable, in `${XDG_STATE_HOME:-$HOME/.local/state}/tmux-agents/missions/<project>/` (`<project>` as in agent names): `board.md` plus one record `M<N>-<slug>.md` per mission, `<N>` being the next number on the board. Main creates both.
+Statuses: `design`, `plan-ready`, `active`, `needs-decision`, `ready-to-push`, `done`. Log kinds: `progress`, `decision`, `handoff`, `done`. Every message carries its mission tag, e.g. `[M3 token-waste]`; briefs include goal, constraints and known paths.
 
-- **Board.** One line per mission: `M<N> | title | <secondary> | status | last update`, with status `active`, `needs-decision`, `ready-to-push` or `done`. Each secondary updates only its own row. Main reads the board instead of holding state, which keeps main's own clears cheap.
-- **Record.** Goal, constraints, worktree and branch, then a status log with one line per decision, landing or release. At mission end the secondary appends a handoff block (open items, branches and worktrees, CI state, clean or not) and sends its completion reply with the path.
-- **Starting one.** Main adds the board row, writes the record and spawns the pair with the "Starting the chain" commands minus `--split`. The briefs name the record path and tag; the secondary passes the path on to the worker and to any design agent.
-- **Worktree.** Each mission works in its own worktree and branch. Landing is one mission at a time: rebase onto `main`, then `git merge --ff-only` on the main checkout. A lock comes later with `tmux-agents chain-land`.
-- **Ending one.** After the completion reply, main runs `tmux-dismiss --from <me> <secondary>`, which closes that worker and its sub agents and leaves other missions alone. Never dismiss with an unclean tree, unlanded work, a running CI watch or a pending push decision.
-- **Messages to main** start with the mission tag, e.g. `[M3 token-waste]`. Only three things interrupt main: a decision request, the completion reply, and a notice for CI failure or push approval. Everything else is a `--note`. Main batches pending user decisions across missions into one numbered list.
-- With Fleet Command installed, mirror the mission there too (below); the board stays the source of truth.
+1. **Design.** Main adds a mission, spawns `--role designer` and sets it as owner with status `design`. Open its pane for the user with `tmux-agents open NAME --from ME`. The user discusses the design there; designer logs decisions in the decision doc, writes the plan, sets the mission to `plan-ready` and sends main one notice with the path.
+2. **Dispatch.** After user approval, main spawns `--role interface --member` with the approved plan path and sets interface as mission owner. Interface marks it `active` and dispatches every independent part immediately with `--role worker`, one worker and worktree per part. Briefs fix file ownership and interfaces. For a branch behind main, include `main is N commits ahead: <subjects>` from `git log --oneline HEAD..origin/main | head -5`.
+3. **Review.** Each mission has its own branch/worktree. Interface runs the reviewer and required checks, using scripts or runner; workers fix findings within the plan. Interface integrates parts one at a time by rebase and `git merge --ff-only`, then sets `ready-to-push`. Plan gaps become `needs-decision` requests to main.
+4. **Land and complete.** After user push approval, main grants one interface the landing turn. That interface rebases its mission onto main, lands with `git merge --ff-only`, pushes, watches CI itself or through runner, sets the mission `done` and replies with a handoff/report path. Main dismisses its subtree and designer only after this reply. Keep agents while changes are unclean or unlanded, CI is running, or push approval is pending.
+
+A small follow-up joins its open mission. Agents update mission state and send notes; main reads the board when the user asks. Only plan-ready, a decision request, completion, CI failure or push approval interrupts main. Batch user decisions across missions into one numbered list.
+
+## Messages and checks
+
+Follow the [message rules](../tmux-agents/SKILL.md#receiving-a-message): notes by default in both directions, replies for awaited results, requests for decisions (state the default and what is blocked). Main does not restate interface messages the user already sees.
+
+Reports over about ten lines go in a unique `mktemp` file under `${TMPDIR:-/tmp}/tmux-agents/$ME/`, sent with `--message-file PATH` and a summary of at most five lines. Forward the original `tmux-read` pointer and message kind, not the body. Briefs also use unique files there. Read only what is needed; batch independent read-only checks, keeping each tmux command standalone.
+
+Codex checks `tmux-notes --from ME` at turn start. Main reads notes on request or at a natural pause. `waiting on` reflects working descendants; idle/done means the turn ended. Inspect the last report or `tmux-peek` before chasing a slow result. Direct user instructions win; tell the affected agents what changed.
 
 ## Rejoining after a restart or clear
 
 Treat "cleared, resume please" or "清完了，继续" after a context clear as a request to restore the existing chain's roles and review its handoff. The user need not repeat the role or procedure. Follow the tmux-agents identity rules, then use `tmux-peers --from <me>` and the recorded role suffix to identify yourself and current members. If identity or role is unclear, ask only for the missing information. Keep existing names and connections; do not spawn a replacement chain or reopen an old conversation to restore roles.
 
-Main re-briefs each secondary on its role, mission record and current member names, asking it to restore the worker's role in turn. Secondary and worker rejoin their roles and wait for assigned work; they do not automatically restart old tasks. Report surviving background work, worktrees and uncommitted changes so a fresh context does not duplicate or discard them.
+Recognise old `secondary` names as interfaces. Main re-briefs each mission interface on its role, mission ID, plan path and current member names, asking it to restore its workers' roles in turn. Interface and worker rejoin their roles and wait for assigned work; they do not automatically restart old tasks. Report surviving background work, worktrees and uncommitted changes so a fresh context does not duplicate or discard them.
 
 Main reads the mission board, then the project-root `HANDOFF.md` saved through the wrap-up skill. Present a short numbered list of important outcomes, unfinished choices and live work the user needs to know about. Continue work explicitly selected by the user before the clear; otherwise wait for their selection, such as "do 2 and 3", or a new task. A role-restoration request alone is not permission to resume every old task. If no handoff exists, say so and ask for the current goal rather than inventing lost context.
 
-Main also refreshes its existing project-launcher resume field. Run `tmux-agents main-sequence list`, match the project directory and window name to one agent row, then use `tmux-agents main-sequence set NAME resume=ID` and verify with `list`. Use the new conversation ID from the session record keyed by main's verified stable agent ID, not that agent ID itself or an old ID copied from the handoff. Claude records it at prompt start; Codex records it only at the new thread's first turn end. For Codex, ask secondary to perform the update after main completes this post-clear turn and the fresh thread binding is confirmed; keep the update pending until then. If no coordinator is available, keep it for main's next turn. Do not claim it is updated before verification. Missing or ambiguous rows require clarification; leave shell and command rows unchanged and do not add a new row automatically.
+Main delegates its existing project-launcher resume-field refresh to interface or runner. Run `tmux-agents main-sequence list`, match the project directory and window name to one agent row, then use `tmux-agents main-sequence set NAME resume=ID` and verify with `list`. Use the new conversation ID from the session record keyed by main's verified stable agent ID, not that agent ID itself or an old ID copied from the handoff. Claude records it at prompt start; Codex records it only at the new thread's first turn end. For Codex, wait until main finishes its post-clear turn and the fresh thread binding is confirmed; keep the delegated update pending until then. Do not claim it is updated before verification. Missing or ambiguous rows require clarification; leave shell and command rows unchanged and do not add a new row automatically.
 
 `HANDOFF.md` is temporary and must never be committed. Before creating or updating it, check that it is untracked and locally excluded from Git; preserve unrelated contents. Remove an entry only once completed, explicitly dropped or transferred to a user-approved durable record. Delete the file when all its entries are handled, not merely after reading it. Use wrap-up again before another clear to refresh the remaining handoff.
 
@@ -120,42 +76,12 @@ Manual clearing with Claude `/clear` or Codex `/new` is supported: tracking and 
 
 ## Ending the chain
 
-`tmux-dismiss --from <me> <secondary>` closes that mission's secondary, worker and the worker's sub agents; dismiss every secondary to end the chain. Claude/Codex members with resumable conversations can be reopened with `tmux-spawn --resume <name> --from <me>`, preserving membership, or in place from a returned shell with `tmux-spawn --resume-id <id> --here`. Existing chains keep their sub-agent status until restarted; there is no conversion command.
+`tmux-dismiss --from ME INTERFACE` closes one mission's interface subtree; dismiss its designer separately. End all missions to end the chain, respecting the completion guards above. Reopening and membership preservation follow the tmux-agents skill; old `secondary` names remain valid.
 
 ## Fleet Command (when installed)
 
-Check `command -v fleet-command`; if absent, keep the existing chain behavior unchanged with no hard dependency.
-When present, follow the `missions` skill and use your own recorded tmux-agents name: pass `--from NAME` before every subcommand or set `FLEET_AGENT`.
-
-- **Main:** create a mission with `fleet-command mission add "TITLE"`, retain its printed ID and send direction with `fleet-command send SECONDARY "TEXT" --mission ID`; pass the mission ID onward with delegated work.
-- **Secondary:** start each turn with `fleet-command inbox`; update status and owner with `fleet-command mission set ID --status STATUS --owner NAME` and record decisions with `fleet-command log MISSION_ID "TEXT" --kind decision`.
-- **Fleet instructions:** answer with `fleet-command reply ID "ANSWER"` so they leave the inbox; do not use `tmux-ask` for these replies. Keep ordinary tmux messages on the existing message workflow.
-- **Worker:** only append progress, handoff or completion with `fleet-command log MISSION_ID "TEXT" --kind KIND`, choosing `progress`, `handoff` or `done`; the secondary owns status changes.
-
-## Messages
-
-- For an open design question, the design agent replies with its plan to the secondary, which sends it to the main for review. When the user is present, the main briefly walks them through it and relays their approval; when the user is away, the chain decides and records the decision in the away log. Only after approval does the secondary send the agreed plan to the worker. If implementation shows the plan does not work, the worker stops and reports to the secondary, which decides whether to return to design.
-
-In Codex code mode, `exec_command` remains a shell tool. Prefer quoted arguments or `--message-file` to heredocs for the briefs above. Run one tmux command per tool call, with file preparation and cleanup in separate calls; if socket permission denial persists, retry only the failed command with narrow escalation as described in the tmux-agents skill.
-
-- Main and secondary: `waiting on <member>` is computed live from the nearest working descendants. An idle or done member has stopped its turn; inspect its last report or use `tmux-peek`. A watchdog finding an idle member with a finished result should pick it up. Ended turns accrue no worked time, including while waiting on CI. Use plain progress reports for direct Codex work and follow the tmux-agents skill before asking the user a question.
-- Follow the [tmux-agents message rules](../tmux-agents/SKILL.md#receiving-a-message) for sending, replying and reading attached messages.
-- **Relay the original.** When a message needs little or no change, preserve its message kind and send only a short summary with what you add plus the original's `Read the full message here: tmux-read <id>` line. This includes the secondary relaying worker results to the main.
-- The user reads the secondary's messages to the main agent directly, so the main agent doesn't restate them; it brings up a decision as a one-line summary plus options.
-- Notes are the default, in both directions: see the [quiet updates rule](../tmux-agents/SKILL.md#receiving-a-message). A decision uses a request stating the default and what is blocked meanwhile. Awaited results and matters needing the user (release completion, CI failure, push approval and decisions) remain ordinary replies, requests or notices, never notes.
-- **Reports go in files.** A worker or design result over about ten lines is a `mktemp` file under `${TMPDIR:-/tmp}/tmux-agents/$ME/`, sent with `--message-file PATH` plus a summary of at most five lines. Readers open the file only for what they must act on, and the secondary forwards the pointer, never the body.
-- Main reads `tmux-notes --from ME` when the user asks or at a natural pause and shares the useful points, without repeating every note. Codex also checks notes at each turn start alongside the missions inbox rule.
-- Reply as soon as a request's main work is done (e.g. the release is out). Don't hold the reply for follow-ups such as a deploy going live; send those later as notices. For a request with several parts, send a note as each part lands; send the awaited result as an ordinary reply.
-- When the secondary sends the worker a task on a branch or worktree behind main, it adds a line like `main is N commits ahead: <subjects>` from `git log --oneline HEAD..origin/main | head -5`.
-- If a reply is slow, inspect the receiver with `tmux-peek`.
-- An instruction the user gives directly to any agent wins; that agent tells the others what changed.
+Check `command -v fleet-command`. When available, mirror missions using the `missions` skill; interface takes its secondary duties. Keep local mission records authoritative. Use your own recorded name with `--from NAME` before subcommands. Interface checks `inbox` at turn start, owns status updates and answers Fleet instructions with `fleet-command reply`, not `tmux-ask`. Workers only log progress, handoff or done. An unavailable server does not block the task.
 
 ## Working across projects
 
-Whenever work crosses project boundaries:
-
-- Each project's secondary is its interface to other projects. Cross-project requests go secondary to secondary, never straight to another project's main agent or worker. If that project has no chain, talk to its main or current agent.
-- Requests are self-contained (goal, paths, constraints, deliverable); the receiving project decides how and who does it.
-- Agents only edit their own project's files. Changes elsewhere are requested from that project's agents.
-- User decisions go back up the requesting chain to its main agent, the one the user is talking to. Ask the other project's main agent only about decisions purely about its own project.
-- The main agent reaches other projects through its secondary; `tmux-ask --any` only when the user asks.
+Requests go interface to interface, or to the other project's current agent if it has no chain. Include goal, paths, constraints and deliverable; that project decides who implements and edits its own files. User decisions return through the requesting chain's main. Use `tmux-ask --any` only when the user asks.
