@@ -10,7 +10,7 @@ Each progress notice pasted into the main agent starts another turn. Relaying th
 
 The user chose three rules:
 
-1. Name the quiet category `--note`. Progress, handoff updates, partial completion and plan updates use it.
+1. Name the quiet category `--note`. Progress, handoff updates, partial completion and plan updates use it. The "stopped without replying" reminder also becomes a note; reply obligations and their list display stay unchanged.
 2. Enable idle digests by default at roughly five minutes. `@tmux_agents_notes_digest_secs` / `TMUX_AGENTS_NOTES_DIGEST_SECS` defaults to `300`; `0` disables digests. Skip working, needs-you and permission states. Announce a new unread batch after each idle interval, independently of the chip. Successfully delivered digest batches become read. Subsequent digests contain only new notes and begin `Continuing from last update ...`; no new notes means no digest.
 3. Keep awaited results and anything requiring the user on ordinary replies, requests or notices. Release completion, CI failure, push approval and decisions must never be quiet notes.
 
