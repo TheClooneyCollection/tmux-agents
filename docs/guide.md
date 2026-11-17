@@ -6,7 +6,7 @@ Agent examples use `ME` and `PEER` as placeholders for actual full names. Agents
 
 ## Opening an agent
 
-Run `tmux-agents open NAME --from ME` to show an exact live agent name to the user. It uses the most recently active client showing ME's session. Hidden agent sessions open in the same popup viewer as the list; other panes become the client's active pane. Detaching the viewer returns to the list. Unknown or exited agents and sessions without a client produce an error. No peer connection is required.
+Run `tmux-agents open NAME --from ME` to show an exact live agent name to the user. It uses the most recently active client showing ME's session. Hidden agent sessions schedule the same popup viewer as the list without waiting for it to close; other panes become the client's active pane. Detaching the viewer returns to the list. Unknown or exited agents and sessions without a client produce an error. No peer connection is required.
 
 ## Dependencies
 
