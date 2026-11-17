@@ -16,6 +16,12 @@ fi
 . "$here/lib.sh"
 BOARD_MISSION_DIR="$(mission_directory)"
 export BOARD_MISSION_DIR
+BOARD_COLOR=0 BOARD_SPIN=0
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  BOARD_COLOR=1
+  [ "$watch" = 0 ] || BOARD_SPIN=1
+fi
+export BOARD_COLOR BOARD_SPIN
 # Resolve configuration once, before refreshes. Only snapshots run inside the loop.
 if [ -z "${TMUX_AGENTS_PREFIX:-}" ]; then
   TMUX_AGENTS_PREFIX="$(tmux show-option -gqv @tmux_agents_session_prefix)" || TMUX_AGENTS_PREFIX=''
@@ -24,28 +30,83 @@ export TMUX_AGENTS_PREFIX="${TMUX_AGENTS_PREFIX:-agents}"
 # Keep path-to-project lookups across frames, private to this invocation.
 project_cache="$(mktemp "${TMPDIR:-/tmp}/tmux-agents-board-projects.XXXXXX")"
 export BOARD_PROJECT_CACHE="$project_cache"
+terminal_state=''
 # shellcheck disable=SC2329
 restore() {
   rm -f "$project_cache"
+  if [ -n "$terminal_state" ]; then stty "$terminal_state" <&3 || true; fi
   if [ "$watch" = 1 ]; then printf '\033[?25h'; fi
 }
 trap restore EXIT
 if [ "$watch" = 1 ]; then
   trap 'exit 130' INT
   trap 'exit 143' TERM
+  trap 'exit 129' HUP
+  exec 3<&0
+  terminal_state="$(stty -g <&3)"
+  stty -icanon -echo min 1 time 0
+  settings_get fps "" @tmux_agents_chip_fps 10
+  case "$fps" in ''|*[!0-9]*) fps=10 ;; esac
+  # Strip leading zeros before shell arithmetic (bash treats them as octal).
+  fps="$(printf '%s' "$fps" | sed 's/^0*//')"
+  fps=${fps:-0}
+  if [ "${#fps}" -gt 2 ] || [ "$fps" -gt 30 ]; then fps=30; fi
+  [ "$fps" -ge 1 ] || fps=1
+  delay="$(awk -v f="$fps" 'BEGIN { printf "%.6f", 1 / f }')"
+  frames=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
+  spin=0
   printf '\033[?25l'
 fi
+# Paint the cached frame without invoking the renderer on animation ticks.
+paint() {
+  local line
+  while IFS= read -r line; do
+    printf '%s\033[K\n' "${line//$'\001'/${frames[$spin]}}"
+  done <<<"$frame"
+}
+# Bash 3.2 read -t accepts only whole seconds; select supports chip-rate ticks.
+quit_pressed() {
+  perl -e '
+    my $ready = "";
+    vec($ready, fileno(STDIN), 1) = 1;
+    if (select($ready, undef, undef, $ARGV[0]) > 0) {
+      my $key;
+      exit 0 if sysread(STDIN, $key, 1) && $key eq "q";
+    }
+    exit 1;
+  ' "$1"
+}
 while :; do
   if ! frame="$(perl "$here/tmux-agents-board.pl" "$here" 2>&1)"; then
     if [ "$watch" = 0 ]; then printf '%s\n' "$frame" >&2; exit 1; fi
     frame='board: refresh failed (retrying)'
   fi
   if [ "$watch" = 0 ]; then printf '%s\n' "$frame"; break; fi
+  size="$( { stty size </dev/tty; } 2>/dev/null || stty size 2>/dev/null || true)"
   # Replace the previous frame and its history; normal-screen output remains scrollable.
   printf '\033[H\033[2J\033[3J'
-  while IFS= read -r line; do printf '%s\033[K\n' "$line"; done <<<"$frame"
+  paint
+  spin=$(((spin + 1) % 10))
   printf '\033[J'
-  key=''
-  if IFS= read -r -s -n 1 -t "$interval" key; then [ "$key" != q ] || break
+  # A trailing newline at the bottom row scrolls; animate only with room to spare.
+  rows=${size%% *}
+  line_count=0
+  while IFS= read -r line; do line_count=$((line_count + 1)); done <<<"$frame"
+  animate=0
+  if [[ "$rows" =~ ^[0-9]+$ ]] && [ "$line_count" -lt "$rows" ] &&
+      [ "$BOARD_SPIN" = 1 ] && [[ "$frame" == *$'\001'* ]]; then animate=1; fi
+  if [ "$animate" = 0 ]; then
+    if quit_pressed "$interval"; then break; fi
+  else
+    ticks=$((interval * fps))
+    for ((tick=0; tick<ticks; tick++)); do
+      if quit_pressed "$delay"; then exit 0; fi
+      # The next data refresh paints the final tick.
+      if [ "$tick" -lt "$((ticks - 1))" ]; then
+        printf '\033[H'
+        paint
+        spin=$(((spin + 1) % 10))
+      fi
+    done
   fi
 done

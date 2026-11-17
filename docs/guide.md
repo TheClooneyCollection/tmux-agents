@@ -409,6 +409,13 @@ the full board on the normal screen regardless of pane height; use tmux copy-mod
 to scroll. Each refresh clears the previous screen and scrollback, so history
 contains only the current board; scrollback from before `--watch` started is cleared too. Quitting restores the cursor.
 
+Terminal output uses colour unless `NO_COLOR` is nonempty; piped output stays plain.
+Working glyphs animate in watch mode at `@tmux_agents_chip_fps` (default 10,
+clamped to 1..30); boards that fill or exceed the pane height advance only on
+data refresh, preserving scrollback between refreshes. Missions appear newest
+created first, and sibling agents sort by attention state, then working, idle
+and done, keeping pane order for ties.
+
 Missions come from `${XDG_STATE_HOME:-~/.local/state}/tmux-agents/missions/<project>/M<N>.mission`,
 one `key=value` record per mission. Required keys are `id`, `title`, `owner`,
 `status`, `created` and `updated`; timestamps are epoch seconds. Optional `branch`
