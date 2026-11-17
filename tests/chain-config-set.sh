@@ -37,5 +37,9 @@ for role in unknown worker; do
 done
 if run set worker codex -- $'bad\nargs' > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
 if run set worker codex --model bad > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
+for arg in 'two words' $'two\twords' $'two\nwords' ''; do
+  if run set worker codex -- --model "$arg" > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
+  grep -q 'space-separated without quoting' "$tmp/err"
+done
 [ "$(run --args --sources)" = "$before" ]
 echo 'ok live role set, aliases, literal output, cleared args and validation'

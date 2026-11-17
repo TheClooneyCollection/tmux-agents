@@ -82,5 +82,7 @@ assert "Bash(tmux-shell:*)" not in allow, "unrestricted Claude shell permission"
 rules = (root / "integrations/codex/tmux-agents.rules").read_text().splitlines()
 assert 'prefix_rule(pattern=["tmux-shell", "--from"], decision="allow")' in rules, "missing owned-shell Codex permission"
 assert 'prefix_rule(pattern=["tmux-shell"], decision="allow")' not in rules, "unrestricted Codex shell permission"
-print("ok    shell permissions require --from")
+assert 'prefix_rule(pattern=["tmux-agents", "chain-config"], decision="allow")' in rules, "missing chain-config query permission"
+assert 'prefix_rule(pattern=["tmux-agents", "chain-config", "set"], decision="prompt")' in rules, "chain-config writes must prompt"
+print("ok    shell permissions require --from; chain-config writes require approval")
 PYRULES

@@ -36,7 +36,7 @@ while [ "$#" -gt 0 ]; do
       valid_value "$2"
       case "$option" in
         --from) from="$2" ;;
-        --notify) case "$command" in set|done) ;; *) die '--notify requires set or done' ;; esac; [ -n "$2" ] || die '--notify needs a name'; notify="$2" ;;
+        --notify) case "$command" in set|done) ;; *) die '--notify requires set or done' ;; esac; [ -n "$2" ] || die '--notify needs a name'; case "$2" in -*) die '--notify needs a peer name, not an option' ;; esac; notify="$2" ;;
         --kind) [ "$command" = log ] || die '--kind requires log'; kind="$2" ;;
         --log) [ "$command" = show ] || die '--log requires show'; count="$2" ;;
         *) case "$command:$option" in set:*|add:--owner|add:--status|add:--branch|add:--worktree) ;; *) die "invalid option $option" ;; esac

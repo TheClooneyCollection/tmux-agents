@@ -6,6 +6,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 usage() {
   echo 'usage: tmux-agents chain-config [ROLE] [--main AGENT] [--interface AGENT] [--worker AGENT] [--args] [--sources]'
   echo '       tmux-agents chain-config set ROLE AGENT [-- ARGS]'
+  echo 'Set args are space-separated without quoting; whitespace inside an argument is rejected.'
   echo 'Roles: main designer interface worker reviewer runner researcher (secondary aliases interface).'
   echo 'TSV role/agent, optionally args then source; one role without flags prints its agent.'
   echo 'Outside tmux (TMUX unset), only environment/defaults apply; an inaccessible TMUX is an error.'
@@ -26,6 +27,9 @@ if [ "${1:-}" = set ]; then
   if [ "$#" -gt 0 ]; then
     [ "$1" = -- ] || die 'agent arguments must follow --'
     shift
+    for arg in "$@"; do
+      case "$arg" in *[[:space:]]*|'') die 'role args are space-separated without quoting; each argument must be nonempty and contain no whitespace' ;; esac
+    done
     role_args="$*"
   fi
   case "$agent$role_args" in *$'\t'*|*$'\n'*|*$'\r'*) die 'role values must not contain tab, LF or CR' ;; esac

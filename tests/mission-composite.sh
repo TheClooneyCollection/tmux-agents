@@ -37,4 +37,12 @@ if run 'done' M1 '' > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
 if run set M1 --status active --notice > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
 if run 'done' M99 missing > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
 [ ! -d "$MISSION_DIR/.lock" ]
+cp "$MISSION_DIR/M1.mission" "$tmp/before"
+cp "$tmp/notice" "$tmp/notice-before"
+for target in --any --notice -peer; do
+  if run set M1 --status 'done' --notify "$target" > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
+  grep -q 'not an option' "$tmp/err"
+  cmp "$MISSION_DIR/M1.mission" "$tmp/before"
+  cmp "$tmp/notice" "$tmp/notice-before"
+done
 echo 'ok composite mission status, done, notification and partial failure'
