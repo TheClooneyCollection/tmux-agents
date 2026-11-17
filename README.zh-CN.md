@@ -68,6 +68,8 @@ cd tmux-agents
 ./install.sh            # 先加 --dry-run 看看它会做什么
 ```
 
+使用 `./install.sh --home /tmp/tmux-agents-home` 试装到隔离目录。linked worktree 必须使用 `--home`，除非显式用 `--force` 覆盖保护检查。
+
 `install.sh` 会：
 
 - 把 `tmux-*` 命令链接到 `~/.local/bin`（用 `BIN_DIR` 修改）

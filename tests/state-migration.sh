@@ -11,7 +11,7 @@ cleanup() { cleanup_test_server || return; rm -rf "$tmp"; }
 trap cleanup EXIT
 unset TMUX TMUX_PANE CLAUDECODE CODEX_HOME TMUX_AGENTS_KIND TMUX_AGENTS_PINNED TMUX_AGENTS_DEPTH
 export XDG_STATE_HOME="$tmp/state" TMUX_ASK_ENTER_DELAY=0
-mkdir -p "$tmp/home" "$tmp/bin"
+mkdir -p "$tmp/home/bin"
 tmux -L "$sock" -f /dev/null new-session -d -s test cat
 tmux -L "$sock" has-session || exit 1
 socket="$(tmux -L "$sock" display -p '#{socket_path}')"
@@ -81,21 +81,21 @@ migrate_turn_state
 check 'migration does not repeat on current server' test "$(opt %0 state)" = working
 # Installer only operates on this fixture home and this private server.
 seed
-ln -s "$B/tmux-request-state" "$tmp/bin/tmux-request-state"
-HOME="$tmp/home" BIN_DIR="$tmp/bin" TMUX_AGENTS_CODEX_HOMES='' /bin/bash "$here/install.sh" >"$tmp/install.log" </dev/null
-check 'installer migrates connected server' test "$(tmux show -sqv @tmux_agents_state_version)" = 1
-check 'installer removes ledger' test ! -e "$ledger"
-check 'installer links turn helpers' test -f "$tmp/bin/turn-state.sh"
-check 'installer removes retired command link' test ! -L "$tmp/bin/tmux-request-state"
+ln -s "$B/tmux-request-state" "$tmp/home/bin/tmux-request-state"
+HOME="$tmp/home" BIN_DIR="$tmp/home/bin" TMUX_AGENTS_CODEX_HOMES='' /bin/bash "$here/install.sh" --home "$tmp/home" >"$tmp/install.log" </dev/null
+check 'sandbox installer leaves connected server alone' test -z "$(tmux show -sqv @tmux_agents_state_version)"
+check 'sandbox installer preserves ledger' test -e "$ledger"
+check 'installer links turn helpers' test -f "$tmp/home/bin/turn-state.sh"
+check 'installer removes retired command link' test ! -L "$tmp/home/bin/tmux-request-state"
 # Outside tmux, route the default-server probe to this private server using a
 # wrapper. No command here can fall back to the user's real default server.
 real_tmux="$(command -v tmux)"
 mkdir "$tmp/wrapper"
-printf '#!/bin/sh\nexec "%s" -L "%s" "$@"\n' "$real_tmux" "$sock" >"$tmp/wrapper/tmux"
+printf '#!/bin/sh\nexec "%s" -S "%s" "$@"\n' "$real_tmux" "$socket" >"$tmp/wrapper/tmux"
 chmod +x "$tmp/wrapper/tmux"
 tmux set -su @tmux_agents_state_version
 mkdir -p "$XDG_STATE_HOME/tmux-agents/default/requests"
-PATH="$tmp/wrapper:$PATH" HOME="$tmp/home" BIN_DIR="$tmp/bin" TMUX="" TMUX_AGENTS_CODEX_HOMES='' /bin/bash "$here/install.sh" >"$tmp/install-outside.log" </dev/null
+env -i PATH="$tmp/wrapper:$PATH" HOME="$tmp/home" BIN_DIR="$tmp/home/bin" XDG_STATE_HOME="$XDG_STATE_HOME" TMUX_AGENTS_CODEX_HOMES='' /bin/bash "$here/install.sh" --force >"$tmp/install-outside.log" </dev/null
 check 'outside installer migrates its default server' test "$(tmux show -sqv @tmux_agents_state_version)" = 1
 check 'outside installer deletes only its ledger' test ! -e "$XDG_STATE_HOME/tmux-agents/default/requests"
 [ "$fail" -eq 0 ] && echo 'all passed'

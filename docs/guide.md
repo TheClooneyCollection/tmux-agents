@@ -18,6 +18,17 @@ Run `tmux-agents open NAME` to show an exact live agent name to the user. It use
 
 Requires tmux 3.2+ and bash; the agent list also needs fzf. Other commands work without fzf. See [installation](../README.md#install).
 
+To try installation safely, run `./install.sh --home /tmp/tmux-agents-home`.
+The installer creates that home, keeps inherited `CODEX_HOME`, `TMUX_AGENTS_CODEX_HOMES`
+entries and `BIN_DIR` only when they resolve inside it, and defaults commands to
+`DIR/.local/bin`. It skips tmux settings discovery and turn-state migration, and
+prints configuration paths for the sandbox. `--dry-run` previews without writing.
+Without `--home`, linked worktrees and destinations outside `$HOME` are refused
+before any write, including in dry-run mode. `--force` explicitly overrides those
+guards for a normal install; sandbox installs still cannot write outside their home.
+A set-but-empty `TMUX_AGENTS_CODEX_HOMES` disables account discovery from tmux;
+unset it to retain the normal option/global-environment fallback.
+
 ## Configuration
 
 [Configuration](configuration.md) lists settings, defaults and environment overrides. The workflows below describe their effects.

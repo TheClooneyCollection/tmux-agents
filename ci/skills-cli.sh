@@ -64,7 +64,7 @@ for base in (home / '.agents/skills', home / '.claude/skills'):
         assert dest.is_symlink() == (mode == 'symlink' and '.claude' in str(base)), dest
 assert not (home / '.codex/skills').exists()
 PY
-  /bin/bash "$repo/install.sh" --force > "$scratch/install-$mode.log"
+  /bin/bash "$repo/install.sh" --home "$HOME" --force > "$scratch/install-$mode.log"
   python3 - "$repo" "$mode" <<'PY'
 import os, pathlib, re, sys
 repo, mode = pathlib.Path(sys.argv[1]), sys.argv[2]

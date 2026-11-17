@@ -2,25 +2,95 @@
 # Install tmux-agents from this checkout: link the commands and skills, copy
 # the Codex rules, and print the lines to add to your own config.
 #
-#   ./install.sh [--dry-run] [--force]
+#   ./install.sh [--home DIR] [--dry-run] [--force]
 #
+# --home DIR  isolate all writes; ignore outside inherited targets and skip migration
+# --force     allow worktree/outside-HOME installs and back up conflicting files
 # env: BIN_DIR  where to link the commands (default ~/.local/bin)
 #      TMUX_AGENTS_CODEX_HOMES  extra Codex accounts (name=CODEX_HOME ...);
 #               their skills and rules are installed too
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
-bin_dir="${BIN_DIR:-$HOME/.local/bin}"
-. "$here/bin/lib.sh"
-dry=0 force=0
-for a in "$@"; do
-  case "$a" in
+dry=0 force=0 sandbox_home=''
+while [ "$#" -gt 0 ]; do
+  case "$1" in
     --dry-run) dry=1 ;;
     --force) force=1 ;;
-    -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) echo "unknown option: $a" >&2; exit 1 ;;
+    --home)
+      [ "$#" -ge 2 ] && [ -n "$2" ] || { echo '--home requires a directory' >&2; exit 1; }
+      sandbox_home="$2"; shift ;;
+    -h|--help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "unknown option: $1" >&2; exit 1 ;;
   esac
+  shift
 done
+
+# Resolve existing symlink ancestors as well as missing paths, without writes.
+# Perl is already a runtime dependency; realpath -m is unavailable on macOS.
+resolved_path() {
+  perl -MCwd=abs_path -MFile::Spec -MFile::Basename=dirname,basename -e '
+    sub resolve {
+      my ($p) = @_;
+      if (-e $p || -l $p) { return abs_path($p) // die "Cannot resolve $p\n" }
+      my $parent = resolve(dirname($p));
+      my $name = basename($p);
+      return $parent if $name eq ".";
+      return dirname($parent) if $name eq "..";
+      return "$parent/$name";
+    }
+    print resolve(File::Spec->rel2abs($ARGV[0]));
+  ' "$1"
+}
+inside_home() {
+  local resolved
+  resolved="$(resolved_path "$1")" || return 1
+  case "$resolved" in "$home_root"|"${home_root%/}/"*) return 0 ;; *) return 1 ;; esac
+}
+refuse() { echo "refusing install: $*; use --home DIR for an isolated install (or --force to override)" >&2; exit 1; }
+
+if [ -n "$sandbox_home" ]; then
+  case "$sandbox_home" in /*) HOME="$sandbox_home" ;; *) HOME="$PWD/$sandbox_home" ;; esac
+  while [ "$HOME" != / ] && [ "${HOME%/}" != "$HOME" ]; do HOME="${HOME%/}"; done
+  export HOME
+  echo "sandbox home: $HOME"
+fi
+home_root="$(resolved_path "$HOME")"
+if [ -n "$sandbox_home" ]; then
+  # A set-but-empty map deliberately disables all tmux settings discovery.
+  filtered_map=''
+  for entry in ${TMUX_AGENTS_CODEX_HOMES:-}; do
+    if inside_home "${entry#*=}"; then filtered_map="${filtered_map:+$filtered_map }$entry"; fi
+  done
+  export TMUX_AGENTS_CODEX_HOMES="$filtered_map"
+  if [ -n "${CODEX_HOME:-}" ] && ! inside_home "$CODEX_HOME"; then unset CODEX_HOME; fi
+  if [ -n "${BIN_DIR:-}" ] && ! inside_home "$BIN_DIR"; then unset BIN_DIR; fi
+fi
+bin_dir="${BIN_DIR:-$HOME/.local/bin}"
+. "$here/bin/lib.sh"
+
+if [ "$force" -eq 0 ] && [ -z "$sandbox_home" ]; then
+  git_dir="$(git -C "$here" rev-parse --git-dir 2>/dev/null || true)"
+  git_common_dir="$(git -C "$here" rev-parse --git-common-dir 2>/dev/null || true)"
+  if [ -n "$git_dir" ] && [ "$git_dir" != "$git_common_dir" ]; then
+    refuse 'checkout is a linked git worktree'
+  fi
+fi
+# Discover and validate every destination before linking or removing anything.
+codex_map=''
+resolve_codex_homes codex_map
+codex_homes=("${CODEX_HOME:-$HOME/.codex}" "$HOME/.codex")
+for e in $codex_map; do codex_homes+=("${e#*=}"); done
+# Sandbox installs must never escape through pre-existing directory symlinks,
+# even with --force. Individual command/skill links are replaced, not followed.
+if [ "$force" -eq 0 ] || [ -n "$sandbox_home" ]; then
+  targets=("$bin_dir" "$HOME/.claude/skills")
+  for h in "${codex_homes[@]}"; do targets+=("$h" "$h/skills" "$h/rules"); done
+  for target in "${targets[@]}"; do
+    inside_home "$target" || refuse "write target outside HOME: $target"
+  done
+fi
+if [ -n "$sandbox_home" ] && [ "$dry" -eq 0 ]; then mkdir -p "$HOME"; fi
 
 if ! command -v fzf >/dev/null 2>&1; then
   printf '%s\n' 'Note: fzf is required for the agent list (prefix + a).' \
@@ -118,10 +188,6 @@ link "$here/skills/tmux-agents-perf" "$HOME/.claude/skills/tmux-agents-perf"
 link "$here/skills/agent-chain" "$HOME/.claude/skills/agent-chain"
 
 # Always cover the standard home as well as an explicitly selected account.
-codex_map=''
-resolve_codex_homes codex_map
-codex_homes=("${CODEX_HOME:-$HOME/.codex}" "$HOME/.codex")
-for e in $codex_map; do codex_homes+=("${e#*=}"); done
 seen_homes=()
 for h in "${codex_homes[@]}"; do
   # Ignore trailing slashes when deduplicating account paths.
@@ -146,7 +212,7 @@ cat <<EOF
 
 Almost done. Add these to your own config:
 
-1. ~/.tmux.conf, then reload tmux:
+1. $HOME/.tmux.conf, then reload tmux:
      %hidden TMUX_AGENTS_BIN="$bin_dir"
      source-file "$here/tmux/tmux-agents.conf"
 
@@ -154,7 +220,7 @@ Almost done. Add these to your own config:
 
 3. Claude: merge the "allow" rules from
      $here/integrations/claude/settings.json
-   into ~/.claude/settings.json.
+   into $HOME/.claude/settings.json.
 
 4. In tmux, start agents with tracking and identity pins:
      tmux-agents start claude
@@ -166,8 +232,8 @@ Almost done. Add these to your own config:
    Launch hooks are passed per process; global agent hook config is not edited.
 
    Optional, for typing codex directly: a wrapper pins identity only, without tracking:
-     fish:      cp $here/integrations/fish/functions/*.fish ~/.config/fish/functions/
-     bash/zsh:  source $here/integrations/sh/codex.sh   (in ~/.bashrc or ~/.zshrc)
+     fish:      cp $here/integrations/fish/functions/*.fish $HOME/.config/fish/functions/
+     bash/zsh:  source $here/integrations/sh/codex.sh   (in $HOME/.bashrc or $HOME/.zshrc)
 
 5. Optional: tell your agents to use tmux-spawn instead of built-in sub agents
    (CLAUDE.md / AGENTS.md); the skill describes it.
@@ -175,6 +241,6 @@ EOF
 
 # Upgrade this server only. Outside tmux, the normal tmux command targets its
 # default server; a missing server is expected and does not start one.
-if [ "$dry" -eq 0 ] && command -v tmux >/dev/null 2>&1 && tmux list-sessions >/dev/null 2>&1; then
+if [ -z "$sandbox_home" ] && [ "$dry" -eq 0 ] && command -v tmux >/dev/null 2>&1 && tmux list-sessions >/dev/null 2>&1; then
   migrate_turn_state
 fi

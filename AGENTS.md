@@ -4,6 +4,8 @@ Notes for AI agents working on tmux-agents.
 
 ## Testing
 
+- Never run `install.sh` from a worktree against the real home; use `./install.sh --home DIR`.
+
 - **Never touch the user's tmux server.** Test on your own socket: `tmux -L <testname>`.
 - Before pointing `TMUX=` at a test socket, check the server is up (`tmux -L <testname> has-session`) and the socket path is non-empty and not `*/default`. A failed test server plus an empty `TMUX` falls back to the user's server.
 - Clean up with `tmux -L <testname> kill-server` only. Never run a bare `tmux kill-server`. Suites use `tests/helpers/cleanup.sh` to stop their delivery workers and remove only their own queue directory before deleting temporary state; never remove `default/` or shared flat-root messages.
@@ -28,10 +30,10 @@ Notes for AI agents working on tmux-agents.
   | `tmux-spawn` | `spawn-for.sh`, `spawn-split.sh`, `spawn-names.sh`, `resume-messages.sh`, `sub-auto.sh` |
   | member lifecycle (spawn, depth, ownership, dismiss, resume; owner A) | `tests/members.sh` |
   | member UI (list, chip, attention; owner B) | `tests/member-ui.sh` |
-  | user settings or configuration lookup | `settings.sh`, `spawn-names.sh`, `list-budget.sh`, `install.sh`, `skill-links.sh` |
+  | user settings or configuration lookup | `settings.sh`, `spawn-names.sh`, `list-budget.sh`, `install.sh`, `install-guard.sh`, `skill-links.sh` |
   | top-level launcher, shared launch hooks or pins | `tests/launcher.sh`, `tests/start-takeover.sh`, `tests/tracking.sh`, `spawn-for.sh`, `spawn-split.sh`, `settings.sh` |
   | tracked state, untracked rows or message transitions | `tests/tracking.sh`, `needs-you.sh`, `worked-time.sh`, `list-budget.sh`, `preview-header.sh` |
-  | skills or installer | `skills.sh`, `install.sh`, `skill-links.sh` |
+  | skills or installer | `skills.sh`, `install.sh`, `install-guard.sh`, `skill-links.sh` |
   | `tmux-dismiss` | `dismiss.sh` |
   | agent IDs, record migration or identity lookup | `agent-ids.sh`, `lifecycle-ids.sh`, `list-ids.sh`, `live-names.sh` plus the message suites |
   | naming, rename or target lookup (`lib.sh`, `tmux-rename`, `tmux-connect`) | `rename.sh`, `names.sh`, `live-names.sh`, `spawn-names.sh`, `ask-queue.sh`, `resume-messages.sh` |

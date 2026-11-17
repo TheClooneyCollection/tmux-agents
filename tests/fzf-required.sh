@@ -22,12 +22,12 @@ if PATH="$tmp/path" /bin/bash -c 'command -v fzf'; then echo 'FAIL: fzf leaked i
 # A failing tmux stub prevents installation from looking at any live server.
 printf '#!/bin/sh\nexit 1\n' >"$tmp/stubs/tmux"
 chmod +x "$tmp/stubs/tmux"
-env PATH="$tmp/stubs:$tmp/path" HOME="$tmp/home" CODEX_HOME="$tmp/home/.codex" BIN_DIR="$tmp/bin" \
-  /bin/bash "$here/install.sh" >"$tmp/install-output" 2>&1
+env PATH="$tmp/stubs:$tmp/path" HOME="$tmp/home" CODEX_HOME="$tmp/home/.codex" BIN_DIR="$tmp/home/bin" \
+  /bin/bash "$here/install.sh" --home "$tmp/home" >"$tmp/install-output" 2>&1
 for text in 'fzf is required' 'brew install fzf' 'apt install fzf' 'Installation continues'; do
   grep -Fq "$text" "$tmp/install-output"
 done
-[ -L "$tmp/bin/tmux-agents" ]
+[ -L "$tmp/home/bin/tmux-agents" ]
 echo 'ok    installation succeeds and explains missing fzf'
 tmux -L "$sock" -f /dev/null new-session -d -s work -c "$tmp" /bin/cat
 tmux -L "$sock" set -g default-shell /bin/sh

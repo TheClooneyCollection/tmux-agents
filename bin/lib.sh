@@ -1450,6 +1450,10 @@ chain_roles_print() {
 # call preserves settings_get's option snapshot; no running tmux is required.
 resolve_codex_homes() {
   local _codex_homes_value _codex_homes_global
+  if [ "${TMUX_AGENTS_CODEX_HOMES+x}" = x ]; then
+    printf -v "$1" '%s' "$TMUX_AGENTS_CODEX_HOMES"
+    return 0
+  fi
   settings_get _codex_homes_value TMUX_AGENTS_CODEX_HOMES @tmux_agents_codex_homes ""
   if [ -z "$_codex_homes_value" ] && [ -n "${TMUX:-}" ]; then
     _codex_homes_global="$(tmux show-environment -g TMUX_AGENTS_CODEX_HOMES 2>/dev/null || true)"

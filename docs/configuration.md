@@ -102,6 +102,8 @@ Use space-separated `name=path` pairs for several profiles. An environment overr
 export TMUX_AGENTS_CODEX_HOMES="work=$HOME/.codex-work"
 ```
 
+A set-but-empty `TMUX_AGENTS_CODEX_HOMES` disables account discovery from tmux. Unset it to use the tmux option or global environment fallback.
+
 The legacy `set-environment -g TMUX_AGENTS_CODEX_HOMES ...` fallback applies only when neither a local override nor the option is set. It does not override an environment value already inherited by a running agent.
 
 Rerun `./install.sh` from your installation checkout so each configured home gets the skills and Codex rules. Then use `tmux-agents start work` for a top-level agent, or `tmux-spawn work --from ME "task"` for a helper (`ME` is its parent's full name). Launched agents receive the resolved profile map as a process-local environment snapshot for subsequent helpers and queries; restart them to pick up changes to the mapping option. Helpers inherit their parent's profile unless given another kind explicitly. The profile remains `work` for account selection, but generated names use the `codex` prefix.

@@ -8,7 +8,7 @@ tmp="$(mktemp -d "${TMPDIR:-/tmp}/tmux-install.XXXXXX")"
 cleanup() { cleanup_test_server || return; rm -rf "$tmp"; }
 trap cleanup EXIT
 unset TMUX TMUX_PANE TMUX_AGENTS_CODEX_HOMES
-export HOME="$tmp/home" CODEX_HOME="$tmp/selected home" BIN_DIR="$tmp/bin"
+export HOME="$tmp/home" CODEX_HOME="$tmp/home/selected home" BIN_DIR="$tmp/home/bin"
 export XDG_STATE_HOME="$tmp/state"
 mkdir -p "$HOME/.codex" "$CODEX_HOME" "$tmp/stubs"
 real_tmux="$(command -v tmux)"
@@ -19,7 +19,7 @@ export PATH="$tmp/stubs:$PATH"
 count=0 failures=0
 check() { local label="$1"; shift; count=$((count+1)); if "$@"; then echo "ok    $label"; else echo "FAIL  $label"; failures=$((failures+1)); fi; }
 contains() { grep -Fq -- "$2" "$1"; }
-install() { /bin/bash "$here/install.sh" "$@" >"$tmp/output" 2>&1; }
+install() { /bin/bash "$here/install.sh" --home "$HOME" "$@" >"$tmp/output" 2>&1; }
 all_skills() {
   local skill
   for skill in "$here"/skills/*; do
@@ -46,7 +46,7 @@ for rules_home in "$HOME/.codex" "$CODEX_HOME"; do
 done
 check 'rules content copied' cmp -s "$here/integrations/codex/tmux-agents.rules" "$CODEX_HOME/rules/tmux-agents.rules"
 rm "$HOME/.codex/skills/tmux-agents"
-ln -s "$tmp/missing" "$HOME/.codex/skills/tmux-agents"
+ln -s "$HOME/missing" "$HOME/.codex/skills/tmux-agents"
 install
 check 'broken link repaired' all_skills "$HOME/.codex/skills"
 # Links that already resolve to the install, e.g. relative ones kept in
@@ -112,7 +112,7 @@ cp -R "$here/bin" "$here/skills" "$here/integrations" "$checkout/"
 cp "$here/install.sh" "$checkout/"
 internal_install() {
   HOME="${1:-$internal_home}" CODEX_HOME="$internal_home/selected home" BIN_DIR="$internal_home" \
-    /bin/bash "$checkout/install.sh" >"$tmp/internal-output" 2>&1
+    /bin/bash "$checkout/install.sh" --home "${1:-$internal_home}" >"$tmp/internal-output" 2>&1
 }
 internal_install "$internal_home/"
 for skill_home in .claude .codex 'selected home'; do
@@ -136,7 +136,7 @@ done
 # Replace one correct relative link with a correct absolute one, and one with
 # a broken link. A second install preserves the former and repairs the latter.
 ln -sfn "$checkout/skills/agent-chain" "$internal_home/.codex/skills/agent-chain"
-ln -sfn "$tmp/missing" "$internal_home/.codex/skills/tmux-agents-setup"
+ln -sfn "$HOME/missing" "$internal_home/.codex/skills/tmux-agents-setup"
 internal_install
 check 'existing relative skill target kept' test "$(readlink "$internal_home/.codex/skills/tmux-agents")" = ../../.local/share/tmux-agents/skills/tmux-agents
 check 'existing relative skill reported kept' contains "$tmp/internal-output" "kept $internal_home/.codex/skills/tmux-agents"
@@ -145,27 +145,27 @@ check 'existing absolute skill reported kept' contains "$tmp/internal-output" "k
 check 'wrong HOME-internal link replaced with relative target' test "$(readlink "$internal_home/.codex/skills/tmux-agents-setup")" = ../../.local/share/tmux-agents/skills/tmux-agents-setup
 check 'repaired relative skill resolves' test "$internal_home/.codex/skills/tmux-agents-setup" -ef "$checkout/skills/tmux-agents-setup"
 check 'target outside HOME stays absolute' test "$(readlink "$HOME/.codex/skills/tmux-agents")" = "$here/skills/tmux-agents"
-# A destination outside HOME must also keep its absolute target.
+# An inherited bin outside HOME is ignored by sandbox installation.
 HOME="$internal_home" CODEX_HOME="$internal_home/.codex" BIN_DIR="$tmp/external-bin" \
-  /bin/bash "$checkout/install.sh" >"$tmp/internal-output" 2>&1
-check 'link outside HOME stays absolute' test "$(readlink "$tmp/external-bin/tmux-ask")" = "$checkout/bin/tmux-ask"
+  /bin/bash "$checkout/install.sh" --home "$internal_home" >"$tmp/internal-output" 2>&1
+check 'outside bin ignored' test ! -e "$tmp/external-bin"
 # Direct calls must not print, must keep settings cache, and work without tmux.
 . "$here/bin/lib.sh"
 result=''
 resolve_codex_homes result >"$tmp/helper-output"
 check 'unavailable tmux yields empty mapping' test -z "$result"
 check 'helper has no stdout' test ! -s "$tmp/helper-output"
-export TMUX_AGENTS_CODEX_HOMES="extra=$tmp/extra duplicate=$tmp/extra/ missing=$tmp/missing"
-mkdir "$tmp/extra"
+export TMUX_AGENTS_CODEX_HOMES="extra=$HOME/extra duplicate=$HOME/extra/ missing=$HOME/missing"
+mkdir "$HOME/extra"
 install
-check 'environment mapping works without tmux' all_skills "$tmp/extra/skills"
-check 'non-codex-prefix profile installs real rules' test ! -L "$tmp/extra/rules/tmux-agents.rules"
-check 'non-codex-prefix profile gets query permission' contains "$tmp/extra/rules/tmux-agents.rules" '["tmux-agents", "chain-config"]'
-check 'extra profile gets owned shell permission' contains "$tmp/extra/rules/tmux-agents.rules" 'prefix_rule(pattern=["tmux-shell", "--from"], decision="allow")'
-check 'duplicate home reported once' test "$(grep -Fc "Codex home: $tmp/extra" "$tmp/output")" = 1
-check 'missing home explicitly skipped' contains "$tmp/output" "skipped $tmp/missing: no such Codex home"
+check 'environment mapping works without tmux' all_skills "$HOME/extra/skills"
+check 'non-codex-prefix profile installs real rules' test ! -L "$HOME/extra/rules/tmux-agents.rules"
+check 'non-codex-prefix profile gets query permission' contains "$HOME/extra/rules/tmux-agents.rules" '["tmux-agents", "chain-config"]'
+check 'extra profile gets owned shell permission' contains "$HOME/extra/rules/tmux-agents.rules" 'prefix_rule(pattern=["tmux-shell", "--from"], decision="allow")'
+check 'duplicate home reported once' test "$(grep -Fc "Codex home: $HOME/extra" "$tmp/output")" = 1
+check 'missing home explicitly skipped' contains "$tmp/output" "skipped $HOME/missing: no such Codex home"
 # Upgrade removes only this install's retired links in every discovered home.
-retired_homes=("$HOME/.claude" "$HOME/.codex" "$CODEX_HOME" "$tmp/extra")
+retired_homes=("$HOME/.claude" "$HOME/.codex" "$CODEX_HOME" "$HOME/extra")
 ln -s "$here/bin/tmux-clear-context" "$BIN_DIR/tmux-clear-context"
 for retired_home in "${retired_homes[@]}"; do
   ln -s "$here/skills/chain-reset" "$retired_home/skills/chain-reset"
@@ -186,13 +186,13 @@ printf 'user executable\n' > "$BIN_DIR/tmux-clear-context"
 mkdir "$HOME/.claude/skills/chain-reset"
 printf 'user skill\n' > "$HOME/.claude/skills/chain-reset/SKILL.md"
 mkdir -p "$tmp/other-install/bin" "$tmp/other-install/skills"
-for retired_home in "$HOME/.codex" "$CODEX_HOME" "$tmp/extra"; do
+for retired_home in "$HOME/.codex" "$CODEX_HOME" "$HOME/extra"; do
   ln -s "$tmp/other-install/skills/chain-reset" "$retired_home/skills/chain-reset"
 done
 install --force
 check 'retirement preserves user command' contains "$BIN_DIR/tmux-clear-context" 'user executable'
 check 'retirement preserves user skill directory' contains "$HOME/.claude/skills/chain-reset/SKILL.md" 'user skill'
-for retired_home in "$HOME/.codex" "$CODEX_HOME" "$tmp/extra"; do
+for retired_home in "$HOME/.codex" "$CODEX_HOME" "$HOME/extra"; do
   check "retirement preserves foreign $retired_home link" test "$(readlink "$retired_home/skills/chain-reset")" = "$tmp/other-install/skills/chain-reset"
 done
 rm "$BIN_DIR/tmux-clear-context"
@@ -210,14 +210,17 @@ export TMUX="$S,1,0" TMUX_PANE=%0
 mkdir "$tmp/option" "$tmp/global" "$tmp/env"
 tmux -L "$sock" set-environment -g TMUX_AGENTS_CODEX_HOMES "legacy=$tmp/global"
 tmux -L "$sock" set -g @tmux_agents_codex_homes "option=$tmp/option"
+_TMUX_SETTINGS_LOADED=0
+result=''
+resolve_codex_homes result
+check 'option wins over global fallback' test "$result" = "option=$tmp/option"
+TMUX_AGENTS_CODEX_HOMES="override=$tmp/env" resolve_codex_homes result
+check 'environment wins over option' test "$result" = "override=$tmp/env"
+TMUX_AGENTS_CODEX_HOMES='' resolve_codex_homes result
+check 'empty environment disables discovery' test -z "$result"
 install
-check 'option-only account installed' all_skills "$tmp/option/skills"
-check 'option wins over global fallback' test ! -d "$tmp/global/skills"
-TMUX_AGENTS_CODEX_HOMES="override=$tmp/env" install
-check 'environment account installed' all_skills "$tmp/env/skills"
-check 'environment wins over option' test "$(grep -Fc "Codex home: $tmp/option" "$tmp/output" || true)" = 0
-TMUX_AGENTS_CODEX_HOMES='' install
-check 'empty environment falls through to option' contains "$tmp/output" "Codex home: $tmp/option"
+check 'sandbox ignores tmux option account' test ! -d "$tmp/option/skills"
+check 'sandbox ignores tmux global account' test ! -d "$tmp/global/skills"
 # Two helper calls keep the original option snapshot in the same shell.
 _TMUX_SETTINGS_LOADED=0
 first='' second=''
@@ -226,8 +229,9 @@ tmux -L "$sock" set -g @tmux_agents_codex_homes 'changed=/unused'
 resolve_codex_homes second
 check 'helper keeps settings snapshot' test "$first" = "$second"
 tmux -L "$sock" set -gu @tmux_agents_codex_homes
-install
-check 'legacy global fallback installed' all_skills "$tmp/global/skills"
+_TMUX_SETTINGS_LOADED=0
+resolve_codex_homes result
+check 'unset environment permits legacy global fallback' test "$result" = "legacy=$tmp/global"
 tmux -L "$sock" set-environment -gu TMUX_AGENTS_CODEX_HOMES
 install
 check 'default home reported without map' contains "$tmp/output" "Codex home: $HOME/.codex"
