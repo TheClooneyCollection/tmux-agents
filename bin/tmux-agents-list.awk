@@ -234,7 +234,7 @@ END {
         printf "\033[0m\n"
         exit
     }
-    if (ENVIRON["LIST_BOARD"]=="1") { board_render(); exit }
+    if (ENVIRON["LIST_BOARD"]=="1") { board_render(); board_flush(); exit }
     live_waits()
     if (ENVIRON["LIST_CHIP"]=="1") {
         for (i=1;i<=np;i++) {
@@ -350,7 +350,23 @@ END {
 $1=="B" { board_project=$2; board_width=$3+0; board_missing=$4; board_height=$5+0; next }
 $1=="M" { missions[++nm]=$2; mission_title[nm]=$3; mission_owner[nm]=$4; mission_status[nm]=$5; mission_update[nm]=$6; next }
 $1=="A" { board_kind[$2]=$3; board_model[$2]=$4; board_project_of[$2]=$5; next }
-function board_line(s) { if (board_height>0 && ++board_lines>=board_height) return; gsub(/[[:cntrl:]]/," ",s); print fit(s,board_width) }
+function board_line(s, agent) {
+    gsub(/[[:cntrl:]]/," ",s)
+    if (board_height<=0) { print fit(s,board_width); return }
+    board_text[++board_lines]=s; board_agent[board_lines]=agent
+}
+function board_flush( limit,i,hidden) {
+    if (board_height<=0) return
+    # Leave the final terminal row free for the shell renderer's newline.
+    limit=board_height>1 ? board_height-1 : 1
+    if (board_lines<=limit) {
+        for (i=1;i<=board_lines;i++) print fit(board_text[i],board_width)
+        return
+    }
+    for (i=1;i<limit;i++) print fit(board_text[i],board_width)
+    for (i=limit;i<=board_lines;i++) hidden+=board_agent[i]
+    print fit("... " hidden+0 " more rows (resize or run without --watch)",board_width)
+}
 function board_tree(p, depth, visited, unassigned, j, child, short, status, line, kindprefix, nameproject) {
     if (index(visited,"|" p "|" ) || (unassigned && assigned[p])) return
     visited=visited "|" p "|"; assigned[p]=1
@@ -363,7 +379,7 @@ function board_tree(p, depth, visited, unassigned, j, child, short, status, line
     sub(/^[^ ]+ /,"",status); if (status=="needs you") status="needs-you"
     line=sprintf("%*s",depth*2+2,"") short " [" board_kind[p] " / " board_model[p] "] " status
     if (activity[p]!="-" && activity[p]!="") line=line " · " activity[p]
-    board_line(line)
+    board_line(line,1)
     for (j=1;j<=np;j++) { child=order[j]; if (board_live(child) && parent[child]==p && (!unassigned || board_in_project(child))) board_tree(child,depth+1,visited,unassigned) }
 }
 function board_live(p) { return name[p]!="-" && name[p]!="" && dead[p]!=1 && !isshell[p] }

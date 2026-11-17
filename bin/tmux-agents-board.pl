@@ -44,6 +44,7 @@ my $state=($ENV{XDG_STATE_HOME}||"$ENV{HOME}/.local/state").'/tmux-agents';
 my $socket=(split /,/, $ENV{TMUX}//'')[0] // ''; $socket =~ s{.*/}{};
 my @data;
 for my $r (@rows) {
+ next if $r->[9] eq '';
  push @data, join("\t",@$r[0..27]);
  next if $r->[2] eq '-' || $r->[3] eq '1' || $r->[23] eq '1';
  my %record;

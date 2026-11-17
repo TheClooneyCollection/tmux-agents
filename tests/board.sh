@@ -58,6 +58,9 @@ rows[-1][7]='work'; rows[-1][9]=str(p/'linked')
 row(11,'claude-project-interface', '%9',state='idle')
 row(12,'codex-project-worker','%11',state='idle')
 rows[-1][7]='work'; rows[-1][9]=str(p/'elsewhere')
+# An unreadable pane cwd must not inherit the board process's PWD.
+row(14,'codex-project-empty-path',state='idle')
+rows[-1][7]='work'; rows[-1][9]=''
 (p/'panes').write_text('\n'.join('\t'.join(r) for r in rows)+'\n')
 a=base64.b64encode(b'--model\0test-model\0').decode()
 (p/'state/tmux-agents/test/sessions/a000000000001').write_text('kind=codex-profile\ncli_args='+a+'\n')
@@ -79,7 +82,7 @@ grep -Fq 'untracked [tool / default] -' "$tmp/out"
 grep -Fq '(owner not live)' "$tmp/out"
 grep -Fq 'free [codex / default] idle' "$tmp/out"
 [ "$(grep -Fc 'owner [claude / default]' "$tmp/out")" = 1 ]
-if grep -Eq 'outside|dead \[' "$tmp/out"; then echo 'FAIL foreign/dead agent'; exit 1; fi
+if grep -Eq 'empty-path|outside|dead \[' "$tmp/out"; then echo 'FAIL foreign/dead agent'; exit 1; fi
 [ "$(grep -c '^list-panes ' "$tmp/calls")" = 1 ]
 [ "$(grep -c '^show-option ' "$tmp/calls")" = 1 ]
 grep -q '^list-panes -a -F ' "$tmp/calls"
@@ -148,9 +151,15 @@ from pathlib import Path
 # Visible panes force project resolution; all share one path.
 fixture=Path(os.environ['BOARD_FIXTURE'])
 rows=[r.split('\t') for r in fixture.read_text().splitlines()]
-for r in rows: r[7]='work'; r[28]='140'; r[9]=os.getcwd()
+for r in rows:
+    r[7]='work'; r[28]='140'
+    if r[9]: r[9]=os.getcwd()
 fixture.write_text('\n'.join('\t'.join(r) for r in rows)+'\n')
-for key in (b'q', b'\x03'):
+full=subprocess.check_output([sys.argv[1], 'board'], text=True).splitlines()
+assert not any('more rows' in line or 'empty-path' in line for line in full), full
+for key, height in ((b'q', 8), (b'q', len(full)+1), (b'\x03', 40)):
+    for r in rows: r[29]=str(height)
+    fixture.write_text('\n'.join('\t'.join(r) for r in rows)+'\n')
     Path(os.environ['BOARD_CALLS']).write_text('')
     Path(os.environ['BOARD_GIT_CALLS']).write_text('')
     if key == b'q': Path(os.environ['BOARD_FAIL_ONCE']).touch()
@@ -169,6 +178,16 @@ for key in (b'q', b'\x03'):
         if key == b'q':
             assert b'board: refresh failed (retrying)' in data, data
             assert b'Mission board' in data, data
+        frame=data.split(b'\x1b[H')[-1].split(b'\x1b[J')[0]
+        lines=[line.replace(b'\x1b[K', b'').rstrip(b'\r').decode() for line in frame.split(b'\n') if line]
+        if height == 8:
+            hidden=sum(' [' in line for line in full[height-2:])
+            assert lines[-1].startswith(f'... {hidden} more rows'), (lines, hidden)
+            assert len(lines)==height-1, lines
+            assert sum(' [' in line for line in lines[:-1])+hidden==sum(' [' in line for line in full), (lines, full)
+        else:
+            assert not any('more rows' in line for line in lines), lines
+            assert len(lines)==len(full), (lines, full)
         calls=Path(os.environ['BOARD_CALLS']).read_text().splitlines()
         assert sum(c.startswith('show-option ') for c in calls)==1, calls
         assert sum(c.startswith('list-panes ') for c in calls)>=frames, calls
