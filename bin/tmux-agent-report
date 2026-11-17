@@ -6,7 +6,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-usage: tmux-agent-report [--from ME] "what you're doing now"
+usage: tmux-agent-report [--from ME] [--mission ID] "what you're doing now"
        tmux-agent-report [--from ME] --needs-you "reason"
        tmux-agent-report --pane PANE --perm on|off
        tmux-agent-report --pane PANE --tool-start|--tool-end|--asking
@@ -19,11 +19,12 @@ Legacy --waiting and --local are progress reports; --local-done is a no-op.
 USAGE
 }
 
-FROM_PANE="" pane="" perm="" tool="" turn="" notify_json="" notify_agent_id="" notify_rebound="" notify_user_input=0 waiting=0 save_work=0 local_work=0 local_done=0 needs_you=0
+mission="" FROM_PANE="" pane="" perm="" tool="" turn="" notify_json="" notify_agent_id="" notify_rebound="" notify_user_input=0 waiting=0 save_work=0 local_work=0 local_done=0 needs_you=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
     --agent-id) notify_agent_id="${2:-}"; shift 2 ;;
+    --mission) [ "$#" -ge 2 ] && [ -n "$2" ] || die '--mission needs an ID'; mission="$2"; shift 2 ;;
     --from) FROM_PANE="${2:-}"; shift 2 ;;
     --pane) pane="${2:-}"; shift 2 ;;
     --save-work) save_work=1; shift ;;
@@ -44,6 +45,10 @@ while [ $# -gt 0 ]; do
     *) break ;;
   esac
 done
+
+if [ -n "$mission" ] && { [ -n "$turn$perm$tool" ] || [ "$save_work" -eq 1 ] || [ "$local_done" -eq 1 ]; }; then
+  die '--mission requires a progress report'
+fi
 
 # Validate user-facing work modes before identity or state mutations.
 if [ $((local_work + local_done + waiting + needs_you)) -gt 1 ] ||
@@ -228,6 +233,12 @@ if [ -n "$pane" ]; then
   pane_alive "$pane" || exit 0
 else
   pane="$(self_pane)"
+fi
+
+if [ -n "$mission" ]; then
+  require_agent_pane "$pane"
+  mission_text="$(printf '%s' "$*" | tr '\n\r\t' '   ')"
+  "$(dirname "$0")/tmux-agents-mission" log --from "$(pane_name "$pane")" --kind progress -- "$mission" "$mission_text"
 fi
 
 if [ "$needs_you" -eq 1 ]; then

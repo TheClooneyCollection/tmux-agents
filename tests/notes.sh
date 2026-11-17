@@ -181,11 +181,12 @@ exit "${NOTES_MISSION_EXIT:-0}"
 STUB
 chmod +x "$tmp/bin/fleet-command"
 export PATH="$tmp/bin:$PATH" NOTES_MISSION_LOG="$tmp/mission"
-ask --any --mission mission-1 receiver 'mission progress'
+mission_id="$("$B/tmux-agents-mission" add --from sender 'Note progress')"
+ask --any --mission "$mission_id" receiver 'mission progress'
 grep -qx progress "$tmp/mission" || fail 'mission kind'
-grep -qx mission-1 "$tmp/mission" || fail 'mission ID'
+grep -qx "$mission_id" "$tmp/mission" || fail 'mission ID'
 export NOTES_MISSION_EXIT=1
-ask --any --mission mission-2 receiver 'still saved' 2>"$tmp/warning"
+ask --any --mission "$mission_id" receiver 'still saved' 2>"$tmp/warning"
 grep -q 'mission log failed' "$tmp/warning" || fail 'mission warning'
 notes --keep-unread >"$tmp/read"
 grep -q 'still saved' "$tmp/read" || fail 'mission failure lost note'

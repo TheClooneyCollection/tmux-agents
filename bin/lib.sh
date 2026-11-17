@@ -455,14 +455,10 @@ request_body() {
   receiver_kind="$(request_receiver_kind "${5:-}")"
   case "$receiver_kind" in
     claude)
-      reply_command="$(printf 'reply with:\ntmux-ask --from %s%s --reply %s <<'\''MSG'\''\n<your reply>\nMSG' "$3" "${4:+ $4}" "$1")"
-      ;;
-    codex)
-      # shellcheck disable=SC2016
-      reply_command="$(printf 'send a short reply with: tmux-ask --from %s%s --reply %s "answer"; for a longer reply, send a short summary plus --message-file with a unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/<ME>/, then remove it after sending or keep it for retry.' "$3" "${4:+ $4}" "$1")"
+      reply_command="$(printf 'reply with:\ntmux-ask --from %s%s --reply <<'\''MSG'\''\n<your reply>\nMSG' "$3" "${4:+ $4}")"
       ;;
     *)
-      reply_command="$(printf 'send a short reply as a quoted argument: tmux-ask --from %s%s --reply %s "answer".' "$3" "${4:+ $4}" "$1")"
+      reply_command="$(printf 'send a reply as one quoted argument (multi-line text is allowed): tmux-ask --from %s%s --reply -- "answer". For a long report, use --reply --summary "short summary" -- "full report" to retain the body and send only the summary plus a tmux-read pointer.' "$3" "${4:+ $4}")"
       ;;
   esac
   printf '[request from %s to %s via tmux-ask · %s]\n%s\n\n(You are %s. When done, %s)\n[end of request from %s to %s]' "$1" "$3" "$token" "$2" "$3" "$reply_command" "$1" "$3"
@@ -1118,7 +1114,7 @@ clear_agent() {
     [ "$keep_connections" = 1 ] || remove_word "$other" @peers "$pane"
     [ "$(tmux show-options -pqv -t "$other" @parent)" != "$pane" ] || tmux set-option -pu -t "$other" @parent
   done
-  for key in agent agent_id tracked parent member peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since codex_startup_wait msg_waiting_since work_closed work_restored activity attention_since explicit_needs_you asking codex_thread resume_shell notes_idle_since notes_digest_at notes_digest_sent_at turn_began last_delivered; do
+  for key in agent agent_id tracked parent member role peers peer_names closed state state_since worked last_turn turns turn_start turn_work turn_active started perm_since codex_startup_wait msg_waiting_since work_closed work_restored activity attention_since explicit_needs_you asking codex_thread resume_shell notes_idle_since notes_digest_at notes_digest_sent_at turn_began last_delivered last_requester; do
     case "$key" in agent|peers|peer_names) [ "$keep_connections" != 1 ] || continue ;; esac
     tmux set-option -pu -t "$pane" "@$key" 2>/dev/null || true
   done

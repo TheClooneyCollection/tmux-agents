@@ -22,7 +22,7 @@ case "${1:-}" in
          for ((i=0; i<${#args[@]}; i++)); do
            case "${args[$i]}" in
              --from) i=$((i+1)); FROM_PANE="${args[$i]:-}" ;;
-             --request-id|--mission|--message-file) i=$((i+1)) ;;
+             --request-id|--mission|--message-file|--summary) i=$((i+1)) ;;
              --reply|--notice|--note|--any) ;;
              --) break ;;
              *) if [ -z "$initial_target" ]; then initial_target="${args[$i]}"; else break; fi ;;
@@ -225,6 +225,9 @@ try_delivery_locked() {
   if ! mv "$source" "$sending"; then return 1; fi
   if deliver "$peer" "$(cat "$sending")"; then
     rm -f "$sending" "${source%.msg}.meta"
+    if [ "$kind" = request ] && [ -n "$from_id" ]; then
+      tmux set-option -p -t "$peer" @last_requester "$from_id"
+    fi
     turn_message_delivered "$peer" "$kind" "$message_id" || true
     active_file=""
     refresh_waiting "$peer"
@@ -425,39 +428,38 @@ fi
 
 usage() {
   cat <<'EOF'
-usage: tmux-ask [--from ME] [--any] <name> [--reply | --notice | --note] [--message-file PATH | message...]
+usage: tmux-ask [--from ME] [--any] [name] [--reply | --notice | --note] [--summary TEXT] [message...]
 
 Sends message (arguments, stdin, or --message-file) to the connected pane name
 and submits it. Requests tell the receiver how to reply. Replies are
 marked as needing no response, which stops endless back-and-forth.
 
   tmux-ask codex "review the diff in src/auth"
-  message_dir="${TMPDIR:-/tmp}/tmux-agents/$ME"
-  mkdir -p "$message_dir"
-  reply_file="$(mktemp "$message_dir/reply.XXXXXX")"
-  # write the reply to "$reply_file"; remove it after a successful send
-  tmux-ask --reply claude --message-file "$reply_file" "Review complete; details attached."
+  tmux-ask --reply -- "Review complete."
+  tmux-ask --summary "Review complete; details attached." codex "Full report..."
 
 --pending: list queued and undelivered messages, including legacy files
 --retry [--to NAME]: retry undelivered messages by receiver name
 
+--reply: reply to the latest delivered requester when no name is supplied;
+         use --reply -- "body" for nameless positional text, or stdin
+--summary TEXT: retain the positional or stdin body for 7 days, delivering
+                TEXT plus a tmux-read pointer; conflicts with --message-file
 --request-id ID: deprecated; accepted and ignored
 --message-file PATH: use a readable regular text file (max 1 MiB; no symlinks)
               alone: paste the full file as the message, without archiving it
               with positional message text: that text is the summary; retain
               the file for 7 days and append a tmux-read pointer to the summary
               stdin is ignored in both modes; put options before the summary
-              Use a unique mktemp file under ${TMPDIR:-/tmp}/tmux-agents/$ME/;
-              remove it after a successful send or keep it for a retry.
 --from ME: your own name (needed where $TMUX_PANE is wrong, e.g. Codex)
 --note:    store a quiet note without pasting or starting a turn
---mission ID: with --note, best-effort fleet-command progress logging
+--mission ID: with --note, log local progress; fleet-command is best-effort
 --notice:  a message that needs no answer (tmux-connect sends one when
            it connects agents in different windows)
 --any:     send to a named pane you aren't connected to (the reply
            instructions include --any too)
 
-Messages are never truncated or split. Choose a summary plus --message-file
+Messages are never truncated or split. Choose --summary TEXT
 when the full text would flood the receiver. Otherwise send it in full.
 Replies change message formatting; turn hooks determine completion.
 If the user is typing or scrolling in the receiver's pane, the message
@@ -474,12 +476,13 @@ Settings (environment overrides option):
 EOF
 }
 
-target="" reply=0 notice=0 note=0 mission="" any=0 msg="" full_message="" FROM_PANE="" message_file="" message_file_given=0 positional_message=0
+target="" reply=0 notice=0 note=0 mission="" any=0 msg="" full_message="" FROM_PANE="" message_file="" message_file_given=0 positional_message=0 summary="" summary_given=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
     --request-id) [ "$#" -ge 2 ] || die "--request-id needs an ID"; printf "%s\n" "tmux-ask: --request-id is no longer needed" >&2; shift 2 ;;
     --message-file) [ "$#" -ge 2 ] || die "--message-file needs a path"; [ "$message_file_given" -eq 0 ] || die "--message-file may only be used once"; message_file="$2"; message_file_given=1; shift 2 ;;
+    --summary) [ "$#" -ge 2 ] && [ -n "$2" ] || die "--summary needs text"; [ "$summary_given" -eq 0 ] || die "--summary may only be used once"; summary="$2"; summary_given=1; shift 2 ;;
     --reply) reply=1; shift ;;
     --notice) notice=1; shift ;;
     --note) note=1; shift ;;
@@ -496,9 +499,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -n "$target" ] || { usage >&2; exit 1; }
+[ -n "$target" ] || [ "$reply" -eq 1 ] || { usage >&2; exit 1; }
 [ "$note" -eq 0 ] || [ "$((reply + notice))" -eq 0 ] || die '--note conflicts with --reply and --notice'
 [ -z "$mission" ] || [ "$note" -eq 1 ] || die '--mission requires --note'
+[ "$summary_given" -eq 0 ] || [ "$message_file_given" -eq 0 ] || die "--summary conflicts with --message-file"
 if [ "$message_file_given" -eq 1 ]; then
   read_message_file full_message "$message_file"
   [ -n "$full_message" ] || die "empty message"
@@ -506,7 +510,9 @@ if [ "$message_file_given" -eq 1 ]; then
 else
   if [ -z "$msg" ]; then
     [ -t 0 ] && die "no message (pass it as arguments or on stdin)"
-    msg="$(cat)"
+    # Keep trailing newlines too: the archived stdin body is the full message.
+    msg="$(cat; printf '\001')"
+    msg="${msg%$'\001'}"
   fi
 fi
 [ -n "$msg" ] || die "empty message"
@@ -514,6 +520,13 @@ fi
 require_tmux
 self="$(self_pane)"
 require_agent_pane "$self"
+if [ -z "$target" ]; then
+  requester="$(tmux show-options -pqv -t "$self" @last_requester)"
+  [ -n "$requester" ] || requester="$(tmux show-options -pqv -t "$self" @owed_to)"
+  [ -n "$requester" ] || die 'no remembered requester; use --reply NAME'
+  target="$(find_pane_by_id "$requester")"
+  [ -n "$target" ] || die 'latest requester is unavailable; use --reply NAME'
+fi
 # Check named shells before peer filtering hides stale connections.
 named_target="$(find_pane "$target")"
 [ -z "$named_target" ] || require_agent_pane "$named_target"
@@ -557,15 +570,24 @@ fi
 
 message_id="$(new_message_id)"
 
-# Only an explicit positional summary plus a file creates a retained original.
+# --summary archives the body; the legacy file plus positional summary also works.
+if [ "$summary_given" -eq 1 ]; then
+  full_message="$msg"
+  msg="$summary"
+fi
+# Only explicit summary forms create a retained original.
 # File-only sends still ignore stdin and paste the entire file.
-if [ "$message_file_given" -eq 1 ] && [ "$positional_message" -eq 1 ]; then
+if [ "$summary_given" -eq 1 ] || { [ "$message_file_given" -eq 1 ] && [ "$positional_message" -eq 1 ]; }; then
   store_message "$full_message" "$message_id"
   msg="$msg
 Read the full message here: tmux-read $message_id"
 fi
 
 if [ "$note" -eq 1 ]; then
+  if [ -n "$mission" ]; then
+    mission_text="$(printf '%s' "$msg" | tr '\n\r\t' '   ')"
+    "$here/tmux-agents-mission" log --from "$me" --kind progress -- "$mission" "$mission_text"
+  fi
   notes_write "$to_id" "$from_id" "$me" "$message_id" "$msg"
   notes_start_digest "$to_id"
   if [ -n "$mission" ] && command -v fleet-command >/dev/null 2>&1; then

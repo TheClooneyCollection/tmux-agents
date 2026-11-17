@@ -48,8 +48,8 @@ assert_kind() { f="$(latest)"; grep -q "kind=$1" "${f%.msg}.meta" || fail "kind 
 ask --message-file "$file" < <(printf 'ignored stdin payload'); assert_kind request
 # shellcheck disable=SC2016
 assert_body 'literal $HOME'
-assert_body 'short reply as a quoted argument: tmux-ask --from receiver --reply sender'
-assert_body ' --reply sender "answer"'
+assert_body 'tmux-ask --from receiver --reply --'
+assert_body ' --reply -- "answer"'
 if grep -Fq 'ignored stdin payload' "$(latest)"; then fail 'stdin is ignored when a message file is supplied'; fi
 if grep -Fq "<<'MSG'" "$(latest)"; then fail 'request reply command avoids heredoc'; fi
 # Replies select message kind without matching a request ID.
