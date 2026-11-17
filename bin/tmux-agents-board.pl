@@ -23,18 +23,13 @@ my %projects=($cache && -s $cache) ? %{retrieve($cache)} : ();
 sub project {
  my ($path) = @_;
  return $projects{$path} if exists $projects{$path};
- my $root;
- {
-  local *STDERR;
-  open STDERR, '>', '/dev/null' or die "open /dev/null: $!\n";
-  open my $git, '-|', 'git', '-C', $path, 'rev-parse', '--show-toplevel' or die "git: $!\n";
-  $root=<$git> // ''; close $git;
- }
- chomp $root; $root ||= $path;
- my $label;
- if ($root eq $ENV{HOME}) { $label='home' }
- else { $root =~ s{/$}{}; ($label=$root) =~ s{.*/}{}; $label =~ s/[^A-Za-z0-9_-]/-/g; $label ||= '-' }
- return $projects{$path}=$label;
+ open my $resolve, '-|', 'bash', '-c',
+  '. "$1/lib.sh"; mission_directory "$2"', 'board-project', $here, $path
+  or die "project: $!\n";
+ my $dir=<$resolve> // ''; close $resolve or die "cannot resolve project\n";
+ chomp $dir;
+ $dir =~ s{.*/}{};
+ return $projects{$path}=$dir;
 }
 sub row_project {
  my ($r)=@_;
@@ -42,7 +37,8 @@ sub row_project {
  return project($r->[9]);
 }
 my ($self)=grep { $_->[1] eq ($ENV{TMUX_PANE}//'') } @rows;
-my $project=$self ? row_project($self) : project($ENV{PWD}//'.');
+my $mission_dir=$ENV{BOARD_MISSION_DIR};
+(my $project=$mission_dir) =~ s{.*/}{};
 my $width=$self ? $self->[28] : ($ENV{COLUMNS}//80);
 my $state=($ENV{XDG_STATE_HOME}||"$ENV{HOME}/.local/state").'/tmux-agents';
 my $socket=(split /,/, $ENV{TMUX}//'')[0] // ''; $socket =~ s{.*/}{};
@@ -66,7 +62,7 @@ for my $r (@rows) {
  push @data,join("\t",'A',$r->[1],$kind,$model,row_project($r));
 }
 my $missing=1;
-my $mission_dir="$state/missions/$project";
+
 if (opendir my $dir, $mission_dir) {
  my @files=sort { length($a) <=> length($b) || $a cmp $b }
            grep { /^M[1-9][0-9]*\.mission$/ } readdir $dir;

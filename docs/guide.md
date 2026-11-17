@@ -401,5 +401,7 @@ one `key=value` record per mission. Required keys are `id`, `title`, `owner`,
 and `worktree`, and unknown keys, do not affect the view. Use the owner's full
 agent name. Each mission shows its live owner and descendants, including kind,
 saved `--model` (or `default`), state and latest progress. Other live project
-agents appear under `unassigned`. A missing directory or missing records still
+agents appear under `unassigned`. Linked worktrees use the main repository's
+mission records. Live descendants stay in their project's tree when their working
+directory changes. A missing directory or missing records still
 shows live agents. The legacy `board.md` is ignored; no mission CLI is needed.

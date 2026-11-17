@@ -364,9 +364,17 @@ function board_tree(p, depth, visited, unassigned, j, child, short, status, line
     line=sprintf("%*s",depth*2+2,"") short " [" board_kind[p] " / " board_model[p] "] " status
     if (activity[p]!="-" && activity[p]!="") line=line " · " activity[p]
     board_line(line)
-    for (j=1;j<=np;j++) { child=order[j]; if (board_live(child) && parent[child]==p && (!unassigned || board_project_of[child]==board_project)) board_tree(child,depth+1,visited,unassigned) }
+    for (j=1;j<=np;j++) { child=order[j]; if (board_live(child) && parent[child]==p && (!unassigned || board_in_project(child))) board_tree(child,depth+1,visited,unassigned) }
 }
 function board_live(p) { return name[p]!="-" && name[p]!="" && dead[p]!=1 && !isshell[p] }
+# Ownership keeps project descendants visible when their cwd changes.
+function board_in_project(p, seen) {
+    while (board_live(p) && !index(seen,"|" p "|")) {
+        if (board_project_of[p]==board_project) return 1
+        seen=seen "|" p "|"; p=parent[p]
+    }
+    return 0
+}
 function board_render( m,j,p,root) {
     if (board_width<2) board_width=80
     board_line("Mission board · " board_project)
@@ -381,6 +389,6 @@ function board_render( m,j,p,root) {
     }
     board_line(""); board_line("unassigned")
     # Roots first, then any remaining cyclic/orphan graph components.
-    for (j=1;j<=np;j++) { p=order[j]; if (board_live(p) && board_project_of[p]==board_project && !assigned[p] && !(board_live(parent[p]) && board_project_of[parent[p]]==board_project)) board_tree(p,0,"",1) }
-    for (j=1;j<=np;j++) { p=order[j]; if (board_live(p) && board_project_of[p]==board_project && !assigned[p]) board_tree(p,0,"",1) }
+    for (j=1;j<=np;j++) { p=order[j]; if (board_live(p) && board_in_project(p) && !assigned[p] && !(board_in_project(parent[p]))) board_tree(p,0,"",1) }
+    for (j=1;j<=np;j++) { p=order[j]; if (board_live(p) && board_in_project(p) && !assigned[p]) board_tree(p,0,"",1) }
 }

@@ -63,15 +63,7 @@ case "$command" in
   log) [ -n "${args[1]}" ] || die 'log text must not be empty' ;;
   set) [ "${#keys[@]}" -gt 0 ] || die 'set requires at least one field' ;;
 esac
-# Missions share the main checkout's name across linked worktrees.
-project_root="$PWD"
-if common="$(git rev-parse --git-common-dir 2>/dev/null)"; then
-  project_root="$(cd "$common/.." && pwd -P)"
-fi
-# Force the known prefix so this filesystem-only command never queries tmux settings.
-project="$(TMUX_AGENTS_PREFIX=agents agents_session_for "$project_root")"
-project="${project#agents-}"
-dir="${XDG_STATE_HOME:-$HOME/.local/state}/tmux-agents/missions/$project"
+dir="$(mission_directory)"
 file='' tmp='' locked=0
 # Invoked by traps.
 # shellcheck disable=SC2329

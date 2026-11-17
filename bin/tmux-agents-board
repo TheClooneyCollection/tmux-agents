@@ -13,6 +13,9 @@ fi
 if [ "$watch" = 1 ] && { [ ! -t 0 ] || [ ! -t 1 ]; }; then
   echo 'tmux-agents board: --watch requires a terminal' >&2; exit 2
 fi
+. "$here/lib.sh"
+BOARD_MISSION_DIR="$(mission_directory)"
+export BOARD_MISSION_DIR
 # Resolve configuration once, before refreshes. Only snapshots run inside the loop.
 if [ -z "${TMUX_AGENTS_PREFIX:-}" ]; then
   TMUX_AGENTS_PREFIX="$(tmux show-option -gqv @tmux_agents_session_prefix)" || TMUX_AGENTS_PREFIX=''

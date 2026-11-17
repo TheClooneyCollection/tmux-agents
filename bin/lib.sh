@@ -304,6 +304,18 @@ agents_session_for() {
   fi
 }
 
+# Mission records share the main checkout's name across linked worktrees.
+# Filesystem-only: never consult tmux configuration.
+mission_directory() {
+  local project_root="${1:-$PWD}" common project
+  if common="$(git -C "$project_root" rev-parse --git-common-dir 2>/dev/null)"; then
+    case "$common" in /*) ;; *) common="$project_root/$common" ;; esac
+    project_root="$(cd "$common/.." && pwd -P)"
+  fi
+  project="$(TMUX_AGENTS_PREFIX=agents agents_session_for "$project_root")"
+  printf '%s/tmux-agents/missions/%s\n' "${XDG_STATE_HOME:-$HOME/.local/state}" "${project#agents-}"
+}
+
 # The project pane $1 belongs to, as in agents-<project>: a hidden sub
 # agent's from its session, any other pane's from its directory.
 pane_project() {
