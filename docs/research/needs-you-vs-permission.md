@@ -1,4 +1,4 @@
-# needs-you vs permission for AskUserQuestion (investigation, no code changed)
+# needs-you vs permission for AskUserQuestion (investigation; fix applied, root cause inferred from code, not reproduced live)
 
 ## How states are derived (Claude)
 - `--settings` hooks injected by `tmux-spawn --run` (bin/lib.sh ~1629):
