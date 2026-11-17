@@ -3,7 +3,8 @@
 set -euo pipefail
 here="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
 case "${1:-}" in
-  open|board|start|chain-config|main-sequence|chain|mission) subcommand="$1"; shift; exec "$here/tmux-agents-$subcommand" "$@" ;;
+  resume) shift; exec "$here/tmux-agents-status" "$@" ;;
+  status|ci|open|board|start|chain-config|main-sequence|chain|mission) subcommand="$1"; shift; exec "$here/tmux-agents-$subcommand" "$@" ;;
 esac
 . "$here/lib.sh"
 
@@ -14,7 +15,7 @@ usage: tmux-agents [--client NAME]
 Lists sub agents and persistent shells with a live preview.
 Bound to prefix + a.
 
-Commands: open NAME --from ME, board [--watch [SECS]], start AGENT, start chain, chain-config, chain (project picker),
+Commands: status, resume, ci [--watch] [REF], open NAME [--from ME], board [--watch [SECS]], start AGENT, start chain, chain-config, chain (project picker),
           main-sequence (configured project session group), mission (project records).
 Run tmux-agents COMMAND --help for its flags.
 
@@ -560,7 +561,7 @@ while [ $# -gt 0 ]; do
     --select) select="${2:-}"; shift 2 ;;
     --scope) scope="${2:-window}"; shift 2 ;;
     --mode) mode="${2:-sub}"; shift 2 ;;
-    *) die "unknown argument: $1 (run tmux-agents --help)" ;;
+    *) die "unknown argument: $1 (try tmux-agents status; run tmux-agents --help)" ;;
   esac
 done
 # The defaults lookup also validates the server; no separate list-sessions.

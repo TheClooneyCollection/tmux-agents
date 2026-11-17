@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Summarize every workflow for a commit, optionally waiting for completion.
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+. "$here/lib.sh"
+watch=0 ref=''
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --watch) watch=1; shift ;;
+    -h|--help) echo 'usage: tmux-agents ci [--watch] [REF]'; exit 0 ;;
+    -*) die "unknown option: $1" ;;
+    *) [ -z "$ref" ] || die 'expected one REF'; ref="$1"; shift ;;
+  esac
+done
+commit="$(git rev-parse --verify "${ref:-HEAD}^{commit}")" || die 'cannot resolve commit'
+command -v gh >/dev/null || die 'gh is required'
+# Fetch enough rows to include independent workflows, not just the latest run.
+runs="$(gh run list --commit "$commit" --limit 100 --json databaseId,status,conclusion,name --jq '.[] | [.databaseId,.status,.conclusion,.name] | @tsv')" || die 'cannot list CI runs'
+[ -n "$runs" ] || { echo "CI pending: no runs for $commit"; exit 2; }
+failed=0 pending=0 lines=0 failure_id=''
+while IFS= read -r row; do
+  # Preserve the empty conclusion field in unfinished runs.
+  id="${row%%$'\t'*}"; rest="${row#*$'\t'}"
+  state="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
+  result="${rest%%$'\t'*}"; name="${rest#*$'\t'}"
+  case "$id" in ''|*[!0-9]*) die 'invalid CI run ID' ;; esac
+  if [ "$watch" = 1 ] && [ "$state" != completed ]; then
+    gh run watch "$id" --exit-status >/dev/null 2>&1 || true
+    result="$(gh run view "$id" --json status,conclusion --jq '[.status,.conclusion] | @tsv')" || die 'cannot read CI result'
+    state="${result%%$'\t'*}"; result="${result#*$'\t'}"
+  fi
+  if [ "$state" != completed ]; then pending=1; result=pending
+  else
+    case "$result" in success|skipped|neutral) ;; *) failed=1; [ -n "$failure_id" ] || failure_id="$id" ;; esac
+  fi
+  if [ "$lines" -lt 5 ]; then printf '%s: %s (%s)\n' "$name" "$result" "$id"; lines=$((lines+1)); fi
+done <<< "$runs"
+if [ "$failed" = 1 ]; then
+  echo 'CI failed'
+  gh run view "$failure_id" --log-failed | tail -n 14 || true
+  exit 1
+fi
+[ "$pending" = 0 ] || { echo 'CI pending'; exit 2; }
+echo 'CI passed'

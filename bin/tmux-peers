@@ -3,19 +3,23 @@
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
-FROM_PANE="" ids=0 refresh=0
+FROM_PANE="" ids=0 refresh=0 me=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --from) FROM_PANE="${2:-}"; shift 2 ;;
+    --me) me=1; shift ;;
     --ids) ids=1; shift ;;
     --refresh) refresh=1; shift ;;
-    -h|--help) echo "usage: tmux-peers [--from ME] [--ids] [--refresh]"; exit 0 ;;
+    -h|--help) echo "usage: tmux-peers [--from ME] [--me] [--ids] [--refresh]"; exit 0 ;;
     *) die "unknown option: $1" ;;
   esac
 done
 # Hook refresh keeps its existing identity-independent path.
 if [ "$refresh" = 1 ]; then require_tmux; refresh_labels; exit 0; fi
 
+if [ "$me" = 1 ] && [ -z "$FROM_PANE" ]; then
+  trusted_pane || die 'untrusted pane: pass --from ME'
+fi
 require_tmux
 ensure_agent_ids
 self="$(self_pane)"
@@ -35,6 +39,8 @@ if [ -z "$name" ]; then
     exit 0
   fi
 fi
+
+if [ "$me" = 1 ]; then printf '%s\n' "$name"; exit 0; fi
 
 if [ "$ids" = 1 ]; then echo "you: $name ($self) ID $(pane_agent_id "$self")"
 else echo "you: $name ($self)"; fi
