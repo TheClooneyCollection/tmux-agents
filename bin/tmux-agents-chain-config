@@ -4,21 +4,23 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 . "$here/lib.sh"
 usage() {
-  echo 'usage: tmux-agents chain-config [main|secondary|worker] [--main AGENT] [--secondary AGENT] [--worker AGENT] [--sources]'
-  echo 'TSV role/value, optionally source; one role without --sources prints its value.'
+  echo 'usage: tmux-agents chain-config [ROLE] [--main AGENT] [--interface AGENT] [--worker AGENT] [--args] [--sources]'
+  echo 'Roles: main designer interface worker reviewer runner researcher (secondary aliases interface).'
+  echo 'TSV role/agent, optionally args then source; one role without flags prints its agent.'
   echo 'Outside tmux (TMUX unset), only environment/defaults apply; an inaccessible TMUX is an error.'
   echo 'Shows the settings new chains start from, not a running chain'\''s members; use tmux-peers for those.'
 }
-role="" sources=0
+role="" sources=0 show_args=0
 args=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
+    --args) [ "$show_args" = 0 ] || die 'duplicate --args'; show_args=1; shift ;;
     --sources) [ "$sources" = 0 ] || die 'duplicate --sources'; sources=1; shift ;;
-    --main|--secondary|--worker)
+    --main|--interface|--secondary|--worker)
       [ "$#" -ge 2 ] && [ -n "$2" ] || die "$1 needs an agent"
       args+=("$1" "$2"); shift 2 ;;
-    main|secondary|worker)
+    main|designer|interface|secondary|worker|reviewer|runner|researcher)
       [ -z "$role" ] || die 'select only one chain role'
       role="$1"; shift ;;
     *) die "unknown chain role or argument '$1'" ;;
@@ -33,4 +35,4 @@ else
 fi
 chain_options_parse "${args[@]+"${args[@]}"}"
 chain_roles_resolve "$role"
-chain_roles_print "$role" "$sources"
+chain_roles_print "$role" "$sources" "$show_args"

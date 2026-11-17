@@ -15,8 +15,13 @@ set -g @tmux_agents_name_format exact
 | `@tmux_agents_sub_exit` | `TMUX_AGENTS_SUB_EXIT` | `shell` | New visible splits: `shell` returns to the default shell on agent exit; `keep` retains the dead pane. Hidden and resumed agents are unchanged. |
 | `@tmux_agents_sub_auto` | `TMUX_AGENTS_SUB_AUTO` | `on` | Spawned and resumed Claude/Codex agents, including members: `on` adds auto permission flags; `off` uses agent defaults. Does not affect `start`. |
 | `@tmux_agents_chain_main` | `TMUX_AGENTS_CHAIN_MAIN` | `claude` | Main agent for a new `start chain` window |
-| `@tmux_agents_chain_secondary` | `TMUX_AGENTS_CHAIN_SECONDARY` | `claude` | Secondary for a new chain |
+| `@tmux_agents_chain_designer` | none | `claude` | Designer for a new chain |
+| `@tmux_agents_chain_interface` | `TMUX_AGENTS_CHAIN_SECONDARY` | `claude` | Interface; `@tmux_agents_chain_secondary` is the fallback alias |
 | `@tmux_agents_chain_worker` | `TMUX_AGENTS_CHAIN_WORKER` | `codex` | Worker for a new chain |
+| `@tmux_agents_chain_reviewer` | none | `claude` | Reviewer (default Opus) |
+| `@tmux_agents_chain_runner` | none | `claude` | Runner |
+| `@tmux_agents_chain_researcher` | none | `claude` | Researcher |
+| `@tmux_agents_chain_<role>_args` | none | See Chain roles | Literal space-separated CLI words; `none` clears args |
 | `@tmux_agents_main_sequence_session` | `TMUX_MAIN_SEQUENCE_SESSION` | `main` | Project base/group session; client sessions use `NAME-N` |
 | `@tmux_agents_projects_config` | `TMUX_MAIN_SEQUENCE_CONFIG` | XDG config path | Shared project file; see below |
 | `@tmux_agents_chain_scan_root` | `TMUX_CHAIN_SCAN_ROOT` | none | Optional Git scan root for the project picker |
@@ -107,14 +112,15 @@ Each role accepts `claude`, `codex`, an exact configured Codex profile name or a
 
 ```tmux
 set -g @tmux_agents_chain_main codex
-set -g @tmux_agents_chain_secondary claude
+set -g @tmux_agents_chain_interface claude
+set -g @tmux_agents_chain_reviewer_args "--model fable"
 set -g @tmux_agents_chain_worker work
 ```
 
-Configure the `work` profile first as above. Settings apply to new chains, not existing members or resumed agents. From a shell, override any role for this chain:
+Configure the `work` profile first as above. Settings apply to new chains, not existing members or resumed agents. From a shell, override main, interface or worker for this chain:
 
 ```sh
-tmux-agents start chain . --main codex --secondary claude --worker work
+tmux-agents start chain . --main codex --interface claude --worker work
 ```
 
 The order of preference is this-chain explicit user choice or CLI flag, then an applicable user's `CLAUDE.md`/`AGENTS.md` role preference, then a non-empty environment override, then a non-empty tmux option, then the built-in default. The skill passes instruction-file preferences as explicit overrides; the CLI does not read Markdown. Conflicting instruction files follow the agent's normal instruction hierarchy.
@@ -126,10 +132,14 @@ The main setting only selects the agent launched by `tmux-agents start chain`. T
 ### Inspecting the choices
 
 ```sh
-tmux-agents chain-config [main|secondary|worker] [--main AGENT] [--secondary AGENT] [--worker AGENT] [--sources]
+tmux-agents chain-config [ROLE] [--main AGENT] [--interface AGENT] [--worker AGENT] [--args] [--sources]
 ```
 
-This read-only query needs no `--from` and creates no window, pane or agent record. With no role argument, it prints TSV rows in `main`, `secondary`, `worker` order, with role and value columns. `--sources` adds `explicit`, `env`, `option` or `default` as a third column. A selected role without `--sources` prints only its value; with `--sources` it prints the full three-column row. Explicit flags validate hypothetical choices without changing settings. File preferences passed by the skill appear as `explicit`.
+This read-only query needs no `--from` and creates no window, pane or agent record. With no role argument, it prints TSV rows in `main`, `designer`, `interface`, `worker`, `reviewer`, `runner`, `researcher` order, with role and agent columns. `--args` adds args (`-` when empty); `--sources` adds `explicit`, `env`, `option` or `default` after args when both are requested. A selected role without either flag prints only its agent. `secondary` is an alias for `interface`, including `--secondary`; using both explicit flags is an error. Explicit flags validate hypothetical choices without changing settings. File preferences passed by the skill appear as `explicit`.
+
+Designer, reviewer, runner and researcher agents, and all role args, are option-only settings, with no environment layer or explicit role flags for those four agents. Interface retains `TMUX_AGENTS_CHAIN_SECONDARY` and checks its own option before the secondary alias. Args use `@tmux_agents_chain_<role>_args`; interface falls back to `@tmux_agents_chain_secondary_args`. Args are literal words separated by spaces, without shell quoting; tabs, newlines and carriage returns are rejected. `none` explicitly clears args.
+
+Default args are empty for main, designer, worker and reviewer, `--model sonnet` for interface and researcher, and `--model haiku` for runner. Default args apply only when the resolved agent is the role's default agent (Claude except for the Codex worker). An overridden agent gets no default args; an explicit args option still applies. Reviewer uses Opus by default; set the Fable example above only when a Fable review is requested.
 
 The output shows the settings new chains start from, not the members of a running chain: a chain launched with `--secondary codex`, or whose worker came from an instruction-file preference, still reports the plain settings afterwards. Use `tmux-peers` to see the live members.
 

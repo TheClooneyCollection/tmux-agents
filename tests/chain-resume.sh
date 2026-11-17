@@ -140,7 +140,7 @@ python3 - "$tmp/$launched_pane.input" <<'PY'
 import sys
 s=open(sys.argv[1]).read()
 assert s.startswith('/rc\nstart the chain.'),repr(s)
-assert 'worker\textra\texplicit' in s,s
+assert 'worker\textra\t-\texplicit' in s,s
 assert s.count('/rc')==1,s
 PY
 [[ $(tmux display -p -t "$launched_pane" '#{@agent}') = claude-* ]]

@@ -50,7 +50,7 @@ if [ "$kind" = chain ]; then
         chain_resume=""
         shift
         if [ $# -gt 0 ] && [[ $1 != --* ]]; then chain_resume="$1"; shift; fi ;;
-      --main|--secondary|--worker)
+      --main|--interface|--secondary|--worker)
         [ $# -ge 2 ] && [ -n "$2" ] || die "$1 needs an agent"
         role_args+=("$1" "$2"); shift 2 ;;
       -*) die "unknown chain argument '$1'" ;;
@@ -68,8 +68,8 @@ if [ "$kind" = chain ]; then
   window="${window:-root}"
   start_chain_work=1
   prompt="start the chain. You are the main agent. Load the agent-chain skill.
-Role snapshot (role, agent, source):
-$(chain_roles_print '' 1)
+Role snapshot (role, agent, args, source):
+$(chain_roles_print '' 1 1)
 Explicit choices are for this chain and override instruction-file preferences.
 For env/option/default choices, apply applicable CLAUDE.md/AGENTS.md member preferences before spawning. The current agent remains main."
   # Assigned dynamically by chain_roles_resolve.

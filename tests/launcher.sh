@@ -242,7 +242,8 @@ python3 - "$tmp/$chain.args" <<'PY'
 import sys
 args=open(sys.argv[1],'rb').read().split(b'\0')[:-1]
 prompt=args[-1].decode().lower()
-assert 'main' in prompt and 'secondary' in prompt and 'worker' in prompt
+assert 'role snapshot (role, agent, args, source):' in prompt
+assert all(role in prompt for role in ['main', 'designer', 'interface', 'worker', 'reviewer', 'runner', 'researcher'])
 assert 'extra' in prompt and 'explicit' in prompt and 'default' in prompt
 PY
 check 'chain initial prompt includes worker' test "$?" = 0
@@ -298,7 +299,7 @@ for pane, main, secondary, worker, homes in [
         assert pins.get(key)==value, (pane,key,pins.get(key),value)
     assert not any(b'approvals_reviewer' in a for a in args)
     prompt=args[-1].decode().lower()
-    assert all(role in prompt for role in ['main', 'secondary', 'worker'])
+    assert all(role in prompt for role in ['main', 'designer', 'interface', 'worker', 'reviewer', 'runner', 'researcher'])
     assert 'env' in prompt and ('option' in prompt if not worker else 'extra' in prompt)
     notify=json.loads(next(a for a in args if a.startswith(b'notify=')).split(b'=',1)[1])
     assert notify[1]=='--agent-id'

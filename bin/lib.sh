@@ -1333,10 +1333,9 @@ settings_load() {
     next unless /^(@tmux_agents_\S+)\s+(.*)$/;
     my ($key, $value) = ($1, $2);
     $value = "" if $value eq "\047\047";
-    if ($value =~ /^"(.*)"$/s) {
-      $value = $1;
-      $value =~ s/\\([0-7]{3}|.)/$1 =~ m{^[0-7]{3}$} ? chr(oct($1)) : $1 eq "n" ? "\n" : $1 eq "r" ? "\r" : $1 eq "t" ? "\t" : $1/ge;
-    }
+    $value = $1 if $value =~ /^"(.*)"$/s;
+    # tmux also escapes control characters in unquoted values.
+    $value =~ s/\\([0-7]{3}|.)/$1 =~ m{^[0-7]{3}$} ? chr(oct($1)) : $1 eq "n" ? "\n" : $1 eq "r" ? "\r" : $1 eq "t" ? "\t" : $1/ge;
     print $key, "\0", $value, "\0";
   ')
 }
@@ -1367,14 +1366,27 @@ settings_get() {
 
 # Shared CLI parsing and resolution for chain-config and start chain.
 # These globals are per invocation, never exported as preferences.
+CHAIN_ROLES=(main designer interface worker reviewer runner researcher)
+
+chain_role_canon() {
+  local _chain_role="$1"
+  case "$_chain_role" in
+    secondary) _chain_role=interface ;;
+    main|designer|interface|worker|reviewer|runner|researcher) ;;
+    *) die "unknown chain role '$_chain_role'" ;;
+  esac
+  printf -v "$2" '%s' "$_chain_role"
+}
+
 chain_options_parse() {
   local flag role var
-  for role in main secondary worker; do printf -v "chain_${role}_override" %s ""; done
+  for role in "${CHAIN_ROLES[@]}"; do printf -v "chain_${role}_override" %s ""; done
   while [ "$#" -gt 0 ]; do
     flag="$1"
     case "$flag" in
-      --main|--secondary|--worker)
-        role="${flag#--}"; var="chain_${role}_override"
+      --main|--interface|--secondary|--worker)
+        chain_role_canon "${flag#--}" role
+        var="chain_${role}_override"
         [ -z "${!var}" ] || die "duplicate $flag"
         [ "$#" -ge 2 ] && [ -n "$2" ] || die "$flag needs an agent"
         printf -v "$var" '%s' "$2"
@@ -1384,44 +1396,64 @@ chain_options_parse() {
   done
 }
 
-# Resolve all roles, or just $1, without printing partial results on failure.
+# Resolve all roles, or the supplied roles, before printing any results.
 chain_roles_resolve() {
-  local role value source env_key override default
+  local role value source env_key override default args default_args
   resolve_codex_homes codex_homes
-  for role in ${1:-main secondary worker}; do
+  if [ "$#" = 0 ] || { [ "$#" = 1 ] && [ -z "$1" ]; }; then set -- "${CHAIN_ROLES[@]}"; fi
+  for role in "$@"; do
+    chain_role_canon "$role" role
+    env_key=""; default=claude; default_args=""
     case "$role" in
-      main) env_key=TMUX_AGENTS_CHAIN_MAIN; default=claude ;;
-      secondary) env_key=TMUX_AGENTS_CHAIN_SECONDARY; default=claude ;;
+      main) env_key=TMUX_AGENTS_CHAIN_MAIN ;;
+      interface) env_key=TMUX_AGENTS_CHAIN_SECONDARY; default_args='--model sonnet' ;;
       worker) env_key=TMUX_AGENTS_CHAIN_WORKER; default=codex ;;
-      *) die "unknown chain role '$role'" ;;
+      runner) default_args='--model haiku' ;;
+      researcher) default_args='--model sonnet' ;;
     esac
     override="chain_${role}_override"
     if [ -n "${!override:-}" ]; then
       value="${!override}"; source=explicit
-    elif [ -n "${!env_key:-}" ]; then
+    elif [ -n "$env_key" ] && [ -n "${!env_key:-}" ]; then
       value="${!env_key}"; source="env"
     else
       option_get value "@tmux_agents_chain_$role" ""
+      if [ "$role" = interface ] && [ -z "$value" ]; then
+        option_get value @tmux_agents_chain_secondary ""
+      fi
       source=option
       [ -n "$value" ] || { value="$default"; source=default; }
     fi
-    # Only validated kinds may enter prompts or launch commands. Keep the
-    # profile label, not name_kind_for's canonical naming prefix.
+    # Keep profile labels intact for account selection.
     name_kind_for "$value" >/dev/null || die "unknown $role '$value' (source: $source)"
     case "$value" in *$'\t'*|*$'\n'*|*$'\r'*) die "invalid $role '$value' (source: $source)" ;; esac
+    option_get args "@tmux_agents_chain_${role}_args" ""
+    if [ "$role" = interface ] && [ -z "$args" ]; then
+      option_get args @tmux_agents_chain_secondary_args ""
+    fi
+    if [ -z "$args" ] && [ "$value" = "$default" ]; then args="$default_args"; fi
+    [ "$args" != none ] || args=""
+    case "$args" in *$'\t'*|*$'\n'*|*$'\r'*) die "invalid $role args" ;; esac
     printf -v "chain_$role" '%s' "$value"
     printf -v "chain_${role}_source" '%s' "$source"
+    printf -v "chain_${role}_args" '%s' "$args"
   done
 }
 
 chain_roles_print() {
-  local role value source
-  for role in ${1:-main secondary worker}; do
-    value="chain_$role"; source="chain_${role}_source"
-    if [ "${2:-0}" = 1 ]; then
-      printf '%s\t%s\t%s\n' "$role" "${!value}" "${!source}"
-    elif [ -n "${1:-}" ]; then printf '%s\n' "${!value}"
-    else printf '%s\t%s\n' "$role" "${!value}"; fi
+  local role value source args selected="${1:-}" sources="${2:-0}" show_args="${3:-0}"
+  if [ -n "$selected" ]; then set -- "$selected"; else set -- "${CHAIN_ROLES[@]}"; fi
+  for role in "$@"; do
+    chain_role_canon "$role" role
+    value="chain_$role"; source="chain_${role}_source"; args="chain_${role}_args"
+    if [ -n "$selected" ] && [ "$sources" = 0 ] && [ "$show_args" = 0 ]; then
+      printf '%s\n' "${!value}"
+    else
+      printf '%s\t%s' "$role" "${!value}"
+      if [ "$show_args" = 1 ]; then printf '\t%s' "${!args:--}"; fi
+      if [ "$sources" = 1 ]; then printf '\t%s' "${!source}"; fi
+      printf '\n'
+    fi
   done
 }
 
