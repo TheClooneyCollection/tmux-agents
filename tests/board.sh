@@ -25,6 +25,7 @@ cat > "$tmp/bin/tmux" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$BOARD_CALLS"
 if [ "$1" = show-option ]; then printf 'agents\n'; exit 0; fi
+if [ "$1" = show-options ]; then exit 0; fi
 [ "$1" = list-panes ] || exit 1
 if [ -f "$BOARD_FAIL_ONCE" ]; then rm "$BOARD_FAIL_ONCE"; exit 1; fi
 cat "$BOARD_FIXTURE"
@@ -255,7 +256,7 @@ for key, height in ((b'q', 8), (b'q', len(full)+1), (b'\x03', 40), (b'q', 0)):
         assert sum(c.startswith('show-option ') for c in calls)==1, calls
         if not no_project:
             assert sum(c.startswith('list-panes ') for c in calls)>=frames, calls
-        assert all(c.startswith(('show-option ', 'list-panes ')) for c in calls), calls
+        assert all(c.startswith(('show-option', 'list-panes ')) for c in calls), calls
         git_calls=Path(os.environ['BOARD_GIT_CALLS']).read_text().splitlines()
         assert len(git_calls)==(2 if no_project else 4), git_calls
         if key == b'\x03':
