@@ -14,8 +14,10 @@
 - `start chain` resolves all roles and args once, exports `TMUX_AGENTS_CHAIN_<ROLE>` and `_ARGS`, and spawn forwards them. Roles are `MAIN`, `DESIGNER`, `SECONDARY` (interface's legacy name), `WORKER`, `REVIEWER`, `RUNNER` and `RESEARCHER`. Launch flags include `--designer`, `--reviewer`, `--runner` and `--researcher` alongside existing roles. Live settings do not rewrite running snapshots.
 - `tmux-agents chain-config set ROLE AGENT [-- ARGS]` validates like existing role flags, sets live `@tmux_agents_chain_<role>` and `_args`, and prints persistent `set -g` lines. Status shows the resolved roles; the chain skill no longer hardcodes an agent/model column.
 - `tmux-spawn --mission ID` validates first, assigns the new agent as owner and logs `spawned NAME (role)`. `--open` opens its pane for the user. `--for` notices add: `Spawn helpers with tmux-spawn --role <role>; never a bare agent name.`
-- `tmux-agents mission set ID --status S [--notify PEER] [--notice]` optionally notifies after changing state. `mission done ID TEXT [--notify NAME]` combines done status, completion log and optional note. `tmux-ask --note ... --mission ID` and `tmux-agent-report --mission ID TEXT` append local progress logs; Fleet Command remains an optional mirror. Dismissal stays separate and follows the awaited reply.
+- `tmux-agents mission set ID --status S [--notify PEER] [--notice]` optionally notifies after changing state. `mission done ID TEXT [--notify NAME]` combines done status, completion log and optional note. `tmux-ask --note ... --mission ID` and `tmux-agent-report --mission ID TEXT` append local progress logs. Mission logging is local only. Dismissal stays separate and follows the awaited reply.
 - `tmux-agents ci [--watch] [REF]` summarizes GitHub Actions for the selected commit (default HEAD), optionally waits, and includes failure log tails within 20 output lines.
+
+Agent Fleet Command is sunset. The local mission board replaces it; remove its skill integration, inbox checks and mirroring from current workflows. Historical decision and release records remain unchanged.
 
 **Why.** One command should carry each routine action. Explicit role resolution exposes account/model mistakes, direct bodies avoid scratch-file ceremony, and summaries keep large reports out of the receiver's context until needed.
 

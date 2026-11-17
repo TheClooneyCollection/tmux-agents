@@ -3,6 +3,8 @@
 ## Unreleased
 
 - The mission board uses status glyphs and terminal colour (`NO_COLOR` disables it), orders missions newest first and sibling agents by attention, and animates working glyphs at the chip frame rate when the full board fits in the pane.
+- Retire Agent Fleet Command integration in favor of the local mission board. Mission logging is local only; chain skills no longer mirror missions or check a Fleet inbox.
+
 - `tmux-agents status` (alias `resume`) combines identity, peers, roles, missions, notes, queue and handoff state; `--handoff` explicitly includes the body. Trusted panes can omit `--from` for missions and opening agents; `tmux-peers --me` prints the name only.
 - Direct long messages support `tmux-ask --summary TEXT` with stdin or positional bodies, retaining the full text behind a `tmux-read` pointer. Nameless `--reply` answers the latest requester; existing file input stays compatible.
 - Role spawns report their resolved agent, args and source, record `@role` and warn about implicit inheritance or dropped role args. `--plain` silences the inheritance warning. All seven roles and their args are snapshotted per chain; new launch flags and `chain-config set` configure them.

@@ -90,7 +90,7 @@ The shared project file is `${XDG_CONFIG_HOME:-$HOME/.config}/tmux-agents/projec
 A command runs in DIR through the server's `default-shell` as `SHELL -c CMD`, falling back to `$SHELL` and then `/bin/sh`. When it exits, including on failure, the window keeps an interactive instance of the same shell so its output remains visible. Config parsing never executes command text. Quote the whole command value as one token.
 
 ```text
-~ name=dashboard command="tmux-agents start fleet-command --name command-center --exact -- serve"
+~ name=dashboard command="tmux-agents board --watch"
 ~ name=home
 ~/projects/example name=example
 "~/projects/two words" name="two words" shell
@@ -101,8 +101,8 @@ Use the same commands from a shell or an agent; no manual file editing is needed
 ```sh
 tmux-agents main-sequence list
 tmux-agents main-sequence add ~/projects/example name=example
-tmux-agents main-sequence add ~ name=dashboard command="tmux-agents start fleet-command --name command-center --exact -- serve" --at 1
-tmux-agents main-sequence set dashboard command="tmux-agents start fleet-command --name command-center --exact -- serve"
+tmux-agents main-sequence add ~ name=dashboard command="tmux-agents board --watch" --at 1
+tmux-agents main-sequence set dashboard command="tmux-agents board --watch"
 tmux-agents main-sequence unset dashboard command
 tmux-agents main-sequence set example resume=11111111-1111-4111-8111-111111111111
 tmux-agents main-sequence unset example resume
@@ -152,7 +152,7 @@ Borders show `name ⇄ peers`. Links are one-to-one: A↔B and B↔C do not link
 
 Use `tmux-ask PEER "task"` for requests, `--reply` for answers and `--notice` for information needing no work or reply. Requests include reply instructions; the sender ends its turn and receives the answer later. A request saying “no reply needed” still starts work and makes the sender await a reply. Replies do not invite another reply.
 
-Use `tmux-ask --note PEER "progress"` for quiet progress, handoff updates, partial completion and plan updates. A note is stored immediately without pasting a prompt, starting a turn or waiting for typing. `--note` is mutually exclusive with `--reply` and `--notice`; it supports `--any` and the file and summary forms below. Empty notes are rejected. Notes follow the receiver's stable agent ID, including while its record is closed, and remain readable after reopening for up to seven days. Adding `--mission ID` appends progress to the local mission log; Fleet Command mirroring remains best effort.
+Use `tmux-ask --note PEER "progress"` for quiet progress, handoff updates, partial completion and plan updates. A note is stored immediately without pasting a prompt, starting a turn or waiting for typing. `--note` is mutually exclusive with `--reply` and `--notice`; it supports `--any` and the file and summary forms below. Empty notes are rejected. Notes follow the receiver's stable agent ID, including while its record is closed, and remain readable after reopening for up to seven days. Adding `--mission ID` appends progress to the local mission log. Mission logging is local only.
 
 Keep awaited results and matters requiring the user on ordinary `--reply`, request or `--notice` messages: release completion, CI failure, push approval and decisions must never be notes. A decision request includes the default and what is blocked. Main agents read notes for a concise update when the user asks or at a natural pause, rather than repeating every entry.
 

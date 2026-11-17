@@ -93,10 +93,6 @@ Manual clearing with Claude `/clear` or Codex `/new` is supported: tracking and 
 
 `tmux-dismiss --from ME INTERFACE` closes one mission's interface subtree; dismiss its designer separately. End all missions to end the chain, respecting the completion guards above. Reopening and membership preservation follow the tmux-agents skill; old `secondary` names remain valid.
 
-## Fleet Command (when installed)
-
-Check `command -v fleet-command`. When available, mirror missions using the `missions` skill; interface takes its secondary duties. Keep local mission records authoritative. Use your own recorded name with `--from NAME` before subcommands. Interface checks `inbox` at turn start, owns status updates and answers Fleet instructions with `fleet-command reply`, not `tmux-ask`. Workers only log progress, handoff or done. An unavailable server does not block the task.
-
 ## Working across projects
 
 Requests go interface to interface, or to the other project's current agent if it has no chain. Include goal, paths, constraints and deliverable; that project decides who implements and edits its own files. User decisions return through the requesting chain's main. Use `tmux-ask --any` only when the user asks.

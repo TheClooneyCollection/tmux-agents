@@ -46,7 +46,7 @@ A supplied spawn task is **not sent**. Read the printed result, retain the actua
 - `tmux-ask PEER "message"`: send a request; use the direct long-message forms below.
 - `tmux-ask --reply "answer"`: answer the latest requester. Use `--reply PEER "answer"` when choosing among requesters; preserve `--any` when supplied.
 - `tmux-ask --notice PEER "message"`: interrupt with information needing no reply, such as a rule change or CI failure.
-- `tmux-ask --note PEER --mission ID "progress"`: store a quiet update without a prompt, turn or reply obligation, and append a local mission progress log. Omit `--mission` outside a mission. Fleet Command mirroring remains best effort. Notes support `--summary` and authorized `--any`, but not `--reply` or `--notice`; closed receivers retain them by agent ID.
+- `tmux-ask --note PEER --mission ID "progress"`: store a quiet update without a prompt, turn or reply obligation, and append a local mission progress log. Omit `--mission` outside a mission. Notes support `--summary` and authorized `--any`, but not `--reply` or `--notice`; closed receivers retain them by agent ID.
 - `tmux-ask --summary "short result" PEER "full report"`: retain the full positional or stdin body for seven days and deliver only the summary plus a `tmux-read` pointer. Combine with `--reply`, `--note` or `--notice` as appropriate.
 - `tmux-notes [--all] [--since 10m|2h] [--keep-unread] [--count]`: read unread notes grouped by sender and mark them read; `--all` includes read entries, `--keep-unread` preserves unread state and `--count` only prints the unread count. Bare `tmux-notes --count` is a fast statusline-only form using `$TMUX_PANE`; unpinned Codex supplies `--from`. Notes expire after seven days; read archived full text with `tmux-read`.
 - `tmux-ask --any <name> ...`: message a named agent you aren't connected to. Only when the user asks you to; the reply instructions include `--any`, so follow them as given.
@@ -148,7 +148,7 @@ Inspect the resolution line after `spawned ...`: `role=ROLE agent=AGENT args="AR
 
 ## Receiving a message
 
-**Codex turn start:** run `tmux-agents status --notes` once at the beginning of every turn, alongside any required missions inbox check. Claude receives an unread-note summary through its prompt hook; use the printed command to read the notes.
+**Codex turn start:** run `tmux-agents status --notes` once at the beginning of every turn. Claude receives an unread-note summary through its prompt hook; use the printed command to read the notes.
 
 **Quiet updates:** anything the receiver need not act on now is a `--note`: progress, "X landed", "CI green", "started on Y", acks, handoff and plan updates. A note costs the receiver nothing until it reads it; a pasted notice costs a full turn on its whole context. `--notice` only interrupts: plan-ready, CI failure, release done, push approval. Awaited results and matters needing the user stay ordinary replies and requests. If unsure, note.
 
