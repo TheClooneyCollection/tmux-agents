@@ -15,7 +15,7 @@ usage: tmux-agents [--client NAME]
 Lists sub agents and persistent shells with a live preview.
 Bound to prefix + a.
 
-Commands: status, resume, ci [--watch] [REF], open NAME [--from ME], board [--watch [SECS]], start AGENT, start chain, chain-config, chain (project picker),
+Commands: status, resume, ci [--watch] [REF], open NAME [--from ME], board [--all] [--watch [SECS]], start AGENT, start chain, chain-config, chain (project picker),
           main-sequence (configured project session group), mission (project records).
 Run tmux-agents COMMAND --help for its flags.
 

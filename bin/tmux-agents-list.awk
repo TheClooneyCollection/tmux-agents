@@ -348,8 +348,8 @@ END {
 
 # Board records are generated from the same snapshot and saved session args.
 $1=="B" { board_project=$2; board_width=$3+0; board_missing=$4; next }
-$1=="M" { missions[++nm]=$2; mission_title[nm]=$3; mission_owner[nm]=$4; mission_status[nm]=$5; mission_update[nm]=$6; next }
-$1=="A" { board_kind[$2]=$3; board_model[$2]=$4; board_project_of[$2]=$5; next }
+$1=="M" { missions[++nm]=$2; mission_title[nm]=$3; mission_owner[nm]=$4; mission_status[nm]=$5; mission_update[nm]=$6; mission_latest[nm]=$8; mission_done[nm]=$9; mission_done_time[nm]=$10+0; next }
+$1=="A" { board_kind[$2]=$3; board_model[$2]=$4; board_project_of[$2]=$5; board_role[$2]=$6; next }
 # Accumulate plain segments, fit once, then decorate the surviving bytes.
 function board_segment(s, style) {
     gsub(/[[:cntrl:]]/," ",s)
@@ -374,13 +374,9 @@ function board_flush( fitted, remaining, j, part, style, out, clipped) {
 }
 function board_line(s, style) { board_segment(s,style); board_flush() }
 function board_tree(p, depth, visited, unassigned, j, child, short, status, glyph, style, kindprefix, nameproject) {
-    if (index(visited,"|" p "|" ) || (unassigned && assigned[p])) return
+    if (index(visited,"|" p "|" ) || assigned[p]) return
     visited=visited "|" p "|"; assigned[p]=1
-    short=name[p]; nameproject=board_project_of[p]=="home" ? "~" : board_project_of[p]
-    kindprefix=board_kind[p] "-" nameproject "-"
-    # Codex profile records keep their profile kind but names use codex-.
-    if (index(short,"codex-" nameproject "-")==1) kindprefix="codex-" nameproject "-"
-    if (index(short,kindprefix)==1) short=substr(short,length(kindprefix)+1)
+    short=board_short[name[p]]
     status=live_status(p)
     style=color(status); sub(/^\033\[/,"",style); sub(/m.*/,"",style)
     glyph=status=="-" ? "·" : substr(status,1,index(status," ")-1)
@@ -403,29 +399,65 @@ function board_in_project(p, seen) {
     }
     return 0
 }
-function board_render( m,j,p,root,k,status,style) {
+# Names are shortened against the mission project, even after a child changes cwd.
+function board_register(n, projectname, short) {
+    if (n in board_short) return
+    projectname=board_project=="home" ? "~" : board_project
+    short=n
+    sub(/^[^-]+-/,"",short)
+    if (index(short,projectname "-")==1) short=substr(short,length(projectname)+2)
+    else short=n
+    board_short[n]=short; board_short_count[short]++
+}
+function board_render( m,j,p,root,k,status,style,n,donecount,folded,ids,t) {
     # Stable insertion sort uses the shared list rank without changing pane order.
     for (j=1;j<=np;j++) {
         p=order[j]; status=live_status(p); board_rank[p]=rank; k=j
         while (k>1 && board_rank[board_order[k-1]]>board_rank[p]) { board_order[k]=board_order[k-1]; k-- }
         board_order[k]=p
+        if (board_live(p)) board_register(name[p])
     }
+    for (m=1;m<=nm;m++) {
+        board_register(mission_owner[m])
+        if (mission_status[m]=="done") {
+            k=++donecount; t=mission_done_time[m] ? mission_done_time[m] : mission_update[m]+0
+            while (k>1 && done_time[k-1]<t) { done_order[k]=done_order[k-1]; done_time[k]=done_time[k-1]; k-- }
+            done_order[k]=m; done_time[k]=t
+        }
+    }
+    for (n in board_short) if (board_short_count[board_short[n]]>1) board_short[n]=n
+    for (j=1;j<=donecount && j<=3;j++) expanded[done_order[j]]=1
     if (board_width<2) board_width=80
     board_line("Mission board · " board_project,"1")
+    for (j=1;j<=np;j++) {
+        p=board_order[j]
+        if (board_live(p) && board_in_project(p) && board_role[p]=="main") {
+            if (!pinned++) { board_line(""); board_line("▸ pinned","1;38;5;180") }
+            board_tree(p,0,"",1)
+        }
+    }
     if (board_missing==1) board_line("No mission records (M<N>.mission)")
     for (m=1;m<=nm;m++) {
-        board_line("")
         status=mission_status[m]
+        if (status=="done" && !expanded[m] && ENVIRON["BOARD_ALL"]!="1") {
+            folded++; ids=ids (ids=="" ? "" : ", ") missions[m]; continue
+        }
+        board_line("")
         style=status=="active" ? "38;5;117" : status=="needs-decision" ? "1;30;48;5;214" : status=="ready-to-push" ? "38;5;114" : status=="done" ? "38;5;240" : "38;5;245"
         board_segment(missions[m],"1"); board_segment("  " mission_title[m] "  ")
         board_segment(status,style); board_segment(" · ")
         board_segment(elapsed(now-mission_update[m]) " ago","38;5;240"); board_flush()
         root=""
         for (j=1;j<=np;j++) { p=order[j]; if (board_live(p) && name[p]==mission_owner[m]) { root=p; break } }
+        if (status=="done") {
+            if (mission_done[m]!="") board_line("  ✓ " mission_done[m],"38;5;240")
+        } else if (root=="") {
+            board_line("  ⚠ owner gone (" board_short[mission_owner[m]] ")" (mission_latest[m]!="" ? " · last: " mission_latest[m] : ""),"1;30;48;5;214")
+        }
         if (root!="") board_tree(root,0,"")
-        else board_line("  owner " mission_owner[m] " not live")
     }
-    board_line(""); board_line("▸ unassigned","1;38;5;180")
+    if (folded) { board_line(""); board_line("… " folded " earlier done: " ids,"38;5;240") }
+    for (j=1;j<=np;j++) { p=board_order[j]; if (board_live(p) && board_in_project(p) && !assigned[p]) { board_line(""); board_line("▸ unassigned","1;38;5;180"); break } }
     # Roots first, then any remaining cyclic/orphan graph components.
     for (j=1;j<=np;j++) { p=board_order[j]; if (board_live(p) && board_in_project(p) && !assigned[p] && !(board_in_project(parent[p]))) board_tree(p,0,"",1) }
     for (j=1;j<=np;j++) { p=board_order[j]; if (board_live(p) && board_in_project(p) && !assigned[p]) board_tree(p,0,"",1) }

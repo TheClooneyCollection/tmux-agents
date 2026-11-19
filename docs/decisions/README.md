@@ -6,6 +6,7 @@ Each file: the context, the decision, why, and what was rejected. Name new ones 
 
 | Date | Decision |
 | --- | --- |
+| 2026-11-19 | [Mission outcomes and pinned main](2026-11-19-board-outcomes-and-pinned-main.md) |
 | 2026-11-17 | [v3 direction: pluggable backends under a new name](2026-11-17-v3-backend-direction.md) |
 | 2026-11-17 | [Polish the mission board](2026-11-17-board-visual-polish.md) |
 | 2026-11-17 | [Isolate trial installations](2026-11-17-install-isolation.md) |

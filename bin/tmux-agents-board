@@ -2,14 +2,21 @@
 # Read-only mission board; refreshes share the agent list's state and width logic.
 set -euo pipefail
 here="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
-watch=0 interval=2
-case "${1:-}" in
-  --help|-h) echo 'usage: tmux-agents board [--watch [SECS]]'; exit 0 ;;
-  --watch) watch=1; shift; if [ "$#" -gt 0 ]; then interval="$1"; shift; fi ;;
-esac
-if [ "$#" -gt 0 ] || ! [[ "$interval" =~ ^[0-9]+$ ]] || [ "$interval" -eq 0 ]; then
-  echo 'usage: tmux-agents board [--watch [SECS]] (positive whole seconds)' >&2; exit 2
+watch=0 interval=2 BOARD_ALL=0
+usage() { echo 'usage: tmux-agents board [--all] [--watch [SECS]]'; }
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --help|-h) usage; echo 'Show the three most recently completed missions; --all expands earlier done missions.'; exit 0 ;;
+    --all) BOARD_ALL=1; shift ;;
+    --watch) watch=1; shift
+      if [ "$#" -gt 0 ] && [[ "$1" != --* ]]; then interval="$1"; shift; fi ;;
+    *) usage >&2; exit 2 ;;
+  esac
+done
+if ! [[ "$interval" =~ ^[0-9]+$ ]] || [ "$interval" -eq 0 ]; then
+  usage >&2; echo 'interval must be positive whole seconds' >&2; exit 2
 fi
+export BOARD_ALL
 if [ "$watch" = 1 ] && { [ ! -t 0 ] || [ ! -t 1 ]; }; then
   echo 'tmux-agents board: --watch requires a terminal' >&2; exit 2
 fi

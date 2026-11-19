@@ -19,7 +19,7 @@ my @fields = ('P', '#{pane_id}', '#{?@agent,#{@agent},-}', '#{pane_dead}',
  '#{?@msg_waiting_since,#{@msg_waiting_since},-}', '#{window_id}', '#{?@agent_id,#{@agent_id},-}',
  '#{@state_since}', '#{@worked}', '#{@last_turn}', '#{@turns}', '#{@turn_start}', '#{@started}',
  '#{?@member,#{@member},0}', '#{?@tracked,#{@tracked},0}', '#{?@shell,#{@shell},0}',
- '-', '-', '-', '-', '#{pane_width}');
+ '-', '-', '-', '-', '#{pane_width}', '#{@role}');
 open my $tmux, '-|', 'tmux', 'list-panes', '-a', '-F', join("\t", @fields) or die "tmux: $!\n";
 my @rows;
 while (<$tmux>) { chomp; push @rows, [split /\t/, $_, -1]; }
@@ -65,7 +65,7 @@ for my $r (@rows) {
   $model=$1 if $args[$i] =~ /^--model=(.+)$/;
  }
  for ($kind,$model) { s/[\x00-\x1f\x7f]/ /g }
- push @data,join("\t",'A',$r->[1],$kind,$model,row_project($r));
+ push @data,join("\t",'A',$r->[1],$kind,$model,row_project($r),$r->[29] // '');
 }
 my $missing=1;
 my @missions;
@@ -86,12 +86,25 @@ if (opendir my $dir, $mission_dir) {
   next if grep { !defined($record{$_}) || $record{$_} eq '' || $record{$_} =~ /[\t\r\n]/ }
                qw(id title owner status created updated);
   next unless "$record{id}.mission" eq $file && $record{created} =~ /^[0-9]+$/ && $record{updated} =~ /^[0-9]+$/;
+  my ($latest,$done,$done_time)=('','',0);
+  if (open my $log,'<',"$mission_dir/$record{id}.log") {
+   while (<$log>) {
+    chomp;
+    my ($time,$author,$kind,$text)=split /\t/,$_,4;
+    next unless defined($text) && $time =~ /^[0-9]+$/;
+    $text =~ s/[\x00-\x1f\x7f]/ /g;
+    $latest=$text;
+    if ($kind eq 'done') { $done=$text; $done_time=$time; }
+   }
+   close $log;
+  }
+  @record{qw(latest done done_time)}=($latest,$done,$done_time);
   $missing=0;
   push @missions, { %record };
  }
 }
 for my $record (sort { $b->{created} <=> $a->{created} || substr($b->{id},1) <=> substr($a->{id},1) } @missions) {
- push @data,join("\t",'M',@{$record}{qw(id title owner status updated created)});
+ push @data,join("\t",'M',@{$record}{qw(id title owner status updated created latest done done_time)});
 }
 push @data,join("\t",'B',$project,$width,$missing);
 store(\%projects,$cache) if $cache;

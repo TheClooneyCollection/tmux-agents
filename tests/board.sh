@@ -96,7 +96,7 @@ grep -Fq '      ◆ grand  codex · default  needs you' "$tmp/out"
 grep -Fq 'permission  codex · default  permission' "$tmp/out"
 grep -Fq 'message  codex · default  message waiting' "$tmp/out"
 grep -Fq 'untracked  tool · default  -' "$tmp/out"
-grep -Fq 'owner absent-owner not live' "$tmp/out"
+if grep -Fq 'owner absent-owner' "$tmp/out"; then echo 'FAIL done owner warning'; exit 1; fi
 grep -Fq 'free  codex · default  idle' "$tmp/out"
 [ "$(grep -Fc 'owner  claude · default' "$tmp/out")" = 1 ]
 if grep -Eq 'empty-path|outside|dead  codex' "$tmp/out"; then echo 'FAIL foreign/dead agent'; exit 1; fi
@@ -117,7 +117,7 @@ python3 - "$tmp/out" <<'GROUPS'
 from pathlib import Path
 import sys
 s=Path(sys.argv[1]).read_text()
-assert 'claude-project-designer  claude · default' in s.split('unassigned')[1], s
+assert 'designer  claude · default' in s.split('unassigned')[1], s
 assert 'linked  codex · default' in s.split('unassigned')[1], s
 assert 'Owner:' not in s, s
 children=[line.split()[1] for line in s.splitlines() if line.startswith('    ') and not line.startswith('      ')][:6]
@@ -126,7 +126,7 @@ roots=[line.split()[1] for line in s.split('▸ unassigned')[1].splitlines() if 
 assert roots == ['free-permission', 'free-working', 'main', 'free', 'untracked', 'linked'], roots
 m4=s.split('M4  ')[1].split('▸ unassigned')[0]
 assert '  ○ interface  claude · default' in m4, m4
-assert '    ○ codex-project-worker  codex · default' in m4, m4
+assert '    ○ worker  codex · default' in m4, m4
 GROUPS
 # Exercise the renderer contract directly; the CLI owns terminal colour policy.
 python3 - "$here/bin" "$tmp" <<'COLOUR'
@@ -157,6 +157,72 @@ assert '\x1b[1;97;41m⚠' in spinning
 assert '\x1b[1;30;48;5;214mneeds you' in spinning
 assert '\x1b[38;5;245mcodex · default' in spinning
 COLOUR
+# Completion history, missing owners, collision-safe names and a pinned main.
+python3 - "$here/bin/tmux-agents" "$tmp" <<'UX'
+import os, subprocess, sys
+from pathlib import Path
+cli, tmp = sys.argv[1], Path(sys.argv[2])
+missions=tmp/'state/tmux-agents/missions/project'
+fixture=tmp/'panes'
+original=fixture.read_text()
+def board(*args):
+    return subprocess.check_output([cli, 'board', *args], text=True)
+for n in range(20,25):
+    (missions/f'M{n}.mission').write_text(f'id=M{n}\ntitle=Completed {n}\nowner=claude-project-offline\nstatus=done\ncreated={n}\nupdated={n}\n')
+    # Completion time, not creation or update time, determines expansion.
+    (missions/f'M{n}.log').write_text(f'{100-n}\tauthor\tdone\tLanded {n} on main\n200\tauthor\tprogress\tLater progress\n')
+(missions/'M10.log').write_text('1\tauthor\tdone\tOld outcome\n300\tauthor\tdone\tLanded f7db584 on main; CI run 44076283133\n400\tauthor\tprogress\tAfter done\n')
+for n, status in enumerate(('design','plan-ready','active','needs-decision','ready-to-push'),30):
+    (missions/f'M{n}.mission').write_text(f'id=M{n}\ntitle=Offline {status}\nowner=claude-project-missing\nstatus={status}\ncreated={n}\nupdated={n}\n')
+    (missions/f'M{n}.log').write_text('1\tauthor\tprogress\tFirst\n2\tauthor\tdecision\tLatest decision\n')
+s=board()
+assert '✓ Landed f7db584 on main; CI run 44076283133' in s, s
+assert 'Old outcome' not in s and 'After done' not in s, s
+assert '… 3 earlier done: M24, M23, M22' in s, s
+assert 'M20  Completed' in s and 'M21  Completed' in s, s
+assert s.count('⚠ owner gone (missing) · last: Latest decision')==5, s
+assert 'reopen:' not in s and 'not live' not in s, s
+coloured=subprocess.check_output(['perl', str(Path(cli).with_name('tmux-agents-board.pl')), str(Path(cli).parent)],
+    env=dict(os.environ, BOARD_MISSION_DIR=str(missions), BOARD_COLOR='1', BOARD_SPIN='0'), text=True)
+assert '\x1b[38;5;240m  ✓ Landed f7db584' in coloured, coloured
+assert '\x1b[1;30;48;5;214m  ⚠ owner gone (missing)' in coloured, coloured
+all_s=board('--all')
+assert 'earlier done' not in all_s, all_s
+assert all(f'M{n}  Completed {n}' in all_s for n in range(20,25)), all_s
+assert '--all' in board('--help')
+# An absent log contributes no extra outcome line.
+(missions/'M10.log').unlink()
+assert 'Landed f7db584' not in board(), board()
+rows=[r.split('\t') for r in original.splitlines()]
+for r in rows:
+    r[29]='main' if r[1]=='%9' else ''
+fixture.write_text('\n'.join('\t'.join(r) for r in rows)+'\n')
+s=board()
+assert s.index('▸ pinned')<s.index('M3  '), s
+pinned=s.split('▸ pinned')[1].split('\nM')[0]
+assert 'main  claude · default' in pinned and 'designer  claude · default' in pinned, s
+assert 'worker  codex · default' in pinned, s
+assert s.count('owner  claude · default')==1, s
+assert 'main  claude · default' not in s.split('▸ unassigned')[1], s
+# Same suffix across different agents must remain unambiguous.
+for r in rows:
+    if r[1]=='%3': r[2]='codex-project-owner'
+fixture.write_text('\n'.join('\t'.join(r) for r in rows)+'\n')
+s=board()
+assert 'claude-project-owner  claude' in s and 'codex-project-owner  codex' in s, s
+# If every live agent belongs to main, omit the empty unassigned section.
+rows=[r for r in rows if r[1] in ('%9','%0','%1','%2')]
+fixture.write_text('\n'.join('\t'.join(r) for r in rows)+'\n')
+assert 'unassigned' not in board(), board()
+# Outcomes and attention lines obey the same terminal width budget.
+for r in rows: r[28]='45'
+fixture.write_text('\n'.join('\t'.join(r) for r in rows)+'\n')
+assert all(len(line)<=45 for line in board('--all').splitlines())
+fixture.write_text(original)
+for n in list(range(20,25))+list(range(30,35)):
+    (missions/f'M{n}.mission').unlink()
+    (missions/f'M{n}.log').unlink()
+UX
 rm "$tmp/state/tmux-agents/missions/project/"*.mission
 "$here/bin/tmux-agents" board > "$tmp/out"
 grep -Fq 'No mission records' "$tmp/out"

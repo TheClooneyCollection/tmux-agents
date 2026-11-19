@@ -448,7 +448,20 @@ one `key=value` record per mission. Required keys are `id`, `title`, `owner`,
 and `worktree`, and unknown keys, do not affect the view. Use the owner's full
 agent name. Each mission shows its live owner and descendants, including kind,
 saved `--model` (or `default`), state and latest progress. Other live project
-agents appear under `unassigned`. Linked worktrees use the main repository's
+agents appear under `unassigned`, which is hidden when empty. The project main
+(`@role main`) and its subtree appear first under `pinned`; agents are shown only
+once. Names omit the agent and project prefix unless that would be ambiguous.
+
+Done missions show the last `done` log text as a dimmed outcome line, when present.
+Only the three most recently completed missions are expanded by default; earlier
+ones are folded into a count and ID list. Completion log timestamps determine
+recency, falling back to the mission update time when no completion exists.
+`--all` expands every mission and can be combined with `--watch`. An unfinished
+mission whose owner is no longer live shows a highlighted `owner gone` line with
+the latest log text, when present. `open` requires a live pane, so the board does
+not offer it for absent owners. All lines fit the pane width.
+
+Linked worktrees use the main repository's
 mission records. Live descendants stay in their project's tree when their working
 directory changes. A missing directory or missing records still
 shows live agents. The legacy `board.md` is ignored; no mission CLI is needed.
