@@ -373,7 +373,7 @@ function board_flush( fitted, remaining, j, part, style, out, clipped) {
     board_count=0; board_text=""
 }
 function board_line(s, style) { board_segment(s,style); board_flush() }
-function board_tree(p, depth, visited, unassigned, j, child, short, status, glyph, style, kindprefix, nameproject) {
+function board_tree(p, depth, visited, unassigned, pinned_tree, j, child, short, status, glyph, style, kindprefix, nameproject) {
     if (index(visited,"|" p "|" ) || assigned[p]) return
     visited=visited "|" p "|"; assigned[p]=1
     short=board_short[name[p]]
@@ -388,7 +388,13 @@ function board_tree(p, depth, visited, unassigned, j, child, short, status, glyp
     if (status!="working") { board_segment("  "); board_segment(status,style) }
     if (activity[p]!="-" && activity[p]!="") board_segment("  " activity[p],"38;5;245")
     board_flush()
-    for (j=1;j<=np;j++) { child=board_order[j]; if (board_live(child) && parent[child]==p && (!unassigned || board_in_project(child))) board_tree(child,depth+1,visited,unassigned) }
+    for (j=1;j<=np;j++) {
+        child=board_order[j]
+        if (!board_live(child) || parent[child]!=p || (unassigned && !board_in_project(child))) continue
+        # Displayed missions own their trees; folded owners still belong to pinned.
+        if (pinned_tree && displayed_owner[name[child]]) continue
+        board_tree(child,depth+1,visited,unassigned,pinned_tree)
+    }
 }
 function board_live(p) { return name[p]!="-" && name[p]!="" && dead[p]!=1 && !isshell[p] }
 # Ownership keeps project descendants visible when their cwd changes.
@@ -427,13 +433,15 @@ function board_render( m,j,p,root,k,status,style,n,donecount,folded,ids,t) {
     }
     for (n in board_short) if (board_short_count[board_short[n]]>1) board_short[n]=n
     for (j=1;j<=donecount && j<=3;j++) expanded[done_order[j]]=1
+    for (m=1;m<=nm;m++)
+        if (mission_status[m]!="done" || expanded[m] || ENVIRON["BOARD_ALL"]=="1") displayed_owner[mission_owner[m]]=1
     if (board_width<2) board_width=80
     board_line("Mission board · " board_project,"1")
     for (j=1;j<=np;j++) {
         p=board_order[j]
         if (board_live(p) && board_in_project(p) && board_role[p]=="main") {
             if (!pinned++) { board_line(""); board_line("▸ pinned","1;38;5;180") }
-            board_tree(p,0,"",1)
+            board_tree(p,0,"",1,1)
         }
     }
     if (board_missing==1) board_line("No mission records (M<N>.mission)")

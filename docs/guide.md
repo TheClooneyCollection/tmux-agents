@@ -454,7 +454,9 @@ agent name. Each mission shows its live owner and descendants, including kind,
 saved `--model` (or `default`), state and latest progress. Other live project
 agents appear under `unassigned`, which is hidden when empty. The project main
 (`@role main`) and its subtree appear first under `pinned`; agents are shown only
-once. Names omit the agent and project prefix unless that would be ambiguous.
+once. A descendant owning a displayed mission appears with its subtree under that
+mission, rather than under pinned. Owners of folded done missions stay pinned
+until those missions are expanded. Names omit the agent and project prefix unless that would be ambiguous.
 
 Done missions show the last `done` log text as a dimmed outcome line, when present.
 Only the three most recently completed missions are expanded by default; earlier

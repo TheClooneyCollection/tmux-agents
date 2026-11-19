@@ -201,9 +201,47 @@ s=board()
 assert s.index('▸ pinned')<s.index('M3  '), s
 pinned=s.split('▸ pinned')[1].split('\nM')[0]
 assert 'main  claude · default' in pinned and 'designer  claude · default' in pinned, s
-assert 'worker  codex · default' in pinned, s
+assert 'owner  claude · default' not in pinned, s
+assert 'interface  claude · default' not in pinned, s
+assert 'worker  codex · default' not in pinned, s
+def section(text, heading):
+    return text.split(heading, 1)[1].split('\nM', 1)[0].split('\n▸', 1)[0]
+assert 'owner  claude · default' in section(s, 'M3  '), s
+assert 'grand  codex · default' in section(s, 'M3  '), s
+assert 'interface  claude · default' in section(s, 'M4  '), s
+assert 'worker  codex · default' in section(s, 'M4  '), s
+assert s.count('worker  codex · default') == 1, s
 assert s.count('owner  claude · default')==1, s
 assert 'main  claude · default' not in s.split('▸ unassigned')[1], s
+# Stop at mission owners deeper in the pinned tree, retaining their non-owner parent.
+for r in rows:
+    if r[1]=='%11': r[6]='%10'
+fixture.write_text('\n'.join('\t'.join(r) for r in rows)+'\n')
+s=board()
+assert 'designer  claude · default' in section(s, '▸ pinned'), s
+assert 'interface  claude · default' not in section(s, '▸ pinned'), s
+assert 'worker  codex · default' in section(s, 'M4  '), s
+# A folded done owner's tree stays pinned, then moves on expansion, without duplicates.
+mission4=(missions/'M4.mission').read_text()
+(missions/'M4.mission').write_text(mission4.replace('status=design', 'status=done'))
+(missions/'M4.log').write_text('1\tauthor\tdone\tInterface delivered\n')
+s=board()
+assert 'M4  Offline' not in s, s
+assert 'interface  claude · default' in section(s, '▸ pinned'), s
+assert 'worker  codex · default' in section(s, '▸ pinned'), s
+for args in [('--all',), ()]:
+    if not args:
+        # A recent completion is displayed even without --all.
+        (missions/'M4.log').write_text('1000\tauthor\tdone\tInterface delivered\n')
+    s=board(*args)
+    assert 'interface  claude · default' not in section(s, '▸ pinned'), s
+    mission_section=section(s, 'M4  ')
+    assert '✓ Interface delivered' in mission_section, s
+    assert 'interface  claude · default' in mission_section, s
+    assert 'worker  codex · default' in mission_section, s
+    assert s.count('worker  codex · default') == 1, s
+(missions/'M4.mission').write_text(mission4)
+(missions/'M4.log').unlink()
 # Same suffix across different agents must remain unambiguous.
 for r in rows:
     if r[1]=='%3': r[2]='codex-project-owner'
