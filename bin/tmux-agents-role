@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Claim only the caller's missing chain role, preserving assigned roles.
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+. "$here/lib.sh"
+FROM_PANE='' role=''
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --from) [ "$#" -ge 2 ] && [ -n "$2" ] || die '--from needs a name'; FROM_PANE="$2"; shift 2 ;;
+    -h|--help) echo 'usage: tmux-agents role ROLE [--from ME]'; exit 0 ;;
+    -*) die "unknown option: $1" ;;
+    *) [ -z "$role" ] || die 'expected one ROLE'; role="$1"; shift ;;
+  esac
+done
+[ -n "$role" ] || die 'usage: tmux-agents role ROLE [--from ME]'
+chain_role_canon "$role" role
+[ -n "$FROM_PANE" ] || trusted_pane || die 'untrusted pane: pass --from ME'
+require_tmux
+# Reject unknown names before self_pane can auto-name an unnamed caller.
+if [ -n "$FROM_PANE" ]; then
+  case "$FROM_PANE" in
+    %*) ;;
+    *) [ -n "$(find_pane "$FROM_PANE")" ] || die "no agent named '$FROM_PANE'" ;;
+  esac
+fi
+pane="$(self_pane)"
+if trusted_pane; then
+  [ "$pane" = "${TMUX_PANE:-}" ] || die 'can only claim your own pane role'
+fi
+[ -n "$(pane_name "$pane")" ] || die 'caller is not a live named agent'
+[ "$(tmux display-message -p -t "$pane" '#{pane_dead}')" != 1 ] || die 'caller is not a live named agent'
+require_agent_pane "$pane"
+current="$(tmux show-option -pqv -t "$pane" @role)"
+[ -z "$current" ] || [ "$current" = "$role" ] || die "pane already has role '$current'"
+ensure_agent_id "$pane" >/dev/null
+if [ "$(tmux show-option -pqv -t "$pane" @tracked)" != 1 ]; then
+  tmux set-option -p -t "$pane" @tracked 1
+  agent_start_work "$pane" idle
+fi
+tmux set-option -p -t "$pane" @role "$role"
+printf 'role: %s (pane %s)\n' "$role" "$pane"

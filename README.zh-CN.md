@@ -176,7 +176,7 @@ time fish -c true        # 换成你的 shell；和 --no-config / --norc / -f �
 | `tmux-notes` | 读取静默 agent note，不触发消息回合 |
 | `tmux-shell` | 打开 shell 或运行 `--command CMD`；`--from NAME` 指定所属 agent |
 | `tmux-spawn` | 用 `--role` 启动助手、`--mission` 指定任务归属、`--open` 展示 pane，或用 `--member` 创建长期成员 |
-| `tmux-agents` | agent 列表（`prefix + a`）；`start` 启动可跟踪的 agent 或 chain；`status`（别名 `resume`）查看上下文；`ci --watch` 等待检查；`chain-config` 查询或设置角色；`chain` 选择项目；`main-sequence` 打开配置的项目窗口 |
+| `tmux-agents` | agent 列表（`prefix + a`）；`start` 启动可跟踪的 agent 或 chain；`status`（别名 `resume`）查看上下文；`role ROLE` 认领自己的 chain 角色；`ci --watch` 等待检查；`chain-config` 查询或设置角色；`chain` 选择项目；`main-sequence` 打开配置的项目窗口 |
 | `tmux-peers`、`tmux-peek` | 查看连接关系；读取另一个 pane 的内容 |
 | `tmux-dismiss`、`tmux-disconnect` | 关闭子 agent；断开 pane 之间的连接 |
 | `tmux-agent-report` | 报告进度，显示在状态行上 |

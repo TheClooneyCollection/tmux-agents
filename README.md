@@ -176,7 +176,7 @@ Agents run these for you; each takes `--help`.
 | `tmux-notes` | Read agent notes without opening a message turn |
 | `tmux-shell` | Open a shell or run `--command CMD`; `--from NAME` gives an agent ownership |
 | `tmux-spawn` | Start a helper with `--role`, assign `--mission`, show it with `--open`, or keep a long-lived `--member` |
-| `tmux-agents` | The agent list (`prefix + a`); `start` launches a tracked agent or chain; `status` (alias `resume`) orients; `ci --watch` watches checks; `chain-config` queries/sets roles; `chain` picks a project; `main-sequence` opens configured project windows |
+| `tmux-agents` | The agent list (`prefix + a`); `start` launches a tracked agent or chain; `status` (alias `resume`) orients; `role ROLE` claims your chain role; `ci --watch` watches checks; `chain-config` queries/sets roles; `chain` picks a project; `main-sequence` opens configured project windows |
 | `tmux-peers`, `tmux-peek` | Show connections; read another pane |
 | `tmux-dismiss`, `tmux-disconnect` | Close a sub agent; unlink panes |
 | `tmux-agent-report` | Report progress for the status line |

@@ -46,7 +46,7 @@ Interface is main's `--member` at depth 1. Its workers, reviewer and runner are 
 
 ## Starting the chain (main agent)
 
-1. Run `tmux-agents status`; keep your name. The chain launcher records `@role main`.
+1. Run `tmux-agents status`; keep your name. The chain launcher records `@role main`. If status shows no claimed role (`role=none` or the hint), run `tmux-agents role main --from ME`; do the same when told you are the main of an existing chain without a claimed role.
 2. Create missions with the CLI below. Start independent missions immediately, with no cap; anything that does not depend on a pending design or result starts now.
 3. For each mission, follow the flow below. Existing role briefs never start another chain.
 

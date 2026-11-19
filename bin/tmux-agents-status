@@ -78,6 +78,7 @@ END {
   printf "%s: %s (%s) role=%s parent=%s depth=%d kind=%s state=%s since=%s", (peer!=""?"peer":"you"), f[p,2],p,role(p),(f[p,4]!=""?f[p,4]:"-"),depth(p),kind(p),status(p),since(p)
   if(waiting[p]!="")printf " waiting on %s",waiting[p]
   printf "\n"
+  if(f[p,3]=="")print "no role claimed; run: tmux-agents role main --from " f[p,2]
   if(peer!="") {if(f[p,17]!="")print "activity: " f[p,17];exit}
   n=split(f[self,13],peers," ");header=0
   for(i=1;i<=n;i++) {

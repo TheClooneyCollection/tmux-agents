@@ -4,7 +4,7 @@ set -euo pipefail
 here="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
 case "${1:-}" in
   resume) shift; exec "$here/tmux-agents-status" "$@" ;;
-  status|ci|open|board|start|chain-config|main-sequence|chain|mission) subcommand="$1"; shift; exec "$here/tmux-agents-$subcommand" "$@" ;;
+  status|role|ci|open|board|start|chain-config|main-sequence|chain|mission) subcommand="$1"; shift; exec "$here/tmux-agents-$subcommand" "$@" ;;
 esac
 . "$here/lib.sh"
 
@@ -15,7 +15,7 @@ usage: tmux-agents [--client NAME]
 Lists sub agents and persistent shells with a live preview.
 Bound to prefix + a.
 
-Commands: status, resume, ci [--watch] [REF], open NAME [--from ME], board [--all] [--watch [SECS]], start AGENT, start chain, chain-config, chain (project picker),
+Commands: status, resume, role ROLE [--from ME], ci [--watch] [REF], open NAME [--from ME], board [--all] [--watch [SECS]], start AGENT, start chain, chain-config, chain (project picker),
           main-sequence (configured project session group), mission (project records).
 Run tmux-agents COMMAND --help for its flags.
 
