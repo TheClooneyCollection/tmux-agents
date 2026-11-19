@@ -88,10 +88,15 @@ while :; do
     frame='board: refresh failed (retrying)'
   fi
   if [ "$watch" = 0 ]; then printf '%s\n' "$frame"; break; fi
+  size="$( { stty size </dev/tty; } 2>/dev/null || stty size 2>/dev/null || true)"
   hint='a all missions · q quit'
+  columns=${size##* }
+  if [[ "$columns" =~ ^[0-9]+$ ]] && [ "$columns" -gt 0 ] && [ "$columns" -lt "${#hint}" ]; then
+    # The hint uses single-cell characters; decode UTF-8 even in a C locale.
+    hint="$(perl -CS -MEncode=decode -e 'print substr(decode("UTF-8", $ARGV[1]), 0, $ARGV[0])' "$columns" "$hint")"
+  fi
   if [ "$BOARD_COLOR" = 1 ]; then hint=$'\033[2m'"$hint"$'\033[0m'; fi
   frame+=$'\n'"$hint"
-  size="$( { stty size </dev/tty; } 2>/dev/null || stty size 2>/dev/null || true)"
   # Replace the previous frame and its history; normal-screen output remains scrollable.
   printf '\033[H\033[2J\033[3J'
   paint

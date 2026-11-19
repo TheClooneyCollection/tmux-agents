@@ -62,9 +62,9 @@ help_text = subprocess.check_output([board, '--help'])
 assert b'a toggles all missions' in help_text and b'q or Ctrl-C' in help_text, help_text
 
 
-def run(height=12, watch=True, extra=None, animate=False, quit_signal=False, toggle=False, all_missions=False):
+def run(height=12, watch=True, extra=None, animate=False, quit_signal=False, toggle=False, all_missions=False, width=100):
     master, slave = pty.openpty()
-    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', height, 100, 0, 0))
+    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', height, width, 0, 0))
     original_terminal = termios.tcgetattr(slave)
     # Give stty /dev/tty the actual PTY, as in a user's terminal.
     def terminal():
@@ -125,7 +125,9 @@ def run(height=12, watch=True, extra=None, animate=False, quit_signal=False, tog
             if env.get('TEST_FAIL'):
                 assert b'board: refresh failed (retrying)' in data and b'last row' in data, data
         if watch:
-            assert b'a all missions' in data, data
+            plain = re.sub(rb'\x1b\[[0-9;]*m', b'', data).decode()
+            hints = [line.split('\x1b[K', 1)[0] for line in plain.splitlines() if line.startswith('a all')]
+            assert hints and all(line == 'a all missions · q quit'[:width] for line in hints), (width, hints, data)
             if quit_signal:
                 process.send_signal(signal.SIGINT)
             else:
@@ -154,6 +156,9 @@ def run(height=12, watch=True, extra=None, animate=False, quit_signal=False, tog
         assert re.search(rb'\x1b\[[0-9;]*m', data) is None, data
     return data
 
+# The footer must fit even where UTF-8's middle dot crosses the byte boundary.
+run(width=16, height=5, animate=True)
+run(width=15, height=4, extra={'NO_COLOR': '1', 'LC_ALL': 'C'})
 assert b'\x1b[' in run(watch=False)
 run(watch=False, extra={'NO_COLOR': '1'})
 run(animate=True)

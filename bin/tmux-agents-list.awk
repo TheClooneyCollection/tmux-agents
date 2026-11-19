@@ -415,6 +415,7 @@ function board_register(n, projectname, short) {
     else short=n
     board_short[n]=short; board_short_count[short]++
 }
+function board_displayed(m) { return mission_status[m]!="done" || expanded[m] || ENVIRON["BOARD_ALL"]=="1" }
 function board_render( m,j,p,root,k,status,style,n,donecount,folded,ids,t) {
     # Stable insertion sort uses the shared list rank without changing pane order.
     for (j=1;j<=np;j++) {
@@ -434,7 +435,7 @@ function board_render( m,j,p,root,k,status,style,n,donecount,folded,ids,t) {
     for (n in board_short) if (board_short_count[board_short[n]]>1) board_short[n]=n
     for (j=1;j<=donecount && j<=3;j++) expanded[done_order[j]]=1
     for (m=1;m<=nm;m++)
-        if (mission_status[m]!="done" || expanded[m] || ENVIRON["BOARD_ALL"]=="1") displayed_owner[mission_owner[m]]=1
+        if (board_displayed(m)) displayed_owner[mission_owner[m]]=1
     if (board_width<2) board_width=80
     board_line("Mission board · " board_project,"1")
     for (j=1;j<=np;j++) {
@@ -447,7 +448,7 @@ function board_render( m,j,p,root,k,status,style,n,donecount,folded,ids,t) {
     if (board_missing==1) board_line("No mission records (M<N>.mission)")
     for (m=1;m<=nm;m++) {
         status=mission_status[m]
-        if (status=="done" && !expanded[m] && ENVIRON["BOARD_ALL"]!="1") {
+        if (!board_displayed(m)) {
             folded++; ids=ids (ids=="" ? "" : ", ") missions[m]; continue
         }
         board_line("")
