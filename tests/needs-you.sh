@@ -263,10 +263,11 @@ check "quiet note is available without starting a turn" test "$("$B/tmux-notes" 
 "$B/tmux-notes" --from kid >/dev/null
 expect "reading quiet notes preserves explicit needs-you" needs_you
 
-# Claiming a role must not answer an existing user question or restart its clock.
+# Claiming a top-level role must not answer a question or restart its clock.
 reset
+tmux set-option -pu -t %1 @parent
 "$B/tmux-agent-report" --from kid --needs-you 'choose a role workflow' >/dev/null
-"$B/tmux-agents" role worker --from kid >/dev/null
+check "top-level role claim succeeds" "$B/tmux-agents" role worker --from kid
 expect "role claim preserves explicit needs-you" needs_you
 check "role claim preserves attention reason" test "$(st %1 @activity)" = 'choose a role workflow'
 check "role claim leaves paused work paused" test -z "$(st %1 @turn_start)"

@@ -42,7 +42,7 @@ wait_marker %1
 tmux set-option -p -t %1 @agent codex-project-peer
 cd "$tmp/project"
 run() { "$here/bin/tmux-agents" role "$@"; }
-status() { "$here/bin/tmux-agents" status; }
+status() { "$here/bin/tmux-agents" status "$@"; }
 reject() {
   if run "$@" > "$tmp/out" 2> "$tmp/err"; then
     printf 'unexpected successful claim: %s\n' "$*" >&2; exit 1
@@ -65,6 +65,40 @@ TMUX_AGENTS_PINNED='' reject main
 status > "$tmp/status"
 grep -q 'role=none' "$tmp/status"
 grep -q '^no role claimed; run: tmux-agents role main --from claude-project-old$' "$tmp/status"
+# Only the unparented caller receives the hint; peers never do.
+tmux set-option -p -t %0 @peers %1
+status codex-project-peer > "$tmp/status"
+if grep -q 'no role claimed' "$tmp/status"; then exit 1; fi
+tmux set-option -p -t %1 @parent %0
+TMUX_PANE=%1 status > "$tmp/status"
+if grep -q 'no role claimed' "$tmp/status"; then exit 1; fi
+for role in main worker; do
+  TMUX_PANE=%1 reject "$role"
+  grep -q 'spawned helpers keep their assigned role' "$tmp/err"
+done
+[ -z "$(tmux show-option -pqv -t %1 @agent_id)" ]
+[ -z "$(tmux show-option -pqv -t %1 @tracked)" ]
+tmux set-option -pu -t %1 @parent
+# Failed identity or accounting initialization must not enable tracking.
+mkdir -p "$tmp/failbin"
+ROLE_REAL_TMUX="$(command -v tmux)"
+export ROLE_REAL_TMUX
+cat > "$tmp/failbin/tmux" <<'STUB'
+#!/bin/sh
+for arg in "$@"; do
+  if [ "$1" = set-option ] && [ "$arg" = "$ROLE_FAIL_OPTION" ]; then exit 1; fi
+done
+exec "$ROLE_REAL_TMUX" "$@"
+STUB
+chmod +x "$tmp/failbin/tmux"
+ROLE_FAIL_OPTION=@agent_id PATH="$tmp/failbin:$PATH" reject main
+grep -q 'could not initialize agent identity' "$tmp/err"
+[ -z "$(tmux show-option -pqv -t %0 @tracked)" ]
+[ -z "$(tmux show-option -pqv -t %0 @role)" ]
+ROLE_FAIL_OPTION=@state PATH="$tmp/failbin:$PATH" reject main
+grep -q 'could not initialize agent tracking' "$tmp/err"
+[ -z "$(tmux show-option -pqv -t %0 @tracked)" ]
+[ -z "$(tmux show-option -pqv -t %0 @role)" ]
 # A legacy main becomes a tracked, idle agent with stable identity.
 run main --from claude-project-old > "$tmp/out"
 grep -qx 'role: main (pane %0)' "$tmp/out"

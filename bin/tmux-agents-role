@@ -30,12 +30,13 @@ fi
 [ -n "$(pane_name "$pane")" ] || die 'caller is not a live named agent'
 [ "$(tmux display-message -p -t "$pane" '#{pane_dead}')" != 1 ] || die 'caller is not a live named agent'
 require_agent_pane "$pane"
+[ -z "$(tmux show-option -pqv -t "$pane" @parent)" ] || die 'spawned helpers keep their assigned role'
 current="$(tmux show-option -pqv -t "$pane" @role)"
 [ -z "$current" ] || [ "$current" = "$role" ] || die "pane already has role '$current'"
-ensure_agent_id "$pane" >/dev/null
+ensure_agent_id "$pane" >/dev/null || die 'could not initialize agent identity'
 if [ "$(tmux show-option -pqv -t "$pane" @tracked)" != 1 ]; then
+  agent_start_work "$pane" idle || die 'could not initialize agent tracking'
   tmux set-option -p -t "$pane" @tracked 1
-  agent_start_work "$pane" idle
 fi
 tmux set-option -p -t "$pane" @role "$role"
 printf 'role: %s (pane %s)\n' "$role" "$pane"
