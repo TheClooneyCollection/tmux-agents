@@ -313,11 +313,11 @@ for key, height in ((b'q', 8), (b'q', len(full)+1), (b'\x03', 40), (b'q', 0)):
             rendered = data.split(b'\x1b[H\x1b[2J\x1b[3J')[1:]
             assert len(rendered) >= frames, data
             for refresh in rendered:
-                assert refresh.split(b'\x1b[J')[0] == expected.encode()+b'\x1b[K\r\n', refresh
+                assert refresh.split(b'\x1b[J')[0] == expected.encode()+b'\x1b[K\r\n'+'a all missions · q quit'.encode()+b'\x1b[K\r\n', refresh
             assert process.poll() is None, data
         else:
             assert not any('more rows' in line for line in lines), lines
-            assert lines == full, (height, lines, full)
+            assert lines == full + ['a all missions · q quit'], (height, lines, full)
         calls=Path(os.environ['BOARD_CALLS']).read_text().splitlines()
         assert sum(c.startswith('show-option ') for c in calls)==1, calls
         if not no_project:

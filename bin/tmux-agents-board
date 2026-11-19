@@ -6,7 +6,7 @@ watch=0 interval=2 BOARD_ALL=0
 usage() { echo 'usage: tmux-agents board [--all] [--watch [SECS]]'; }
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --help|-h) printf "%s\n%s\n" "$(usage)" 'Show the three most recently completed missions; --all expands earlier done missions.'; exit 0 ;;
+    --help|-h) printf "%s\n" "$(usage)" 'Show the three most recently completed missions; --all expands earlier done missions.' 'Watch keys: a toggles all missions; q or Ctrl-C quits.'; exit 0 ;;
     --all) BOARD_ALL=1; shift ;;
     --watch) watch=1; shift
       if [ "$#" -gt 0 ] && [[ "$1" != --* ]]; then interval="$1"; shift; fi ;;
@@ -72,15 +72,14 @@ paint() {
   done <<<"$frame"
 }
 # Bash 3.2 read -t accepts only whole seconds; select supports chip-rate ticks.
-quit_pressed() {
+watch_key() {
   perl -e '
     my $ready = "";
     vec($ready, fileno(STDIN), 1) = 1;
     if (select($ready, undef, undef, $ARGV[0]) > 0) {
       my $key;
-      exit 0 if sysread(STDIN, $key, 1) && $key eq "q";
+      print $key if sysread(STDIN, $key, 1);
     }
-    exit 1;
   ' "$1"
 }
 while :; do
@@ -89,6 +88,9 @@ while :; do
     frame='board: refresh failed (retrying)'
   fi
   if [ "$watch" = 0 ]; then printf '%s\n' "$frame"; break; fi
+  hint='a all missions · q quit'
+  if [ "$BOARD_COLOR" = 1 ]; then hint=$'\033[2m'"$hint"$'\033[0m'; fi
+  frame+=$'\n'"$hint"
   size="$( { stty size </dev/tty; } 2>/dev/null || stty size 2>/dev/null || true)"
   # Replace the previous frame and its history; normal-screen output remains scrollable.
   printf '\033[H\033[2J\033[3J'
@@ -103,11 +105,17 @@ while :; do
   if [[ "$rows" =~ ^[0-9]+$ ]] && [ "$line_count" -lt "$rows" ] &&
       [ "$BOARD_SPIN" = 1 ] && [[ "$frame" == *$'\001'* ]]; then animate=1; fi
   if [ "$animate" = 0 ]; then
-    if quit_pressed "$interval"; then break; fi
+    case "$(watch_key "$interval")" in
+      q) break ;;
+      a) BOARD_ALL=$((1 - BOARD_ALL)) ;;
+    esac
   else
     ticks=$((interval * fps))
     for ((tick=0; tick<ticks; tick++)); do
-      if quit_pressed "$delay"; then exit 0; fi
+      case "$(watch_key "$delay")" in
+        q) exit 0 ;;
+        a) BOARD_ALL=$((1 - BOARD_ALL)); break ;;
+      esac
       # The next data refresh paints the final tick.
       if [ "$tick" -lt "$((ticks - 1))" ]; then
         printf '\033[H'

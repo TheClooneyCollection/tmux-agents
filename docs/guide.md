@@ -430,12 +430,14 @@ Lists use numeric ID order; allocation also reserves IDs with surviving log file
 Run `tmux-agents board` to print the current project's missions and live agents,
 or `tmux-agents board --watch` to keep a pane updated every two seconds.
 `--watch SECS` changes the interval (positive whole seconds); press `q` or Ctrl-C
-to quit. The view adapts to the pane width and shows how long ago each mission
+to quit. Press `a` to toggle earlier done missions immediately, including their
+completion outcomes; `--all` starts expanded. A dim footer shows the keys, also
+visible without colour under `NO_COLOR`. The view adapts to the pane width and shows how long ago each mission
 was updated. Watch retries after a failed refresh; configuration and project
 path lookups are cached for the lifetime of the command. Every refresh prints
 the full board on the normal screen regardless of pane height; use tmux copy-mode
 to scroll. Each refresh clears the previous screen and scrollback, so history
-contains only the current board; scrollback from before `--watch` started is cleared too. Quitting restores the cursor.
+contains only the current board; scrollback from before `--watch` started is cleared too. Quitting restores the cursor and terminal input settings.
 
 Terminal output uses colour unless `NO_COLOR` is nonempty; piped output stays plain.
 Working glyphs animate in watch mode at `@tmux_agents_chip_fps` (default 10,
