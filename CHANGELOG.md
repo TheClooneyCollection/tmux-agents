@@ -3,7 +3,6 @@
 ## Unreleased
 
 - The mission board pins the project main and its tree, shortens unambiguous names, shows completion outcomes and missing-owner attention, and folds all but the three most recently completed missions (`--all` expands them).
-
 - The mission board uses status glyphs and terminal colour (`NO_COLOR` disables it), orders missions newest first and sibling agents by attention, and animates working glyphs at the chip frame rate when the full board fits in the pane.
 - Retire the agent-chain clear/rejoin flow; the separately maintained wrap-up skill owns resume. Agents with open helpers record `tmux-agents status` in the handoff "Resume steps".
 - Retire Agent Fleet Command integration in favor of the local mission board. Mission logging is local only; chain skills no longer mirror missions or check a Fleet inbox.
