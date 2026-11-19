@@ -6,7 +6,7 @@ watch=0 interval=2 BOARD_ALL=0
 usage() { echo 'usage: tmux-agents board [--all] [--watch [SECS]]'; }
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --help|-h) usage; echo 'Show the three most recently completed missions; --all expands earlier done missions.'; exit 0 ;;
+    --help|-h) printf "%s\n%s\n" "$(usage)" 'Show the three most recently completed missions; --all expands earlier done missions.'; exit 0 ;;
     --all) BOARD_ALL=1; shift ;;
     --watch) watch=1; shift
       if [ "$#" -gt 0 ] && [[ "$1" != --* ]]; then interval="$1"; shift; fi ;;
