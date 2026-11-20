@@ -42,18 +42,34 @@ cd "$tmp/project"
 run() { "$here/bin/tmux-agents" role "$@"; }
 # ps is a data fixture: no real agent process or account is used.
 ROLE_REAL_PS="$(command -v ps)"
+ROLE_REAL_CAT="$(command -v cat)"
+export ROLE_REAL_CAT
 export ROLE_REAL_PS
+export ROLE_OS=Darwin ROLE_PS_ENV="$tmp/env"
+: > "$ROLE_PS_ENV"
 export ROLE_PS_TREE="$tmp/tree" ROLE_PS_ARGS="$tmp/args"
 cat > "$tmp/bin/ps" <<'STUB'
 #!/bin/sh
 case "$*" in
   '-axo pid=,ppid=,comm=') cat "$ROLE_PS_TREE" ;;
+  '-E -p 91003 -o command=') cat "$ROLE_PS_ENV" ;;
   '-p 91003 -o args=') cat "$ROLE_PS_ARGS" ;;
   '-p '* ) exit 0 ;;
   *) exec "$ROLE_REAL_PS" "$@" ;;
 esac
 STUB
-chmod +x "$tmp/bin/ps"
+cat > "$tmp/bin/uname" <<'STUB'
+#!/bin/sh
+printf '%s\n' "$ROLE_OS"
+STUB
+cat > "$tmp/bin/cat" <<'STUB'
+#!/bin/sh
+if [ "$1" = /proc/91003/environ ]; then
+  exec "$ROLE_REAL_CAT" "$ROLE_PS_ENV"
+fi
+exec "$ROLE_REAL_CAT" "$@"
+STUB
+chmod +x "$tmp/bin/ps" "$tmp/bin/uname" "$tmp/bin/cat"
 export PATH="$tmp/bin:$PATH"
 root="$(tmux display-message -p -t %0 '#{pane_pid}')"
 . "$here/bin/lib.sh"
@@ -83,16 +99,65 @@ run main > /dev/null
 # A partial record is filled, preserving the hook ID and unrelated metadata.
 record_set "$aid" kind ''
 record_set "$aid" custom keep
+record_set "$aid" name saved-name
+record_set "$aid" dir /saved/project
+record_set "$aid" depth 7
 run main > /dev/null
 [ "$(record_get "$aid" kind)" = codex ]
 [ "$(record_get "$aid" id)" = hook-session ]
 [ "$(record_get "$aid" custom)" = keep ]
+[ "$(record_get "$aid" name)" = saved-name ]
+[ "$(record_get "$aid" dir)" = /saved/project ]
+[ "$(record_get "$aid" depth)" = 7 ]
 # A configured profile wrapper is preferred to its nested Codex process.
 record_set "$aid" kind ''
 export TMUX_AGENTS_CODEX_HOMES="account=$tmp/account"
 printf '%s 1 /bin/sh\n91002 %s /bin/account\n91003 91002 /bin/codex\n' "$root" "$root" > "$tmp/tree"
 run main > /dev/null
 [ "$(record_get "$aid" kind)" = account ]
+# Normal profile launches name the process codex and identify it by CODEX_HOME.
+printf '%s 1 /bin/sh\n91003 %s /bin/codex\n' "$root" "$root" > "$tmp/tree"
+record_set "$aid" kind ''
+record_set "$aid" cli_args ''
+printf 'codex -m gpt-test\n' > "$tmp/args"
+printf 'codex -m gpt-test HOME=/other CODEX_HOME=%s OTHER=value\n' "$tmp/account" > "$tmp/env"
+run main > /dev/null
+[ "$(record_get "$aid" kind)" = account ]
+"$here/bin/tmux-agents" board > "$tmp/board"
+grep -Eq 'account.*gpt-test' "$tmp/board"
+# Linux uses the NUL-delimited environment of the matched PID.
+export ROLE_OS=Linux
+record_set "$aid" kind ''
+printf 'HOME=/other\0CODEX_HOME=%s\0OTHER=value\0' "$tmp/account" > "$tmp/env"
+run main > /dev/null
+[ "$(record_get "$aid" kind)" = account ]
+# Unknown and unavailable environments keep ordinary Codex identity.
+for mode in unknown unavailable; do
+  record_set "$aid" kind ''
+  if [ "$mode" = unknown ]; then printf 'CODEX_HOME=/unconfigured\0' > "$tmp/env"
+  else rm "$tmp/env"; fi
+  run main > /dev/null
+  [ "$(record_get "$aid" kind)" = codex ]
+done
+export ROLE_OS=Darwin
+: > "$tmp/env"
+# An executable named after an unconfigured profile is not inferred as Codex.
+record_set "$aid" kind ''
+printf '%s 1 /bin/sh\n91003 %s /bin/unconfigured-profile\n' "$root" "$root" > "$tmp/tree"
+run main > "$tmp/out" 2> "$tmp/err"
+grep -q 'could not be detected' "$tmp/err"
+[ -z "$(record_get "$aid" kind)" ]
+# Shells remain excluded even when a recognized process exists below them.
+printf '%s 1 /bin/sh\n91003 %s /bin/claude\n' "$root" "$root" > "$tmp/tree"
+tmux set-option -p -t %0 @shell 1
+if pane_agent_command %0 --detect > "$tmp/detected"; then exit 1; fi
+[ ! -s "$tmp/detected" ]
+tmux show-options -p -t %0 > "$tmp/before"
+if run main > "$tmp/out" 2> "$tmp/err"; then exit 1; fi
+grep -q 'is a shell, not an agent' "$tmp/err"
+tmux show-options -p -t %0 > "$tmp/after"
+cmp "$tmp/before" "$tmp/after"
+tmux set-option -pu -t %0 @shell
 # No identifiable descendant: unrelated agents and ancestry cycles are ignored.
 record_set "$aid" kind ''
 printf '%s 1 /bin/sh\n91003 1 /bin/claude\n91004 91005 /bin/codex\n91005 91004 /bin/sh\n' "$root" > "$tmp/tree"

@@ -155,13 +155,36 @@ pane_agent_command() {
         if (best_depth >= 0) print command[best_pid] "|" best_pid
       }')"
     if [ -n "$match" ]; then
-      if [ "$detect" = --detect ]; then printf '%s\n' "$match"
+      if [ "$detect" = --detect ]; then
+        if [ "${match%%|*}" = codex ]; then
+          local process_home detected_profile
+          process_home="$(process_codex_home "${match#*|}" || true)"
+          detected_profile="$(codex_profile_for_home "$process_home" || true)"
+          [ -z "$process_home" ] || [ -z "$detected_profile" ] || match="$detected_profile|${match#*|}"
+        fi
+        printf '%s\n' "$match"
       else printf '%s\n' "$kind"; fi
       return
     fi
   fi
   [ "$detect" != --detect ] || return 1
   printf '%s (exited)\n' "$kind"
+}
+
+# Inspect only the matched process, never the caller's CODEX_HOME. Unreadable
+# environments leave the kind as codex. Do not print other environment values.
+process_codex_home() {
+  case "$(uname -s)" in
+    Linux)
+      cat "/proc/$1/environ" 2>/dev/null | perl -0ne '
+        if (/^CODEX_HOME=(.*)\0?$/s) { my $home=$1; $home =~ s/\0$//; print $home; exit }
+      ' ;;
+    Darwin)
+      ps -E -p "$1" -o command= 2>/dev/null | perl -ne '
+        if (/(?:^|\s)CODEX_HOME=(\S+)/) { print $1; exit }
+      ' ;;
+    *) return 1 ;;
+  esac
 }
 
 # Full adapters retain priority over same-named PATH executables.

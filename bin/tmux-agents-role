@@ -44,13 +44,13 @@ if [ -z "$(record_get "$agent_id" kind)" ]; then
   detected="$(pane_agent_command "$pane" --detect || true)"
   if [ -n "$detected" ]; then
     kind="${detected%%|*}" pid="${detected#*|}"
-    record_set "$agent_id" name "$(pane_name "$pane")"
-    record_set "$agent_id" dir "$(tmux display-message -p -t "$pane" '#{pane_current_path}')"
-    record_set "$agent_id" depth 0
+    [ -n "$(record_get "$agent_id" name)" ] || record_set "$agent_id" name "$(pane_name "$pane")"
+    [ -n "$(record_get "$agent_id" dir)" ] || record_set "$agent_id" dir "$(tmux display-message -p -t "$pane" '#{pane_current_path}')"
+    [ -n "$(record_get "$agent_id" depth)" ] || record_set "$agent_id" depth 0
     process_args="$(ps -p "$pid" -o args= 2>/dev/null || true)"
     if [ -z "$(record_get "$agent_id" cli_args)" ]; then
       model_args="$(printf '%s\n' "$process_args" | perl -MMIME::Base64=encode_base64 -ne '
-        if (/(?:^|\s)--model(?:=|\s+)([a-zA-Z0-9._:+-]+)(?:\s|$)/) { print encode_base64("--model\0$1\0", ""); exit }
+        if (/(?:^|\s)(?:--model|-m)(?:=|\s+)([a-zA-Z0-9._:+-]+)(?:\s|$)/) { print encode_base64("--model\0$1\0", ""); exit }
       ')"
       [ -z "$model_args" ] || record_set "$agent_id" cli_args "$model_args"
     fi
