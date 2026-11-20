@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- `tmux-agents role ROLE [--from ME]` lets an existing named top-level agent claim its chain role and initialize missing tracking; conflicting assigned roles are refused. Status hints only for the caller with no parent or claimed role, so mains started outside the chain launcher can join the pinned board tree.
+- `tmux-agents role ROLE [--from ME]` lets an existing named top-level agent claim its chain role, initialize missing tracking and recover a missing agent kind from its process tree (including configured Codex profiles), preserving known kinds and session IDs; conflicting assigned roles are refused. Status hints only for the caller with no parent or claimed role, so mains started outside the chain launcher can join the pinned board tree.
 - In `tmux-agents board --watch`, press `a` to toggle all completed missions immediately; a footer shows the toggle and quit keys.
 - The mission board pins the project main and its tree, shortens unambiguous names, shows completion outcomes and missing-owner attention, and folds all but the three most recently completed missions (`--all` expands them). Displayed mission owners and their descendants stay under their mission headers; folded completed missions keep their owners pinned.
 - The mission board uses status glyphs and terminal colour (`NO_COLOR` disables it), orders missions newest first and sibling agents by attention, and animates working glyphs at the chip frame rate when the full board fits in the pane.

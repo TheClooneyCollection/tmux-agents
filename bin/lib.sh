@@ -104,33 +104,63 @@ pane_agent_command() {
   local snapshot id pid dead tracked shell raw kind executable processes codex_homes
   snapshot="$(tmux display-message -p -t "$1" '#{@agent_id}|#{pane_pid}|#{pane_dead}|#{@tracked}|#{@shell}|#{pane_current_command}')" || return 1
   IFS='|' read -r id pid dead tracked shell raw <<< "$snapshot"
-  if [ "$tracked" != 1 ] || [ "$shell" = 1 ]; then printf '%s\n' "$raw"; return; fi
-  kind="$(record_get "$id" kind)"
-  case "$kind" in
-    claude|codex) executable="$kind" ;;
-    '') printf '%s\n' "$raw"; return ;;
-    *) resolve_codex_homes codex_homes
-       if codex_home_for "$kind" >/dev/null; then executable=codex
-       else printf '%s\n' "$raw"; return; fi ;;
-  esac
+  # --detect is only for explicit role claims with no recorded kind. It returns
+  # kind|pid, so the caller may inspect that process's resume arguments.
+  local detect="${2:-}" candidates='' match
+  if [ "$detect" = --detect ]; then
+    [ "$shell" != 1 ] && [ "$dead" != 1 ] || return 1
+    resolve_codex_homes codex_homes
+    candidates='|claude|codex|'
+    local profile
+    for profile in ${codex_homes:-}; do
+      profile="${profile%%=*}"
+      codex_home_for "$profile" >/dev/null && candidates="$candidates$profile|"
+    done
+    executable=''
+  else
+    if [ "$tracked" != 1 ] || [ "$shell" = 1 ]; then printf '%s\n' "$raw"; return; fi
+    kind="$(record_get "$id" kind)"
+    case "$kind" in
+      claude|codex) executable="$kind" ;;
+      '') printf '%s\n' "$raw"; return ;;
+      *) resolve_codex_homes codex_homes
+         if codex_home_for "$kind" >/dev/null; then executable=codex
+         else printf '%s\n' "$raw"; return; fi ;;
+    esac
+  fi
   if [ "$dead" != 1 ]; then
     processes="$(ps -axo pid=,ppid=,comm=)" || return 1
-    if printf '%s\n' "$processes" | awk -v root="$pid" -v executable="$executable" '
+    match="$(printf '%s\n' "$processes" | awk -v root="$pid" -v executable="$executable" -v candidates="$candidates" '
       { parent[$1]=$2; command[$1]=$0
         sub(/^[[:space:]]*[0-9]+[[:space:]]+[0-9]+[[:space:]]+/, "", command[$1])
         sub(/^.*\//, "", command[$1]) }
       END {
+        best_depth=-1
         for (pid in parent) {
-          if (command[pid] != executable) continue
-          cursor=pid; visited="|"
+          if (length(candidates)) {
+            if (!index(candidates, "|" command[pid] "|")) continue
+          } else if (command[pid] != executable) continue
+          cursor=pid; visited="|"; depth=0
           while ((cursor in parent) && !index(visited, "|" cursor "|")) {
-            if (cursor == root) exit 0
-            visited=visited cursor "|"; cursor=parent[cursor]
+            if (cursor == root) {
+              # Prefer the nearest agent wrapper, retaining named profiles.
+              if (best_depth < 0 || depth < best_depth || (depth == best_depth && pid+0 < best_pid+0)) {
+                best_depth=depth; best_pid=pid
+              }
+              break
+            }
+            visited=visited cursor "|"; cursor=parent[cursor]; depth++
           }
         }
-        exit 1
-      }'; then printf '%s\n' "$kind"; return; fi
+        if (best_depth >= 0) print command[best_pid] "|" best_pid
+      }')"
+    if [ -n "$match" ]; then
+      if [ "$detect" = --detect ]; then printf '%s\n' "$match"
+      else printf '%s\n' "$kind"; fi
+      return
+    fi
   fi
+  [ "$detect" != --detect ] || return 1
   printf '%s (exited)\n' "$kind"
 }
 

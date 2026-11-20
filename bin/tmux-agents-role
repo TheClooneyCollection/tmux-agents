@@ -33,10 +33,38 @@ require_agent_pane "$pane"
 [ -z "$(tmux show-option -pqv -t "$pane" @parent)" ] || die 'spawned helpers keep their assigned role'
 current="$(tmux show-option -pqv -t "$pane" @role)"
 [ -z "$current" ] || [ "$current" = "$role" ] || die "pane already has role '$current'"
-ensure_agent_id "$pane" >/dev/null || die 'could not initialize agent identity'
+agent_id="$(ensure_agent_id "$pane")" || die 'could not initialize agent identity'
 if [ "$(tmux show-option -pqv -t "$pane" @tracked)" != 1 ]; then
   agent_start_work "$pane" idle || die 'could not initialize agent tracking'
   tmux set-option -p -t "$pane" @tracked 1
+fi
+# Hooks may already have saved the conversation ID without an agent kind.
+# Preserve those fields, and never replace a known kind on a repeated claim.
+if [ -z "$(record_get "$agent_id" kind)" ]; then
+  detected="$(pane_agent_command "$pane" --detect || true)"
+  if [ -n "$detected" ]; then
+    kind="${detected%%|*}" pid="${detected#*|}"
+    record_set "$agent_id" name "$(pane_name "$pane")"
+    record_set "$agent_id" dir "$(tmux display-message -p -t "$pane" '#{pane_current_path}')"
+    record_set "$agent_id" depth 0
+    process_args="$(ps -p "$pid" -o args= 2>/dev/null || true)"
+    if [ -z "$(record_get "$agent_id" cli_args)" ]; then
+      model_args="$(printf '%s\n' "$process_args" | perl -MMIME::Base64=encode_base64 -ne '
+        if (/(?:^|\s)--model(?:=|\s+)([a-zA-Z0-9._:+-]+)(?:\s|$)/) { print encode_base64("--model\0$1\0", ""); exit }
+      ')"
+      [ -z "$model_args" ] || record_set "$agent_id" cli_args "$model_args"
+    fi
+    if [ "$kind" = claude ] && [ -z "$(record_get "$agent_id" id)" ]; then
+      # ps flattens argv; accept only an unambiguous UUID, never a resume label.
+      sid="$(printf '%s\n' "$process_args" | perl -ne '
+        if (/(?:^|\s)(?:--resume|--session-id|-r)(?:=|\s+)([0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})(?:\s|$)/) { print lc($1); exit }
+      ' || true)"
+      [ -z "$sid" ] || record_set "$agent_id" id "$sid"
+    fi
+    record_set "$agent_id" kind "$kind"
+  else
+    printf 'agent kind could not be detected; tracking initialized without kind\n' >&2
+  fi
 fi
 tmux set-option -p -t "$pane" @role "$role"
 printf 'role: %s (pane %s)\n' "$role" "$pane"
